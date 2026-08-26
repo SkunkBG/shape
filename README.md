@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.37-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.38-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--2.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v3.37
+# Shape v3.38
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -304,7 +304,7 @@ ACK'и по 40–80 байт. Клиент, который раздаёт, шл�
 Отдельно этот переключатель есть и в командной строке:
 
 ```bash
-shaperctl.py guard --both-ul 3 --require-packet on
+shaperctl guard --both-ul 3 --require-packet on
 ```
 
 Без него опускать порог отдачи ниже 10% не стоит.
@@ -325,7 +325,7 @@ shaperctl.py guard --both-ul 3 --require-packet on
 себя ничто, кроме раздачи.
 
 ```bash
-shaperctl.py guard --upload-ratio 50 --upload-ratio-mb 300
+shaperctl guard --upload-ratio 50 --upload-ratio-mb 300
 ```
 
 Отдал за сутки больше трети от скачанного, и отдачи не меньше 300 МБ —
@@ -361,7 +361,7 @@ shaperctl.py guard --upload-ratio 50 --upload-ratio-mb 300
 ### Где смотреть распределение
 
 ```bash
-shaperctl.py status --ratio
+shaperctl status --ratio
 ```
 
 ```
@@ -582,51 +582,55 @@ EDT (Earliest Departure Time) вместо классических очеред
 
 ## CLI
 
+Установщик кладёт в `/usr/local/bin` две команды: `shaper` — это меню,
+`shaperctl` — всё остальное. Ради совместимости со старыми записями рядом
+лежит псевдоним `shaperctl.py`, он делает то же самое.
+
 ```bash
-shaperctl.py show                          # текущие настройки
-shaperctl.py apply --ports 443 --speed 15  # задать лимит
-shaperctl.py apply --speed 0               # снять ограничение
-shaperctl.py apply --ports 443,8443        # сменить только порты
+shaperctl show                          # текущие настройки
+shaperctl apply --ports 443 --speed 15  # задать лимит
+shaperctl apply --speed 0               # снять ограничение
+shaperctl apply --ports 443,8443        # сменить только порты
 
-shaperctl.py monitor                       # живой монитор нагрузки
-shaperctl.py monitor --interval 5          # обновлять реже
+shaperctl monitor                       # живой монитор нагрузки
+shaperctl monitor --interval 5          # обновлять реже
 
-shaperctl.py status                        # накопленный трафик по IP
-shaperctl.py status --live                 # + текущая скорость за 3 с
-shaperctl.py status --full                 # все IP
-shaperctl.py status --json                 # для своих скриптов
+shaperctl status                        # накопленный трафик по IP
+shaperctl status --live                 # + текущая скорость за 3 с
+shaperctl status --full                 # все IP
+shaperctl status --json                 # для своих скриптов
 
-shaperctl.py whitelist add 203.0.113.10
-shaperctl.py whitelist list
+shaperctl whitelist add 203.0.113.10
+shaperctl whitelist list
 
-shaperctl.py guard --enable --score 3 --both-min 10
-shaperctl.py guard --both-dl 50 --both-ul 15 --packet 600
-shaperctl.py guard --hours 4 --upload-gb 2 --penalty-mbps 1 --penalty-min 60
-shaperctl.py guard --disable
-shaperctl.py limited                       # кто сейчас ограничен
-shaperctl.py release 185.12.34.56          # снять с одного
-shaperctl.py release --all                 # снять со всех
+shaperctl guard --enable --score 3 --both-min 10
+shaperctl guard --both-dl 50 --both-ul 15 --packet 600
+shaperctl guard --hours 4 --upload-gb 2 --penalty-mbps 1 --penalty-min 60
+shaperctl guard --disable
+shaperctl limited                       # кто сейчас ограничен
+shaperctl release 185.12.34.56          # снять с одного
+shaperctl release --all                 # снять со всех
 
-shaperctl.py export --out /root/node.json  # резервная копия состояния
-shaperctl.py export --out /root/node.json --with-secrets   # вместе с токеном
-shaperctl.py import /root/node.json --dry-run              # что изменится
-shaperctl.py import /root/node.json                        # восстановить
-shaperctl.py import /root/node.json --only whitelist,owners
+shaperctl export --out /root/node.json  # резервная копия состояния
+shaperctl export --out /root/node.json --with-secrets   # вместе с токеном
+shaperctl import /root/node.json --dry-run              # что изменится
+shaperctl import /root/node.json                        # восстановить
+shaperctl import /root/node.json --only whitelist,owners
 
-shaperctl.py telegram backup                # отправить копию в Telegram сейчас
-shaperctl.py telegram set --backup on --backup-day 1
-shaperctl.py telegram set --backup-thread 777
+shaperctl telegram backup                # отправить копию в Telegram сейчас
+shaperctl telegram set --backup on --backup-day 1
+shaperctl telegram set --backup-thread 777
 
-shaperctl.py panel show                     # связь с панелью Remnawave
-shaperctl.py panel test                     # проверить связь, ничего не меняя
-shaperctl.py panel scan --dry-run           # поискать раздачу, ничего не делая
-shaperctl.py panel set --url … --token … --node-uuid …
-shaperctl.py panel set --action-set notify,limit --mbps 1 --minutes 60
-shaperctl.py panel set --threshold 20 --window 10 --exempt 97,346
-shaperctl.py panel report                   # отчёт по ноде прямо сейчас
-shaperctl.py panel set --report on --report-at 09:00 --report-thread 777
-shaperctl.py panel set --resolve off        # не подставлять имена из панели
-shaperctl.py panel who 91.78.46.46            # чей это адрес по данным панели
+shaperctl panel show                     # связь с панелью Remnawave
+shaperctl panel test                     # проверить связь, ничего не меняя
+shaperctl panel scan --dry-run           # поискать раздачу, ничего не делая
+shaperctl panel set --url … --token … --node-uuid …
+shaperctl panel set --action-set notify,limit --mbps 1 --minutes 60
+shaperctl panel set --threshold 20 --window 10 --exempt 97,346
+shaperctl panel report                   # отчёт по ноде прямо сейчас
+shaperctl panel set --report on --report-at 09:00 --report-thread 777
+shaperctl panel set --resolve off        # не подставлять имена из панели
+shaperctl panel who 91.78.46.46            # чей это адрес по данным панели
 ```
 
 Формат `status --json`:
@@ -649,7 +653,7 @@ shaperctl.py panel who 91.78.46.46            # чей это адрес по д
 ```bash
 shaper                              # → Сервис → Проверить окружение
 tc filter show dev ens3 egress      # должен быть виден bpf-фильтр
-shaperctl.py status --live          # реальные скорости по IP
+shaperctl status --live          # реальные скорости по IP
 ```
 
 Пусто в статистике при живых клиентах — лимит висит не на том порту. Смотри,
@@ -692,12 +696,14 @@ shaperctl.py status --live          # реальные скорости по IP
 коротким и на десяти мегабитах, и на гигабите. Считается он **за сутки**, а не
 по последнему замеру — в момент штрафа адрес мог как раз молчать вверх.
 
-Байты и пакеты для этого среднего считаются **своей парой счётчиков**, растущих
-в одном месте. Брать байты из суточного объёма нельзя: после обновления там
-лежит весь день, а пакеты начали считаться только что, и в сообщение уходит
-что-нибудь вроде «пакет вверх 168750 Б» при физическом максимуме в полторы
-тысячи. На этот случай стоит и потолок: среднее выше джамбо-кадра не
-печатается вовсе.
+Байты и пакеты для этого среднего лежат **одним полем из двух чисел**, а не
+двумя полями. Два поля можно получить наполовину — запись от прошлой версии,
+где было только одно из них, — и деление тогда даёт бессмыслицу: «пакет вверх
+168750 Б» при физическом максимуме в полторы тысячи, или «11 Б», чего не
+бывает вовсе. Одного поля либо нет целиком, либо оно есть целиком.
+
+Плюс границы правдоподобия с **обеих** сторон, от 40 байт до джамбо-кадра.
+Значение вне их не печатается: соврать хуже, чем промолчать.
 
 Кто это — знает панель. Не узнали — карточка говорит, **почему именно**, а не
 валит всё на настройку:
@@ -784,10 +790,10 @@ curl -sS --socks5-hostname 127.0.0.1:1080 -o /dev/null \
 Из командной строки:
 
 ```bash
-shaperctl.py telegram set --token 123:AA… --chat -1001234567890 \
+shaperctl telegram set --token 123:AA… --chat -1001234567890 \
     --thread 45 --name "RU Москва" --proxy socks5://127.0.0.1:1080 --enable
-shaperctl.py telegram test
-shaperctl.py telegram show
+shaperctl telegram test
+shaperctl telegram show
 ```
 
 ---
@@ -812,7 +818,7 @@ shaperctl.py telegram show
 VERSION                        номер версии, одна строка
 assets/                        баннер и снимок экрана для README
 bpf/shaper.bpf.c               eBPF-программа
-shaperctl.py                   настройки, статистика, монитор, сторож
+shaperctl                   настройки, статистика, монитор, сторож
 engine.sh                      сборка, загрузка, attach/detach
 menu.sh                        меню
 lang.sh                        строки интерфейса: ru и en
@@ -1077,11 +1083,11 @@ connections:drop          ← только если включаете обры�
 Меню: **🛰 Панель Remnawave** на главном экране. Или из командной строки:
 
 ```bash
-shaperctl.py panel set --url https://panel.example.com \
+shaperctl panel set --url https://panel.example.com \
                        --token ТОКЕН \
                        --node-uuid UUID-ЭТОЙ-НОДЫ
-shaperctl.py panel test        # проверить связь, ничего не меняя
-shaperctl.py panel set --enable
+shaperctl panel test        # проверить связь, ничего не меняя
+shaperctl panel set --enable
 ```
 
 UUID берётся в панели: **Ноды → нужный сервер**. Это именно нода, а не хост:
@@ -1099,7 +1105,7 @@ UUID берётся в панели: **Ноды → нужный сервер**.
 Сочетаются через запятую:
 
 ```bash
-shaperctl.py panel set --action-set notify,limit --mbps 1 --minutes 60
+shaperctl panel set --action-set notify,limit --mbps 1 --minutes 60
 ```
 
 По умолчанию включено только `notify`.
@@ -1179,7 +1185,7 @@ Telegram ID. Адрес стоит обычным текстом. Раньше �
 Кому делиться разрешено — семье, коллегам:
 
 ```bash
-shaperctl.py panel set --exempt 97,346
+shaperctl panel set --exempt 97,346
 ```
 
 ### Имя вместо номера
@@ -1192,7 +1198,7 @@ shaperctl.py panel set --exempt 97,346
 работать, только с номерами. Выключить совсем:
 
 ```bash
-shaperctl.py panel set --resolve off
+shaperctl panel set --resolve off
 ```
 
 Про нарушителя спрашивается поимённо, одним запросом. Справочник целиком
@@ -1205,8 +1211,8 @@ shaperctl.py panel set --resolve off
 Кто сейчас подключён и с каких адресов — раз в сутки в заданное время:
 
 ```bash
-shaperctl.py panel set --report on --report-at 09:00
-shaperctl.py panel report        # отправить прямо сейчас
+shaperctl panel set --report on --report-at 09:00
+shaperctl panel report        # отправить прямо сейчас
 ```
 
 Выглядит так:
@@ -1236,7 +1242,7 @@ shaperctl.py panel report        # отправить прямо сейчас
 уведомлений:
 
 ```bash
-shaperctl.py panel set --report-thread 777
+shaperctl panel set --report-thread 777
 ```
 
 На диске отчёт не сохраняется: собрали, отправили, забыли. Историю по каждому
@@ -1270,8 +1276,8 @@ shaperctl.py panel set --report-thread 777
 ### Если что-то идёт не так
 
 ```bash
-shaperctl.py panel show        # состояние, срок токена, последняя ошибка
-shaperctl.py panel scan --dry-run   # показать найденное, ничего не делая
+shaperctl panel show        # состояние, срок токена, последняя ошибка
+shaperctl panel scan --dry-run   # показать найденное, ничего не делая
 ```
 
 В метриках связь видна отдельно:
@@ -1296,8 +1302,8 @@ shape_panel_sharing_found           сколько нарушителей на �
 `shape.prom`. Ни открытых портов, ни токенов, ни API:
 
 ```bash
-shaperctl.py metrics                       # посмотреть глазами
-shaperctl.py metrics --out /var/lib/node_exporter/textfile_collector/shape.prom
+shaperctl metrics                       # посмотреть глазами
+shaperctl metrics --out /var/lib/node_exporter/textfile_collector/shape.prom
 ```
 
 **Через API — если он установлен** и виден мониторингу:
@@ -1319,7 +1325,7 @@ curl -H "Authorization: Bearer $READ_TOKEN" http://127.0.0.1:8765/metrics
 разнице с прошлым замером, а сам замер лежит в файле — поэтому её видно и
 при одноразовом запуске из CLI.
 
-Если запустить `shaperctl.py metrics` без root, карты BPF прочитать не
+Если запустить `shaperctl metrics` без root, карты BPF прочитать не
 удастся. Тогда метрика `shape_metrics_complete` станет нулём: мониторинг
 увидит «данные неполные», а не «трафика нет».
 
@@ -1332,7 +1338,7 @@ curl -H "Authorization: Bearer $READ_TOKEN" http://127.0.0.1:8765/metrics
 адресов, сколько выдано ограничений и пятёрка самых тяжёлых. Около сотни
 байт в день, за год — сорок килобайт.
 
-Меню → **Статистика → 📅 История по суткам**, или `shaperctl.py history
+Меню → **Статистика → 📅 История по суткам**, или `shaperctl history
 --days 30`, или `GET /api/v1/history`. Это тот самый ответ на вопрос
 хостера «сколько вы отдали за прошлый месяц».
 
@@ -1371,7 +1377,7 @@ Shape работает на сетевом уровне и знает тольк
                  "user_id": "42", "shared": false}}
 ```
 
-Заполняется вручную (`shaperctl.py owners set 91.79.27.87 --label Иван
+Заполняется вручную (`shaperctl owners set 91.79.27.87 --label Иван
 --telegram-id 123456789`) или пачкой через `PUT /api/v1/owners` — туда будет
 складывать данные резолвер панели, когда он появится. Сам Shape никуда за
 этими сведениями не ходит и ходить не должен.
@@ -1404,7 +1410,7 @@ Shape работает на сетевом уровне и знает тольк
 адресов и история по суткам.
 
 ```bash
-shaperctl.py export --out /root/node.json
+shaperctl export --out /root/node.json
 ```
 
 Меню: **Сервис → 💾 Резервная копия**.
@@ -1431,8 +1437,8 @@ shaperctl.py export --out /root/node.json
 ### Восстановление
 
 ```bash
-shaperctl.py import /root/node.json --dry-run   # сначала посмотреть
-shaperctl.py import /root/node.json             # затем применить
+shaperctl import /root/node.json --dry-run   # сначала посмотреть
+shaperctl import /root/node.json             # затем применить
 ```
 
 `--dry-run` разбирает файл, показывает, что и в каком количестве будет
@@ -1468,7 +1474,7 @@ shaperctl.py import /root/node.json             # затем применить
 адресов и история по суткам.
 
 ```bash
-shaperctl.py export --out /root/node.json
+shaperctl export --out /root/node.json
 ```
 
 Меню: **Сервис → 💾 Резервная копия**.
@@ -1495,8 +1501,8 @@ shaperctl.py export --out /root/node.json
 ### Восстановление
 
 ```bash
-shaperctl.py import /root/node.json --dry-run   # сначала посмотреть
-shaperctl.py import /root/node.json             # затем применить
+shaperctl import /root/node.json --dry-run   # сначала посмотреть
+shaperctl import /root/node.json             # затем применить
 ```
 
 `--dry-run` разбирает файл, показывает, что и в каком количестве будет
@@ -1532,8 +1538,8 @@ shaperctl.py import /root/node.json             # затем применить
 настроен — вместе с прокси, который на российских нодах всё равно нужен.
 
 ```bash
-shaperctl.py telegram set --backup on --backup-day 1
-shaperctl.py telegram backup        # отправить прямо сейчас
+shaperctl telegram set --backup on --backup-day 1
+shaperctl telegram backup        # отправить прямо сейчас
 ```
 
 Меню: **Сервис → 💾 Резервная копия**, пункты [4]–[7].
@@ -1549,7 +1555,7 @@ shaperctl.py telegram backup        # отправить прямо сейчас
 при совпадении отправка отменяется целиком — даже если бы код когда-то
 поменяли неудачно.
 
-Восстановление с такой копии обычное: `shaperctl.py import файл`. Бот на
+Восстановление с такой копии обычное: `shaperctl import файл`. Бот на
 новой ноде настраивается один раз руками, остальное приезжает из файла —
 токен при импорте не затирается.
 
@@ -1592,7 +1598,7 @@ telegram_id. Это персональные данные, и в Telegram они
 руками на одной ноде, и узнать об этом будет неоткуда: жалоба придёт через
 месяц, и разбираться вы будете с симптомом.
 
-`shaperctl.py show` показывает отпечаток в подвале:
+`shaperctl show` показывает отпечаток в подвале:
 
 ```
   нода 3248507562c6ba1b  ·  отпечаток 37026c5a46ca

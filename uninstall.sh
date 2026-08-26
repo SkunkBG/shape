@@ -118,7 +118,8 @@ systemctl daemon-reload
 ok "юниты удалены"
 
 step "Удаление файлов"
-rm -rf "$APP_DIR" "${SHAPE_BIN:-/usr/local/bin/shaper}"
+rm -rf "$APP_DIR" "${SHAPE_BIN:-/usr/local/bin/shaper}" \
+    /usr/local/bin/shaperctl /usr/local/bin/shaperctl.py
 ok "программа удалена"
 
 if (( PURGE )); then

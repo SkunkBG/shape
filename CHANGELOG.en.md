@@ -13,6 +13,60 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.38
+
+**The `shaperctl` command finally exists. And an average packet is no longer
+eleven bytes.**
+
+### `shaperctl.py: command not found`
+
+The hint in Telegram suggested a command that did not exist. The file sits in
+`/opt/shaper` and is not on `PATH` — only the `shaper` menu was in
+`/usr/local/bin`. Meanwhile the README mentions `shaperctl.py` seventy-one
+times, and not one of those mentions worked in a fresh shell.
+
+The installer now places two commands:
+
+```
+shaper       — the menu
+shaperctl    — everything else
+shaperctl.py — an alias, so older notes and past release notes keep working
+```
+
+Both READMEs were rewritten to `shaperctl`. Uninstalling removes both commands.
+
+### "upload packet 11 B"
+
+The same mistake as "168750 B" in 3.36, only in the other direction — and that
+is my fault twice.
+
+In 3.37 I split the bytes and the packets into two fields and put a **ceiling**
+on the result. But two fields can be had by halves: a record from 3.36 carried
+packets and carried no bytes, so after the update the bytes started from zero
+against already accumulated packets, and the quotient went down instead of up. A
+one-sided check catches half the cases by definition.
+
+It is now **one field of two numbers**, not two fields. Half of such a field
+cannot be had: it is either absent entirely or present entirely.
+
+Plausibility bounds are on both sides: from 40 bytes (a bare acknowledgement, 20
+IP plus 20 TCP) to a jumbo frame. A value outside them is not printed at all.
+
+A corrupted field, a field of the wrong length and zero packets are covered too —
+the line simply arrives without the packet.
+
+### What to do
+
+Update. On the first day after the update the average is computed from the
+moment the new version started, which is correct and does not drift.
+
+### Also
+
+* Tests: 12 new ones. Both sides of the bounds, a corrupted field, half a field,
+  zero packets, the presence of both commands in the installer and their removal.
+
+---
+
 ## 3.37
 
 **Two lies in the penalty message. Both from 3.35 and 3.36, both mine.**

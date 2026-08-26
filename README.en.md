@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.37-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.38-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.37
+# Shape v3.38
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -292,7 +292,7 @@ megabits of acknowledgements pile up.
 The switch is available on its own from the command line:
 
 ```bash
-shaperctl.py guard --both-ul 3 --require-packet on
+shaperctl guard --both-ul 3 --require-packet on
 ```
 
 Without it, lowering the upload floor below 10% is a bad idea.
@@ -313,7 +313,7 @@ two-gigabyte threshold. Yet it uploaded 2.4 times what it downloaded — and
 nothing but seeding behaves that way.
 
 ```bash
-shaperctl.py guard --upload-ratio 50 --upload-ratio-mb 300
+shaperctl guard --upload-ratio 50 --upload-ratio-mb 300
 ```
 
 Uploaded more than a third of what was downloaded in a day, with at least
@@ -350,7 +350,7 @@ The threshold sits at **35%** — in the middle of the gap between 25% and 45%.
 ### Where to see the distribution
 
 ```bash
-shaperctl.py status --ratio
+shaperctl status --ratio
 ```
 
 ```
@@ -577,51 +577,55 @@ to 750 Mbit/s on the channel if they all download at once.
 
 ## CLI
 
+The installer puts two commands in `/usr/local/bin`: `shaper` is the menu,
+`shaperctl` is everything else. For compatibility with older notes an alias
+`shaperctl.py` sits next to it and does the same thing.
+
 ```bash
-shaperctl.py show                          # current settings
-shaperctl.py apply --ports 443 --speed 15  # set the limit
-shaperctl.py apply --speed 0               # remove the limit
-shaperctl.py apply --ports 443,8443        # change ports only
+shaperctl show                          # current settings
+shaperctl apply --ports 443 --speed 15  # set the limit
+shaperctl apply --speed 0               # remove the limit
+shaperctl apply --ports 443,8443        # change ports only
 
-shaperctl.py monitor                       # live load monitor
-shaperctl.py monitor --interval 5          # refresh less often
+shaperctl monitor                       # live load monitor
+shaperctl monitor --interval 5          # refresh less often
 
-shaperctl.py status                        # accumulated traffic per IP
-shaperctl.py status --live                 # + current speed over 3 s
-shaperctl.py status --full                 # all IPs
-shaperctl.py status --json                 # for your own scripts
+shaperctl status                        # accumulated traffic per IP
+shaperctl status --live                 # + current speed over 3 s
+shaperctl status --full                 # all IPs
+shaperctl status --json                 # for your own scripts
 
-shaperctl.py whitelist add 203.0.113.10
-shaperctl.py whitelist list
+shaperctl whitelist add 203.0.113.10
+shaperctl whitelist list
 
-shaperctl.py guard --enable --score 3 --both-min 10
-shaperctl.py guard --both-dl 50 --both-ul 15 --packet 600
-shaperctl.py guard --hours 4 --upload-gb 2 --penalty-mbps 1 --penalty-min 60
-shaperctl.py guard --disable
-shaperctl.py limited                       # who is limited right now
-shaperctl.py release 185.12.34.56          # release one
-shaperctl.py release --all                 # release everybody
+shaperctl guard --enable --score 3 --both-min 10
+shaperctl guard --both-dl 50 --both-ul 15 --packet 600
+shaperctl guard --hours 4 --upload-gb 2 --penalty-mbps 1 --penalty-min 60
+shaperctl guard --disable
+shaperctl limited                       # who is limited right now
+shaperctl release 185.12.34.56          # release one
+shaperctl release --all                 # release everybody
 
-shaperctl.py export --out /root/node.json  # back up node state
-shaperctl.py export --out /root/node.json --with-secrets   # token included
-shaperctl.py import /root/node.json --dry-run              # what would change
-shaperctl.py import /root/node.json                        # restore
-shaperctl.py import /root/node.json --only whitelist,owners
+shaperctl export --out /root/node.json  # back up node state
+shaperctl export --out /root/node.json --with-secrets   # token included
+shaperctl import /root/node.json --dry-run              # what would change
+shaperctl import /root/node.json                        # restore
+shaperctl import /root/node.json --only whitelist,owners
 
-shaperctl.py telegram backup                # send a backup right now
-shaperctl.py telegram set --backup on --backup-day 1
-shaperctl.py telegram set --backup-thread 777
+shaperctl telegram backup                # send a backup right now
+shaperctl telegram set --backup on --backup-day 1
+shaperctl telegram set --backup-thread 777
 
-shaperctl.py panel show                     # the Remnawave panel link
-shaperctl.py panel test                     # check the link, change nothing
-shaperctl.py panel scan --dry-run           # look for sharing, do nothing
-shaperctl.py panel set --url … --token … --node-uuid …
-shaperctl.py panel set --action-set notify,limit --mbps 1 --minutes 60
-shaperctl.py panel set --threshold 20 --window 10 --exempt 97,346
-shaperctl.py panel report                   # send the node report now
-shaperctl.py panel set --report on --report-at 09:00 --report-thread 777
-shaperctl.py panel set --resolve off        # do not resolve names
-shaperctl.py panel who 91.78.46.46            # whose address is this, per the panel
+shaperctl panel show                     # the Remnawave panel link
+shaperctl panel test                     # check the link, change nothing
+shaperctl panel scan --dry-run           # look for sharing, do nothing
+shaperctl panel set --url … --token … --node-uuid …
+shaperctl panel set --action-set notify,limit --mbps 1 --minutes 60
+shaperctl panel set --threshold 20 --window 10 --exempt 97,346
+shaperctl panel report                   # send the node report now
+shaperctl panel set --report on --report-at 09:00 --report-thread 777
+shaperctl panel set --resolve off        # do not resolve names
+shaperctl panel who 91.78.46.46            # whose address is this, per the panel
 ```
 
 The `status --json` format:
@@ -644,7 +648,7 @@ The `status --json` format:
 ```bash
 shaper                              # → Service → Check the environment
 tc filter show dev ens3 egress      # the bpf filter should be visible
-shaperctl.py status --live          # real per-IP speeds
+shaperctl status --live          # real per-IP speeds
 ```
 
 Empty statistics while clients are online means the limit sits on the wrong
@@ -688,13 +692,15 @@ acknowledgement stays short at ten megabits and at a gigabit. It is averaged
 **over the day**, not taken from the last sample — at the moment of the penalty
 the address may have been silent upward.
 
-The bytes and the packets behind that average are kept by **their own pair of
-counters**, incremented in the same place. Taking the bytes from the daily
-volume will not do: after an update that holds the whole day while the packets
-have only just started counting, and the message ends up saying something like
-"upload packet 168750 B" against a physical maximum of fifteen hundred. There is
-a ceiling for that case too: an average above a jumbo frame is not printed at
-all.
+The bytes and the packets behind that average live in **one field of two
+numbers**, not in two fields. Two fields can be had by halves — a record from an
+earlier version that held only one of them — and the division then yields
+nonsense: "upload packet 168750 B" against a physical maximum of fifteen
+hundred, or "11 B", which does not happen at all. One field is either absent
+entirely or present entirely.
+
+Plus plausibility bounds on **both** sides, from 40 bytes to a jumbo frame. A
+value outside them is not printed: lying is worse than saying nothing.
 
 Who this is comes from the panel. When it does not, the card says **why**
 instead of blaming the configuration:
@@ -1030,11 +1036,11 @@ warns in Telegram a week before it expires.
 Menu: **🛰 Remnawave panel** on the main screen. Or from the command line:
 
 ```bash
-shaperctl.py panel set --url https://panel.example.com \
+shaperctl panel set --url https://panel.example.com \
                        --token TOKEN \
                        --node-uuid UUID-OF-THIS-NODE
-shaperctl.py panel test        # check the link, change nothing
-shaperctl.py panel set --enable
+shaperctl panel test        # check the link, change nothing
+shaperctl panel set --enable
 ```
 
 Take the UUID from the panel: **Nodes → the server you need**. That is a node,
@@ -1053,7 +1059,7 @@ own UUIDs, and those will not work here.
 Combine them with commas:
 
 ```bash
-shaperctl.py panel set --action-set notify,limit --mbps 1 --minutes 60
+shaperctl panel set --action-set notify,limit --mbps 1 --minutes 60
 ```
 
 Only `notify` is on by default.
@@ -1133,7 +1139,7 @@ If both `limit` and `block` are set, `block` wins.
 Who is allowed to share — family, colleagues:
 
 ```bash
-shaperctl.py panel set --exempt 97,346
+shaperctl panel set --exempt 97,346
 ```
 
 ### Names instead of numbers
@@ -1146,7 +1152,7 @@ That needs the **Users → Read** scope. Without it everything still works, just
 with numbers. To turn it off entirely:
 
 ```bash
-shaperctl.py panel set --resolve off
+shaperctl panel set --resolve off
 ```
 
 An offender is looked up by number, one request at a time. The full directory is
@@ -1160,8 +1166,8 @@ Who is connected right now and from which addresses — once a day at a time you
 choose:
 
 ```bash
-shaperctl.py panel set --report on --report-at 09:00
-shaperctl.py panel report        # send it right now
+shaperctl panel set --report on --report-at 09:00
+shaperctl panel report        # send it right now
 ```
 
 It looks like this:
@@ -1190,7 +1196,7 @@ summary — node, users connected, addresses.
 The report can go to its own topic so it does not clutter the alerts:
 
 ```bash
-shaperctl.py panel set --report-thread 777
+shaperctl panel set --report-thread 777
 ```
 
 Nothing is written to disk: collected, sent, forgotten. Shape does not keep a
@@ -1224,8 +1230,8 @@ would mean "throttle everyone who connected".
 ### When something goes wrong
 
 ```bash
-shaperctl.py panel show        # state, token expiry, last error
-shaperctl.py panel scan --dry-run   # show findings, change nothing
+shaperctl panel show        # state, token expiry, last error
+shaperctl panel scan --dry-run   # show findings, change nothing
 ```
 
 The link is visible separately in the metrics:
@@ -1250,8 +1256,8 @@ textfile directory, installs a systemd timer and writes `shape.prom` there
 every minute. No open ports, no tokens, no API:
 
 ```bash
-shaperctl.py metrics                       # look at them
-shaperctl.py metrics --out /var/lib/node_exporter/textfile_collector/shape.prom
+shaperctl metrics                       # look at them
+shaperctl metrics --out /var/lib/node_exporter/textfile_collector/shape.prom
 ```
 
 **Through the API — if it is installed** and reachable from your monitoring:
@@ -1273,7 +1279,7 @@ Scraping costs next to nothing: heavy reads are cached — map dumps for two
 seconds, the event log for thirty. Channel speed is derived from the previous
 sample, and that sample lives in a file, so it works for one-off CLI runs too.
 
-Running `shaperctl.py metrics` without root cannot read the BPF maps. The
+Running `shaperctl metrics` without root cannot read the BPF maps. The
 `shape_metrics_complete` metric then drops to zero, so monitoring sees
 "incomplete data" rather than "no traffic".
 
@@ -1286,7 +1292,7 @@ Daily counters reset at midnight, but now a row is written to
 count, limits issued and the five heaviest addresses. About a hundred bytes a
 day, forty kilobytes a year.
 
-Menu → **Statistics → 📅 History by day**, or `shaperctl.py history --days 30`,
+Menu → **Statistics → 📅 History by day**, or `shaperctl history --days 30`,
 or `GET /api/v1/history`. This is the answer to the hoster's "how much did you
 push last month".
 
@@ -1316,7 +1322,7 @@ in a message though, so there is an owner map at
                  "user_id": "42", "shared": false}}
 ```
 
-Filled in by hand (`shaperctl.py owners set 91.79.27.87 --label Ivan
+Filled in by hand (`shaperctl owners set 91.79.27.87 --label Ivan
 --telegram-id 123456789`) or in bulk through `PUT /api/v1/owners` — that is
 where a panel resolver will write once it exists. Shape itself never goes
 looking for this data, and it should not.
@@ -1347,7 +1353,7 @@ Everything that makes a node this node goes into a single file: settings,
 whitelist, personal speeds, active limits, address owners and daily history.
 
 ```bash
-shaperctl.py export --out /root/node.json
+shaperctl export --out /root/node.json
 ```
 
 Menu: **Service → 💾 Backup and restore**.
@@ -1374,8 +1380,8 @@ the file is created with mode `600`.
 ### Restoring
 
 ```bash
-shaperctl.py import /root/node.json --dry-run   # look first
-shaperctl.py import /root/node.json             # then apply
+shaperctl import /root/node.json --dry-run   # look first
+shaperctl import /root/node.json             # then apply
 ```
 
 `--dry-run` parses the file, shows what would be restored and how much of it,
@@ -1412,8 +1418,8 @@ already configured on the node — proxy included, which Russian nodes need
 anyway.
 
 ```bash
-shaperctl.py telegram set --backup on --backup-day 1
-shaperctl.py telegram backup        # send it right now
+shaperctl telegram set --backup on --backup-day 1
+shaperctl telegram backup        # send it right now
 ```
 
 Menu: **Service → 💾 Backup and restore**, items [4]–[7].
@@ -1429,7 +1435,7 @@ history along with the token. The payload is checked for secrets one more
 time right before sending, and a match cancels the upload entirely — even if
 the code were changed badly at some point.
 
-Restoring works as usual: `shaperctl.py import file`. The bot on a new node is
+Restoring works as usual: `shaperctl import file`. The bot on a new node is
 configured once by hand, everything else arrives from the file — the token is
 not wiped on import.
 
@@ -1473,7 +1479,7 @@ The second problem of a hundred nodes is drift. Someone will one day fix the
 speed by hand on a single node, and there will be nowhere to learn about it:
 the complaint arrives a month later and you end up chasing the symptom.
 
-`shaperctl.py show` prints the fingerprint in the footer:
+`shaperctl show` prints the fingerprint in the footer:
 
 ```
   node 3248507562c6ba1b  ·  fingerprint 37026c5a46ca

@@ -193,7 +193,7 @@ MSG = {
         "tg_pen_stat": "📈 За сутки: {s}",
         "tg_pen_pkt": "пакет вверх {n} Б",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
-        "pn_card_never": "<i>кто это — неизвестно: панель ещё ни разу не ответила — проверьте её командой <code>shaperctl.py panel show</code></i>",
+        "pn_card_never": "<i>кто это — неизвестно: панель ещё ни разу не ответила — проверьте её командой <code>shaperctl panel show</code></i>",
         "pn_card_stale": "<i>кто это — неизвестно: панель не отвечает уже {m} мин</i>",
         "pn_card_absent": "<i>кто это — неизвестно: при последнем опросе панели ({m} мин назад) этого адреса не было среди подключённых</i>",
         "tg_ev": "События  ",
@@ -552,7 +552,7 @@ MSG = {
         "tg_pen_stat": "📈 For the day: {s}",
         "tg_pen_pkt": "upload packet {n} B",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
-        "pn_card_never": "<i>identity unknown: the panel has never answered yet — check it with <code>shaperctl.py panel show</code></i>",
+        "pn_card_never": "<i>identity unknown: the panel has never answered yet — check it with <code>shaperctl panel show</code></i>",
         "pn_card_stale": "<i>identity unknown: the panel has not answered for {m} min</i>",
         "pn_card_absent": "<i>identity unknown: at the last panel poll ({m} min ago) this address was not among the connected ones</i>",
         "tg_ev": "Events   ",
@@ -1088,8 +1088,16 @@ GUARD_DEFAULT = {
 # низкий нарочно: тихий сидер держит полмегабита, а под ограничением — один.
 RATIO_LIVE_MBPS = 0.05
 
-# Больше джамбо-кадра пакет не бывает. Значение выше означает, что счётчики
-# байтов и пакетов разъехались, и печатать среднее нельзя.
+# Границы правдоподобия для среднего размера пакета. Ниже сорока байт не
+# бывает даже голое подтверждение (20 IP + 20 TCP), выше джамбо-кадра не
+# бывает ничего. Значение за этими границами означает, что счётчики байтов и
+# пакетов разъехались, и печатать его — значит соврать.
+#
+# Проверять надо ОБЕ стороны. В 3.36 счётчики разъехались в одну сторону и
+# вышло «168750 Б»; я поставил только потолок — и в 3.37 они разъехались в
+# другую, дав «11 Б». Односторонняя проверка ловит половину случаев по
+# определению.
+MIN_PACKET_BYTES = 40
 MAX_PACKET_BYTES = 9000
 
 # Как часто напоминать об одном и том же адресе с той же причиной.
@@ -2527,18 +2535,20 @@ def cmd_watch(a):
                 # Средний размер пакета за сутки — то самое, что отличает
                 # отдачу данных от подтверждений. Мгновенный сюда не годится:
                 # в момент штрафа адрес мог как раз молчать вверх.
-                # Байты считаем вторым счётчиком, а не берём из d["up"]:
-                # после обновления в d["up"] лежит весь день, а пакеты
-                # начали считаться только что. Деление одного на другое дало
-                # «пакет вверх 168750 Б» — при максимуме в полторы тысячи.
-                d.setdefault("upkts", 0)
-                d.setdefault("upkb", 0)
+                # Байты и пакеты для среднего размера — ОДНО поле из двух
+                # чисел, а не два поля. Два поля можно получить наполовину:
+                # запись от прошлой версии, где было только одно из них, и
+                # деление даёт бессмыслицу. Одного поля либо нет целиком,
+                # либо оно есть целиком.
+                upkt = d.get("upkt")
+                if not (isinstance(upkt, list) and len(upkt) == 2):
+                    upkt = d["upkt"] = [0, 0]
                 if max(s["dl"], s["ul"]) >= active_floor:
                     d["active"] += interval
                 d["up"] += s["up_bytes"]
                 d["down"] += s["dl_bytes"]
-                d["upkts"] += s["up_pkts"]
-                d["upkb"] += s["up_bytes"]
+                upkt[0] += s["up_bytes"]
+                upkt[1] += s["up_pkts"]
                 if s["dl_bytes"]:
                     hourly_add(hourly, ip, s["dl_bytes"], time.time())
 
@@ -2840,14 +2850,15 @@ def penalty_figures(day):
     out = f"↓ {fmt_bytes(down)} · ↑ {fmt_bytes(up)}"
     if down:
         out += f" ({up * 100 / down:.0f}%)"
-    # Оба счётчика растут в одном месте и в один момент, поэтому их частное
-    # осмысленно с первого же замера после обновления. Потолок — на случай,
-    # если они всё-таки разъедутся: средний пакет физически не бывает больше
-    # джамбо-кадра, и напечатать такое значит соврать.
-    pkts = float(day.get("upkts", 0))
-    avg = (float(day.get("upkb", 0)) / pkts) if pkts else 0
-    if 0 < avg <= MAX_PACKET_BYTES:
-        out += " · " + t("tg_pen_pkt", n=int(avg))
+    # Байты и пакеты приходят одним полем и растут в одном месте, поэтому их
+    # частное осмысленно с первого же замера после обновления. Границы — на
+    # случай, если поле всё-таки окажется испорченным: соврать хуже, чем
+    # промолчать.
+    upkt = day.get("upkt")
+    if isinstance(upkt, list) and len(upkt) == 2 and upkt[1]:
+        avg = float(upkt[0]) / float(upkt[1])
+        if MIN_PACKET_BYTES <= avg <= MAX_PACKET_BYTES:
+            out += " · " + t("tg_pen_pkt", n=int(avg))
     return out
 
 

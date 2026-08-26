@@ -164,6 +164,17 @@ check "install.sh не снимает юниты движка сам" \
       '! grep -qE "rm -f.*(shaper\.service|shaper-watch\.service)" "$SRC/install.sh"'
 check "install.sh не удаляет команду shaper сам" \
       '! grep -qE "rm -f.*/usr/local/bin/shaper" "$SRC/install.sh"'
+
+# Живой случай: подсказка в Telegram советовала «shaperctl.py panel show», а
+# такой команды не было — файл лежит в /opt/shaper и в PATH не входит.
+check "установщик кладёт вторую команду в PATH" \
+      'grep -q "/usr/local/bin/shaperctl" "$SRC/install.sh"'
+check "и псевдоним с .py для старых записей" \
+      'grep -q "ln -sf /usr/local/bin/shaperctl /usr/local/bin/shaperctl.py" "$SRC/install.sh"'
+check "удаление уносит обе" \
+      'grep -q "/usr/local/bin/shaperctl /usr/local/bin/shaperctl.py" "$SRC/uninstall.sh"'
+check "подсказка советует существующую команду" \
+      '! grep -q "<code>shaperctl.py panel show</code>" "$SRC/shaperctl.py"'
 check "install.sh --uninstall делегирует" \
       'grep -A6 "\-\-uninstall\"" "$SRC/install.sh" | grep -q "uninstall.sh"'
 check "установщик кладёт uninstall.sh на ноду" \

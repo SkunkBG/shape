@@ -209,7 +209,21 @@ if [[ $EUID -ne 0 ]] && command -v sudo >/dev/null; then exec sudo /opt/shaper/m
 exec /opt/shaper/menu.sh "$@"
 EOF
 chmod +x /usr/local/bin/shaper
-ok "команда shaper создана"
+
+# Вторая команда — для того, что описано в README и в подсказках. Её не было,
+# и «shaperctl.py panel show» из сообщения в Telegram отвечало «command not
+# found»: сам файл лежит в /opt/shaper и в PATH не входит.
+#
+# Псевдоним с .py — ради обратной совместимости: этим именем команда названа
+# в семидесяти местах документации и во всех прошлых release notes.
+cat > /usr/local/bin/shaperctl <<'EOF'
+#!/usr/bin/env bash
+if [[ $EUID -ne 0 ]] && command -v sudo >/dev/null; then exec sudo /opt/shaper/shaperctl.py "$@"; fi
+exec /opt/shaper/shaperctl.py "$@"
+EOF
+chmod +x /usr/local/bin/shaperctl
+ln -sf /usr/local/bin/shaperctl /usr/local/bin/shaperctl.py
+ok "команды shaper и shaperctl созданы"
 
 step "Запуск"
 # Именно restart: при обновлении сервис уже запущен, и `start` был бы пустышкой —
