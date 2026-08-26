@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Проверки после аудита Shape. Запускать из песочницы, не на ноде."""
-import json, os, subprocess, sys, tempfile, time, importlib.util
+import json, os, re, subprocess, sys, tempfile, time, importlib.util
 
 import os as _os
 # Корень проекта: каталог над tests/. Так набор работает и локально, и в CI.
@@ -46,7 +46,7 @@ def guard(**kw):
              both_ul=None, percent=None, sustain=None, penalty_mbps=None,
              penalty_min=None, hours=None, upload_gb=None, download_gb=None,
              download_gbh=None, interval=None, packet=None, require_packet=None,
-             quiet=True)
+             upload_ratio=None, upload_ratio_mb=None, quiet=True)
     d.update(kw); return argparse.Namespace(**d)
 
 def tg(**kw):
@@ -274,6 +274,125 @@ except SystemExit:
     check("guard --help отрабатывает", "--require-packet" in _out.getvalue())
 except Exception as exc:
     check("guard --help отрабатывает", False, repr(exc))
+
+print("\n\033[1mРаспределение отношения отдачи\033[0m")
+# Порог между честным и раздающим не выводится из теории — он виден как разрыв
+# в распределении. Данные ниже сняты с двух живых нод: на первой честные
+# кончаются на 26%, раздающие начинаются с 46%, между ними пусто. Ровно этот
+# разрыв отчёт и обязан показывать.
+_MB, _GB = 1e6, 1e9
+NODE1 = {
+    "178.178.197.245": {"down": 7.6 * _GB, "up": 113.8 * _MB},
+    "95.167.210.34":   {"down": 6.5 * _GB, "up": 1.1 * _GB},
+    "80.115.192.57":   {"down": 2.0 * _GB, "up": 205 * _MB},
+    "94.77.22.209":    {"down": 1.8 * _GB, "up": 251.5 * _MB},
+    "188.66.34.198":   {"down": 1.1 * _GB, "up": 280.5 * _MB},
+    "95.26.73.25":     {"down": 1.1 * _GB, "up": 500.5 * _MB},
+    "176.59.54.33":    {"down": 1014.7 * _MB, "up": 489.1 * _MB},
+    "95.32.199.197":   {"down": 857.2 * _MB, "up": 756.3 * _MB},
+    "шум":             {"down": 10 * _MB, "up": 8 * _MB},
+}
+_rows, _counts = S.ratio_report(NODE1, 100 * _MB, 35)
+check("шум с мелкой отдачей отсеян", len(_rows) == 8, len(_rows))
+check("верхний — раздающий с 88 процентами",
+      _rows[0][0] == "95.32.199.197", _rows[0][0])
+check("порядок по убыванию отношения",
+      [r[0] for r in _rows[:3]] == ["95.32.199.197", "176.59.54.33", "95.26.73.25"],
+      [r[0] for r in _rows[:3]])
+
+_bucket = dict(zip(["0-10", "10-20", "20-30", "30-40", "40-50", "50-75",
+                    "75-100", "100+"], _counts))
+check("корзина 30-40 пуста — это и есть разрыв", _bucket["30-40"] == 0, _bucket)
+check("двое в корзине 40-50", _bucket["40-50"] == 2, _bucket)
+check("один в корзине 75-100", _bucket["75-100"] == 1, _bucket)
+check("сумма по корзинам сходится с числом адресов",
+      sum(_counts) == len(_rows), (sum(_counts), len(_rows)))
+
+# Вторая нода была чистой: там никого выше 22%.
+NODE2 = {
+    "188.162.143.41": {"down": 3.3 * _GB, "up": 99.2 * _MB},
+    "85.26.234.65":   {"down": 2.3 * _GB, "up": 281.1 * _MB},
+    "92.36.126.226":  {"down": 1.6 * _GB, "up": 254.2 * _MB},
+    "95.167.210.34":  {"down": 1.2 * _GB, "up": 258 * _MB},
+    "95.27.163.73":   {"down": 1.0 * _GB, "up": 167 * _MB},
+}
+_rows2, _counts2 = S.ratio_report(NODE2, 100 * _MB, 35)
+check("на чистой ноде никого выше порога",
+      all(r[3] < 35 for r in _rows2), [round(r[3]) for r in _rows2])
+check("и все корзины от 30 и выше пусты", sum(_counts2[3:]) == 0, _counts2)
+
+# Отдача без скачивания не должна делить на ноль.
+_rows3, _ = S.ratio_report({"x": {"down": 0, "up": 500 * _MB}}, 100 * _MB, 35)
+check("отдача без скачивания не роняет отчёт", _rows3[0][3] >= 1e8, _rows3)
+
+_src_mon = _io.open(os.path.join(SRC, "shaperctl.py"), encoding="utf-8").read()
+check("отчёт доступен ключом --ratio", '"--ratio"' in _src_mon)
+check("порог в пресете опущен до 35",
+      "--upload-ratio 35" in _io.open(os.path.join(SRC, "menu.sh"),
+                                      encoding="utf-8").read())
+
+print("\n\033[1mКолонка объёма в мониторе\033[0m")
+# В мониторе видно только скорость. «Сейчас 0.1» у того, кто за сутки вынес
+# двадцать гигабайт, и у того, кто зашёл на минуту, выглядит одинаково —
+# отличить их без накопленного объёма нельзя.
+_mon = _io.StringIO()
+_src = _io.open(os.path.join(SRC, "shaperctl.py"), encoding="utf-8").read()
+check("колонка объёма есть в шапке", "t('mon_total')" in _src)
+check("значение берётся из карт, а не считается заново",
+      'c.get("down", 0) + c.get("up", 0)' in _src)
+check("объём показывается человекочитаемо", "fmt_bytes(vol)" in _src)
+check("у колонки есть пояснение внизу", "mon_leg_total" in _src)
+check("подпись переведена на оба языка",
+      S.MSG["ru"]["mon_total"] != S.MSG["en"]["mon_total"])
+
+# Ширина линейки должна расти вместе с колонками, иначе таблица разъедется.
+_w = re.search(r"^    width = (\d+)$", _src, re.M)
+check("ширина монитора задана одним числом", _w is not None)
+check("и она увеличена под новую колонку", _w and int(_w.group(1)) >= 86,
+      _w.group(1) if _w else "—")
+
+print("\n\033[1mОтношение отдачи к скачиванию за сутки\033[0m")
+# Цифры взяты из живой статистики ноды на 6143 адреса. Порог обязан разделять
+# именно их, а не абстрактные примеры: между честными и раздающими там разрыв
+# от 21% до 59%, и подгонять правило под середину этого разрыва — не то же
+# самое, что придумать число.
+MB = 1e6
+RATIO_G = dict(S.GUARD_DEFAULT, upload_ratio_percent=50, upload_ratio_min_mb=300)
+
+
+def verdict(down_mb, up_mb, g=RATIO_G):
+    daily = {"x": {"active": 0, "up": up_mb * MB, "down": down_mb * MB}}
+    score, why = S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 0}, g, 10, 0, 0, daily)
+    return why
+
+
+check("сидер 379↓/916↑ пойман", verdict(379.4, 916.3) == ["ratio"])
+check("сидер 785↓/461↑ пойман", verdict(785.4, 460.9) == ["ratio"])
+check("честный 1000↓/213↑ не тронут", verdict(1000, 213) == [])
+check("честный 1200↓/204↑ не тронут", verdict(1200, 204.2) == [])
+check("честный 2200↓/371↑ не тронут", verdict(2200, 370.9) == [])
+check("мелочь 10↓/8↑ не тронута, хотя отношение 80%", verdict(10, 8) == [])
+check("отдача без скачивания — это тоже перекос", verdict(0, 500) == ["ratio"])
+check("ровно на пороге ловится", verdict(1000, 500) == ["ratio"])
+check("чуть ниже порога — нет", verdict(1000, 499) == [])
+check("ровно на нижней границе объёма ловится", verdict(100, 300) == ["ratio"])
+check("на грамм меньше — нет", verdict(100, 299.9) == [])
+
+check("по умолчанию признак выключен",
+      S.GUARD_DEFAULT["upload_ratio_percent"] == 0)
+check("и с умолчаниями сидер проходит мимо",
+      verdict(379.4, 916.3, S.GUARD_DEFAULT) == [])
+check("вес признака хватает на штраф в одиночку",
+      S.SIGNAL_WEIGHTS["ratio"] >= S.GUARD_DEFAULT["score_needed"])
+
+# Путь должен быть независимым: тихий сидер не набирает двустороннего счётчика
+# никогда, и если признак спрятать за обязательное условие, он не сработает.
+daily = {"x": {"active": 0, "up": 916.3 * MB, "down": 379.4 * MB}}
+score, why = S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 0}, RATIO_G, 10,
+                        0, 0, daily)
+check("работает при нулевом двустороннем счётчике", why == ["ratio"], why)
+check("у причины есть человекочитаемое название",
+      S.t("why_ratio") != "why_ratio")
 
 print("\n\033[1mГотовность к ограничению скачивания\033[0m")
 # Движок расставляет время отправки, но придержать пакет умеет только fq.

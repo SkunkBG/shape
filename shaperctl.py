@@ -186,6 +186,20 @@ MSG = {
         "tg_need_proxy": "похоже на блокировку — задай прокси",
         "tg_sent": "сообщение отправлено",
         "tg_test_text": "Проверка связи прошла успешно.",
+        "ratio_title": "Отношение отдачи к скачиванию",
+        "ratio_sub": "адресов с отдачей от {mb} МБ: {n}",
+        "ratio_top": "Верхние по отношению:",
+        "ratio_now": "порог сейчас: {p} процентов",
+        "ratio_off": "признак выключен: guard --upload-ratio 35",
+        "h_ratio": "показать распределение отношения отдачи вместо списка",
+        "h_ratio_mb": "не учитывать адреса с отдачей меньше стольких мегабайт",
+        "mon_total": "всего",
+        "mon_leg_total": "всего — прокачано с момента загрузки движка, вниз и вверх вместе",
+        "st_share": "отдал",
+        "st_share_hint": "выделено адресов: {n} — отдали больше {p} процентов от скачанного, это похоже на раздачу",
+        "h_upload_ratio": "отдал за сутки столько-то процентов от скачанного, 0 = признак выключен",
+        "h_upload_ratio_mb": "не считать отношение, пока отдача меньше стольких мегабайт",
+        "why_ratio": "за сутки отдал непропорционально много",
         "edt_off": "СКАЧИВАНИЕ НЕ ОГРАНИЧИВАЕТСЯ: на интерфейсе {kinds}, а не fq",
         "edt_fix": "только fq придерживает пакеты по времени отправки. Почините: modprobe sch_fq, затем systemctl restart shaper",
 
@@ -499,6 +513,20 @@ MSG = {
         "tg_need_proxy": "looks like blocking — set a proxy",
         "tg_sent": "message sent",
         "tg_test_text": "Connection test passed.",
+        "ratio_title": "Upload-to-download ratio",
+        "ratio_sub": "addresses with at least {mb} MB uploaded: {n}",
+        "ratio_top": "Highest by ratio:",
+        "ratio_now": "threshold now: {p} percent",
+        "ratio_off": "signal is off: guard --upload-ratio 35",
+        "h_ratio": "show the upload ratio distribution instead of the list",
+        "h_ratio_mb": "ignore addresses that uploaded less than this many megabytes",
+        "mon_total": "total",
+        "mon_leg_total": "total — transferred since the engine loaded, down and up together",
+        "st_share": "up/down",
+        "st_share_hint": "{n} address(es) highlighted — uploaded over {p} percent of what they downloaded, which looks like seeding",
+        "h_upload_ratio": "uploaded this percent of what was downloaded in a day, 0 = signal off",
+        "h_upload_ratio_mb": "ignore the ratio until upload reaches this many megabytes",
+        "why_ratio": "uploaded disproportionately much in 24h",
         "edt_off": "DOWNLOADS ARE NOT LIMITED: the interface has {kinds}, not fq",
         "edt_fix": "only fq holds packets until their departure time. Fix: modprobe sch_fq, then systemctl restart shaper",
 
@@ -932,6 +960,26 @@ GUARD_DEFAULT = {
     # капнутом канале столько же дают 4K-стриминг и загрузка игры.
     "download_gb_per_hour": 0,
 
+    # Третий отдельный путь: за сутки отдал больше, чем скачал.
+    #
+    # Тихий сидер не попадает ни под одно другое правило. Он отдаёт по
+    # полмегабита круглосуточно: мгновенные пороги для него слишком высоки, а
+    # абсолютный объём отдачи слишком мал — 900 мегабайт за сутки против
+    # порога в два гигабайта. При этом он отдал вдвое больше, чем скачал, а
+    # так не ведёт себя ничто, кроме раздачи.
+    #
+    # Почему именно отношение. У обычного клиента отдача — это подтверждения
+    # TCP, и их доля определяется размером пакета, а не поведением человека:
+    # 5-15% от скачанного, хоть на десяти мегабитах, хоть на гигабите. Выше
+    # половины оно не поднимается ни при каком скачивании.
+    #
+    # Нижний порог по объёму обязателен: у адреса с 10 МБ вниз и 8 МБ вверх
+    # отношение 80%, и это ничего не значит.
+    #
+    # 0 = признак выключен.
+    "upload_ratio_percent": 0,
+    "upload_ratio_min_mb": 300,
+
     # Период опроса карт. Каждый цикл — два дампа bpftool и разбор JSON;
     # на одноядерных VPS есть смысл поднять до 20-30 секунд, детект от этого
     # почти не страдает, потому что счётчики считаются в замерах, а не в секундах.
@@ -941,7 +989,7 @@ GUARD_DEFAULT = {
 # Веса признаков. Размер пакета — самый надёжный: он не зависит от скорости
 # канала, а у мобильных операторов отдача гуляет от 3 до 20 Мбит.
 SIGNAL_WEIGHTS = {"packet": 2, "peak": 1, "hours": 2, "upload": 1,
-                  "download": 3, "hourly": 3}
+                  "download": 3, "hourly": 3, "ratio": 3}
 
 # Веса признаков. Одной нагрузки (3) не хватает — нужен второй признак.
 # Так разовая большая закачка проходит мимо, а торрент набирает 7 из 7.
@@ -1186,9 +1234,87 @@ def read_users():
     return users
 
 
+RATIO_BUCKETS = (10, 20, 30, 40, 50, 75, 100)
+
+
+def ratio_report(users, floor_bytes, threshold):
+    """
+    Распределение отношения отдачи к скачиванию по корзинам.
+
+    Зачем отдельный вид. Порог между честным клиентом и раздающим не
+    вычисляется из теории — он виден как разрыв в распределении: у одних
+    отдача 2-17%, у других 45-88%, а между ними пусто. Но увидеть этот разрыв
+    по списку, отсортированному по объёму, нельзя: раздающих единицы на
+    тысячи адресов, и они разбросаны по всему списку.
+
+    Здесь же он виден сразу, и порог ставится по факту, а не на глаз.
+
+    floor_bytes отсекает шум: у адреса с 10 МБ вниз и 8 МБ вверх отношение
+    80%, и в статистике это только мешает.
+    """
+    rows = []
+    for ip, c in users.items():
+        up, down = c.get("up", 0), c.get("down", 0)
+        if up < floor_bytes:
+            continue
+        rows.append((ip, down, up, 1e9 if not down else up * 100.0 / down))
+    rows.sort(key=lambda r: -r[3])
+
+    counts = [0] * (len(RATIO_BUCKETS) + 1)
+    for _ip, _d, _u, r in rows:
+        for i, edge in enumerate(RATIO_BUCKETS):
+            if r < edge:
+                counts[i] += 1
+                break
+        else:
+            counts[-1] += 1
+    return rows, counts
+
+
+def print_ratio_report(cfg, users, floor_mb, top=10):
+    floor_bytes = float(floor_mb) * 1e6
+    threshold = cfg["guard"].get("upload_ratio_percent", 0) or 0
+    rows, counts = ratio_report(users, floor_bytes, threshold)
+
+    print(f"\n  {C['b']}{t('ratio_title')}{C['r']}")
+    print(f"  {C['gry']}{t('ratio_sub', n=len(rows), mb=f'{floor_mb:g}')}{C['r']}")
+    if not rows:
+        print()
+        return
+
+    peak = max(counts) or 1
+    edges = ["0"] + [str(e) for e in RATIO_BUCKETS]
+    for i, n in enumerate(counts):
+        if i < len(RATIO_BUCKETS):
+            label = f"{edges[i]}-{edges[i + 1]}"
+        else:
+            label = f"{RATIO_BUCKETS[-1]}+"
+        lo = 0 if i == 0 else RATIO_BUCKETS[i - 1]
+        hot = threshold and lo >= threshold
+        col = C["red"] if hot else (C["gry"] if not n else C["b"])
+        print(f"  {label:>8}  {col}{'█' * int(round(n * 24 / peak)) if n else ''}"
+              f"{'' if n else '·'} {n}{C['r']}")
+
+    print(f"\n  {C['gry']}{t('ratio_top')}{C['r']}")
+    for ip, down, up, r in rows[:top]:
+        col = C["red"] if threshold and r >= threshold else C["gry"]
+        shown = "∞" if r >= 1e8 else f"{r:.0f}%"
+        print(f"  {ip:<20}{fmt_bytes(down):>11} ↓{fmt_bytes(up):>11} ↑"
+              f"{col}{shown:>7}{C['r']}")
+    if threshold:
+        print(f"\n  {C['gry']}{t('ratio_now', p=threshold)}{C['r']}")
+    else:
+        print(f"\n  {C['gry']}{t('ratio_off')}{C['r']}")
+    print()
+
+
 def cmd_status(a):
     require_engine()
     cfg = load_config()
+
+    if getattr(a, "ratio", False):
+        print_ratio_report(cfg, read_users(), a.ratio_mb)
+        return
 
     first = read_users()
     if a.live:
@@ -1215,8 +1341,32 @@ def cmd_status(a):
             for ip, c, dl, ul, idle in rows], indent=2))
         return
 
-    rows.sort(key=(lambda x: (x[2] or 0) + (x[3] or 0)) if a.live
+    # Отношение отдачи к скачиванию — то, по чему раздающий виден сразу.
+    #
+    # Без него он теряется: сортировка идёт по объёму, а сидер по определению
+    # качает мало и проваливается в хвост из тысяч адресов. Живой пример —
+    # 379 МБ вниз против 916 МБ вверх стояли шестнадцатыми среди шести тысяч,
+    # хотя это единственная строка в списке, которая вообще не похожа на
+    # обычного клиента.
+    ratio_floor = float(cfg["guard"].get("upload_ratio_min_mb", 300)) * 1e6
+    ratio_percent = cfg["guard"].get("upload_ratio_percent", 0) or 50
+
+    def share(c):
+        """Отдача в процентах от скачанного. Отдачи почти нет — None."""
+        if c["up"] < ratio_floor / 10:
+            return None
+        return 1e9 if not c["down"] else c["up"] * 100.0 / c["down"]
+
+    def suspect(c):
+        sh = share(c)
+        return sh is not None and sh >= ratio_percent and c["up"] >= ratio_floor
+
+    # Подозрительные — наверх, остальные по объёму как раньше. Сортировать
+    # весь список по отношению нельзя: тогда вниз уедут те, кто действительно
+    # грузит канал, а список нужен и для этого тоже.
+    rows.sort(key=(lambda x: ((x[2] or 0) + (x[3] or 0))) if a.live
               else (lambda x: x[1]["down"] + x[1]["up"]), reverse=True)
+    rows.sort(key=lambda x: suspect(x[1]), reverse=True)
     active = [x for x in rows if x[4] < 60]
 
     limit = (f"{cfg['speed_mbps']:g} Mbit/s" if cfg["speed_mbps"] > 0
@@ -1230,20 +1380,32 @@ def cmd_status(a):
         print(f"  {C['gry']}{t('no_traffic')}{C['r']}\n")
         return
 
-    head = f"  {'IP':<30}{t('downloaded'):>12}{t('uploaded'):>12}"
+    head = (f"  {'IP':<30}{t('downloaded'):>12}{t('uploaded'):>12}"
+            f"{t('st_share'):>9}")
     head += f"{t('now'):>14}" if a.live else ""
     print(f"{C['gry']}{head}{C['r']}")
 
     shown = rows if a.full else rows[:a.top]
+    flagged = 0
     for ip, c, dl, _ul, idle in shown:
         mark = f"{C['gry']}·{C['r']}" if idle > 300 else " "
-        line = f" {mark}{ip:<30}{fmt_bytes(c['down']):>12}{fmt_bytes(c['up']):>12}"
+        sh = share(c)
+        if sh is None:
+            col = f"{C['gry']}{'—':>9}{C['r']}"
+        elif suspect(c):
+            flagged += 1
+            col = f"{C['red']}{min(sh, 9999):>8.0f}%{C['r']}"
+        else:
+            col = f"{min(sh, 9999):>8.0f}%"
+        line = f" {mark}{ip:<30}{fmt_bytes(c['down']):>12}{fmt_bytes(c['up']):>12}{col}"
         if a.live:
             line += f"{dl:>9.1f} Mbit/s"
         print(line)
 
     if not a.full and len(rows) > a.top:
         print(f"  {C['gry']}{t('more_ips', n=len(rows) - a.top)}{C['r']}")
+    if flagged:
+        print(f"  {C['red']}{t('st_share_hint', n=flagged, p=ratio_percent)}{C['r']}")
     print(f"  {C['gry']}{t('idle_note')}{C['r']}\n")
 
 
@@ -1344,7 +1506,7 @@ def cmd_monitor(a):
     prev, prev_t = read_users(), time.monotonic()
     pens, pens_at = load_penalties(), 0.0
     wl = whitelist_ips()
-    width = 78
+    width = 87
 
     print("\033[?25l", end="", flush=True)   # спрятать курсор
     try:
@@ -1370,8 +1532,10 @@ def cmd_monitor(a):
                     since.setdefault(ip, now_t)
                 else:
                     since.pop(ip, None)
+                c = cur.get(ip) or {}
                 rows.append((ip, dl, ul, sum(h) / len(h),
-                             now_t - since[ip] if ip in since else 0, up_pkt))
+                             now_t - since[ip] if ip in since else 0, up_pkt,
+                             c.get("down", 0) + c.get("up", 0)))
 
             active = [r for r in rows if r[1] + r[2] > 0.05]
             active.sort(key=lambda r: r[1] + r[2], reverse=True)
@@ -1402,13 +1566,13 @@ def cmd_monitor(a):
                            f" {t('mon_of')} {len(rows)}")
             out.append(f"  {C['gry']}{'─' * width}{C['r']}")
             out.append(f"{C['gry']}   {'IP':<21}{t('now'):>8}{t('mon_up'):>8}"
-                       f"{t('mon_pkt'):>7}{t('mon_avg'):>8}{t('mon_hold'):>7}"
-                       f"  {t('mon_share')}{C['r']}")
+                       f"{t('mon_pkt'):>7}{t('mon_avg'):>8}{t('mon_total'):>9}"
+                       f"{t('mon_hold'):>7}  {t('mon_share')}{C['r']}")
 
             if not active:
                 out.append(f"\n   {C['gry']}{t('mon_idle')}{C['r']}")
 
-            for ip, dl, ul, avg, hold, up_pkt in active[:a.top]:
+            for ip, dl, ul, avg, hold, up_pkt, vol in active[:a.top]:
                 share = dl / scale if scale > 0 else 0
                 col = load_color(share)
                 # Значок слева вместо колонки «держит»: в спокойный час она
@@ -1444,10 +1608,20 @@ def cmd_monitor(a):
                 else:
                     pkt_txt = f"{up_pkt:.0f}"
                     pkt_col = C["byel"] if up_pkt >= PKT_DATA_HINT else C["gry"]
+                # Сколько адрес прокачал всего, вниз и вверх вместе. В
+                # мониторе видно только скорость, а «сейчас 0.1» у того, кто
+                # за сутки вынес двадцать гигабайт, и у того, кто зашёл на
+                # минуту, выглядит одинаково.
+                vol_col = C["gry"]
+                if vol >= 20e9:
+                    vol_col = C["bred"]
+                elif vol >= 5e9:
+                    vol_col = C["byel"]
                 out.append(f" {mark} {ip:<21}{col}{dl:>8.1f}{C['r']}"
                            f"{ul_col}{ul:>8.1f}{C['r']}"
                            f"{pkt_col}{pkt_txt:>7}{C['r']}"
                            f"{C['gry']}{avg:>8.1f}{C['r']}"
+                           f"{vol_col}{fmt_bytes(vol):>9}{C['r']}"
                            f"{hold_col}{hold_txt:>7}{C['r']}"
                            f"  {col}{bar(dl, scale, 12)}{C['r']} {C['gry']}{pct}{C['r']}")
 
@@ -1457,6 +1631,7 @@ def cmd_monitor(a):
                        f"   ▪ {t('mon_leg_hold')}   ✓ {t('mon_leg_wl')}"
                        f"   ⊘ {t('mon_leg_limited')}{C['r']}")
             out.append(f"   {C['gry']}{t('mon_leg_pkt', n=PKT_DATA_HINT)}{C['r']}")
+            out.append(f"   {C['gry']}{t('mon_leg_total')}{C['r']}")
             print("\n".join(out), flush=True)
     except KeyboardInterrupt:
         pass
@@ -1931,6 +2106,8 @@ def cmd_guard(a):
         (a.upload_gb,  "upload_gb_per_day", 0.1, 1000),
         (a.download_gb, "download_gb_per_day", 0, 10000),
         (a.download_gbh, "download_gb_per_hour", 0, 1000),
+        (a.upload_ratio, "upload_ratio_percent", 0, 1000),
+        (a.upload_ratio_mb, "upload_ratio_min_mb", 1, 100000),
         (a.interval,   "watch_interval",     5, 60),
         (a.packet,     "packet_bytes",      100, 1500),
     )
@@ -2044,6 +2221,21 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
     gbh = g.get("download_gb_per_hour", 0)
     if gbh and hourly and sum(hourly.get(ip, {}).values()) >= gbh * 1e9:
         return max(g["score_needed"], SIGNAL_WEIGHTS["hourly"]), ["hourly"]
+
+    # Третий независимый путь: за сутки отдал непропорционально много.
+    #
+    # Считается от скачанного, а не в абсолюте, потому что тихого сидера
+    # выдаёт именно перекос: 916 МБ вверх против 379 МБ вниз. В абсолютных
+    # гигабайтах это мелочь, а по отношению — 242% там, где у обычного
+    # клиента 5-15%.
+    ratio = g.get("upload_ratio_percent", 0)
+    floor_bytes = float(g.get("upload_ratio_min_mb", 300)) * 1e6
+    if ratio and day.get("up", 0) >= floor_bytes:
+        # Нулевое скачивание при заметной отдаче — это тем более перекос,
+        # делить на ноль ради такого вывода незачем.
+        down = day.get("down", 0)
+        if not down or day["up"] * 100 >= down * ratio:
+            return max(g["score_needed"], SIGNAL_WEIGHTS["ratio"]), ["ratio"]
 
     iv = g.get("watch_interval", WATCH_INTERVAL)
     if both_streak < max(1, int(g["both_ways_min"] * 60 / iv)):
@@ -4776,6 +4968,9 @@ def build_parser():
     st.add_argument("--top", type=int, default=20)
     st.add_argument("--full", action="store_true", help=t("h_full"))
     st.add_argument("--json", action="store_true", help=t("h_json"))
+    st.add_argument("--ratio", action="store_true", help=t("h_ratio"))
+    st.add_argument("--ratio-mb", dest="ratio_mb", type=float, default=100,
+                    help=t("h_ratio_mb"))
     st.set_defaults(func=cmd_status)
 
     g = sub.add_parser("guard", help=t("h_guard"))
@@ -4793,6 +4988,10 @@ def build_parser():
     g.add_argument("--upload-gb", type=float, default=None, help=t("h_upload_gb"))
     g.add_argument("--download-gb", type=float, default=None, help=t("h_download_gb"))
     g.add_argument("--download-gbh", type=float, default=None, help=t("h_download_gbh"))
+    g.add_argument("--upload-ratio", dest="upload_ratio", type=float, default=None,
+                   help=t("h_upload_ratio"))
+    g.add_argument("--upload-ratio-mb", dest="upload_ratio_mb", type=float,
+                   default=None, help=t("h_upload_ratio_mb"))
     g.add_argument("--interval", type=int, default=None, help=t("h_watch_iv"))
     g.add_argument("--packet", type=int, default=None, help=t("h_packet"))
     g.add_argument("--require-packet", dest="require_packet",

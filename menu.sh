@@ -286,9 +286,45 @@ guard_preset() {
         echo -e "      ${D}${T[gp_fast_d1]}${N}"
         echo -e "      ${D}${T[gp_fast_d2]}${N}"
         echo
+        echo -e "  ${B}[5]${N} 🎯 ${T[gp_all]}"
+        echo -e "      ${D}${T[gp_all_d1]}${N}"
+        echo -e "      ${D}${T[gp_all_d2]}${N}"
+        echo
         echo -e "  ${B}[0]${N} ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
+            5) # Общий пресет: три пути к штрафу сразу, потому что торрент
+               # выглядит по-разному и одним правилом не ловится.
+               #
+               #   1. Быстрая раздача — мгновенно, по двустороннему условию с
+               #      обязательными крупными пакетами.
+               #   2. Тяжёлая закачка — по объёму за час, считанному от канала.
+               #   3. Тихий сидер — по суточному отношению отдачи к скачиванию.
+               #
+               # Третий путь нужен именно потому, что первые два его не видят:
+               # он отдаёт полмегабита круглосуточно, до мгновенных порогов не
+               # дотягивает, а 900 МБ отдачи меньше любого объёмного порога.
+               if [[ "$speed" == "0" ]]; then
+                   gbh=20
+                   echo -e "\n  ${Y}${T[gp_fast_nolimit]}${N}"
+                   echo -e "  ${D}${T[gp_fast_fixed]}${N}"
+               else
+                   gbh="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600*0.5}")"
+                   echo -e "\n  ${D}${T[gp_fast_calc]} ${B}${gbh} GB${N}"
+               fi
+               echo -e "\n  ${T[gp_will]}:"
+               echo -e "  ${D}  · ${T[gp_all_w1]}${N}"
+               echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}"
+               echo -e "  ${D}  · ${T[gp_all_w3]}${N}"
+               echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
+               echo
+               read -rp "  ${T[apply_q]}: " ans
+               [[ "$ans" =~ ^[NnНн] ]] && continue
+               "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
+                   --packet 600 --require-packet on --hours 4 --upload-gb 2 \
+                   --download-gb 100 --download-gbh "$gbh" \
+                   --upload-ratio 35 --upload-ratio-mb 300 \
+                   --penalty-mbps 1 --penalty-min 60 && pause; return ;;
             1) echo -e "\n  ${T[gp_will]}:"
                echo -e "  ${D}  · ${T[gp_p_hour]} ${B}3 GB${N}${D} — ${T[gp_m1]}${N}"
                echo -e "  ${D}  · ${T[gp_p_day]} 25 GB — ${T[gp_m2]}${N}"
@@ -303,7 +339,7 @@ guard_preset() {
                [[ "$ans" =~ ^[NnНн] ]] && continue
                "$CTL" guard --enable --score 3 --both-dl 50 --both-ul 15 --both-min 7 \
                    --packet 600 --hours 4 --upload-gb 2 \
-                   --download-gb 25 --download-gbh 3 \
+                   --download-gb 25 --download-gbh 3 --upload-ratio 0 \
                    --penalty-mbps 1 --penalty-min 240 && pause; return ;;
             4) # Порог в гигабайтах за час осмыслен только относительно канала:
                # 3 ГБ/час на десятимегабитной ноде — две трети её полосы, а на
@@ -328,11 +364,11 @@ guard_preset() {
                [[ "$ans" =~ ^[NnНн] ]] && continue
                "$CTL" guard --enable --score 3 --both-dl 50 --both-ul 15 --both-min 10 \
                    --packet 600 --hours 4 --upload-gb 2 \
-                   --download-gb 100 --download-gbh "$gbh" \
+                   --download-gb 100 --download-gbh "$gbh" --upload-ratio 0 \
                    --penalty-mbps 1 --penalty-min 60 && pause; return ;;
             2) "$CTL" guard --enable --score 3 --both-dl 50 --both-ul 15 --both-min 10 \
                    --packet 600 --hours 4 --upload-gb 2 \
-                   --download-gb 50 --download-gbh 0 \
+                   --download-gb 50 --download-gbh 0 --upload-ratio 0 \
                    --penalty-mbps 1 --penalty-min 60 && pause; return ;;
             3) # Порог отдачи опущен до 3% — это полтора мегабита при лимите 50,
                # то есть уровень слабой раздачи. Сам по себе такой порог поймал
@@ -349,7 +385,7 @@ guard_preset() {
                # его тоже проходит, но проваливается на размере пакета.
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
-                   --download-gb 0 --download-gbh 0 \
+                   --download-gb 0 --download-gbh 0 --upload-ratio 0 \
                    --penalty-mbps 1 --penalty-min 60 && pause; return ;;
             0|"") return ;;
         esac
@@ -930,15 +966,17 @@ screen_stats() {
         echo
         echo "  [1] ${T[stats_top]}"
         echo "  [2] ${T[stats_full]}"
-        echo "  [3] 📅 ${T[hist_title]}"
-        echo "  [4] 🎯 ${T[pers_title]}"
+        echo "  [3] 🔍 ${T[stats_ratio]}"
+        echo "  [4] 📅 ${T[hist_title]}"
+        echo "  [5] 🎯 ${T[pers_title]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
             1) title "${T[stats_title]}"; "$CTL" status; pause ;;
             2) title "${T[stats_title]}"; "$CTL" status --full; pause ;;
-            3) screen_history ;;
-            4) screen_personal ;;
+            3) title "${T[stats_ratio]}"; "$CTL" status --ratio; pause ;;
+            4) screen_history ;;
+            5) screen_personal ;;
             0|"") return ;;
         esac
     done

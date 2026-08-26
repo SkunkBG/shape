@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.21-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.24-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.21
+# Shape v3.24
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -141,16 +141,17 @@ address has been holding the load:
    Channel now     ↓   54.1   ↑  10.4 Mbit/s   ▂▃▄▅▅▆▇█████  last minute
    Limit per address  10 Mbit/s   for every IP    loading 58 of 377
   ────────────────────────────────────────────────────────────────────────────
-   IP                       now  upload packet     avg holding  share of limit
- ▪ 109.248.47.99           10.1     0.1    140     3.1  12 min  ████████████ 101%
- ▪ 91.78.0.72               9.8     0.2    150     9.6  44 min  ███████████▉  98%
-   91.79.7.124              6.4     0.2    130     1.1       —  ███████▊····  64%
- ✓ 203.0.113.40             5.1     0.4    160     4.8   5 min  ██████▏·····  51%
-   91.79.15.94              1.4     2.7   1310     1.7       —  █▊··········  14%
- ⊘ 89.253.46.46             1.0     0.0    120     4.3       —  █▎··········  10%
+   IP                       now  upload packet     avg    total holding  share of limit
+ ▪ 109.248.47.99           10.1     0.1    140     3.1  12.4 GB  12 min  ████████████ 101%
+ ▪ 91.78.0.72               9.8     0.2    150     9.6   8.1 GB  44 min  ███████████▉  98%
+   91.79.7.124              6.4     0.2    130     1.1   1.2 GB       —  ███████▊····  64%
+ ✓ 203.0.113.40             5.1     0.4    160     4.8   3.0 GB   5 min  ██████▏·····  51%
+   91.79.15.94              1.4     2.7   1310     1.7  22.8 GB       —  █▊··········  14%
+ ⊘ 89.253.46.46             1.0     0.0    120     4.3  412 MB        —  █▎··········  10%
   ────────────────────────────────────────────────────────────────────────────
    showing 20 of 68   ▪ holding over 30 s   ✓ whitelisted   ⊘ limited
    packet — average upload size in bytes; from 600 it is data, not acknowledgements
+   total — transferred since the engine loaded, down and up together
 ```
 
 The **packet** column is the average upload packet size. That is the figure
@@ -164,6 +165,12 @@ to 80%, red above. The upload column has its own scale: mobile carriers give a
 narrow uplink, so noticeable upload is the first sign of seeding. In the sample
 above 91.79.15.94 downloads only 1.4 Mbit/s but uploads 2.7 — that is what a
 torrent looks like.
+
+The **total** column is how much the address has transferred since the engine
+loaded, down and up together. Speed shows the present moment, and "0.1 Mbit"
+looks the same for someone who moved twenty gigabytes today as for someone who
+just connected. It turns yellow from 5 GB and red from 20. In the sample above
+91.79.15.94 downloads only 1.4 Mbit/s but has already moved 22.8 GB.
 
 The **avg** column is the average speed over roughly a minute, **holding** is
 how long the address has stayed above half the limit. Together they separate a
@@ -289,6 +296,74 @@ shaperctl.py guard --both-ul 3 --require-packet on
 ```
 
 Without it, lowering the upload floor below 10% is a bad idea.
+
+### The quiet seeder and the upload ratio
+
+Torrents look different in three ways, and no single rule catches them all:
+
+| How it looks | What catches it |
+| --- | --- |
+| Downloading and seeding at once | the two-way condition, instantly |
+| Downloading hard, seeding off | volume per hour or per day |
+| Seeding half a megabit for days | **the upload-to-download ratio** |
+
+The third one falls through everything else. Instant thresholds are too high
+for it, and the absolute upload volume is too small: 900 MB a day against a
+two-gigabyte threshold. Yet it uploaded 2.4 times what it downloaded — and
+nothing but seeding behaves that way.
+
+```bash
+shaperctl.py guard --upload-ratio 50 --upload-ratio-mb 300
+```
+
+Uploaded more than a third of what was downloaded in a day, with at least
+300 MB of upload — penalty. The path is independent: the two-way condition is not
+checked, otherwise a quiet seeder would never reach it.
+
+**Why the ratio and not gigabytes.** For an ordinary client, upload is TCP
+acknowledgements, and their share is set by packet size rather than by human
+behaviour: 5–15% of the download, at ten megabits or at a gigabit. It never
+rises above half, whatever the download. On a live node with six thousand
+addresses the gap looked like this:
+
+```
+916 MB / 379 MB  = 242%   ← seeding
+756 MB / 857 MB  =  88%   ← seeding
+489 MB / 1015 MB =  48%   ← seeding
+500 MB / 1.1 GB  =  45%   ← seeding
+280 MB / 1.1 GB  =  25%
+213 MB / 1.0 GB  =  21%
+…everyone else      2-17%
+```
+
+The threshold sits at **35%** — in the middle of the gap between 25% and 45%.
+
+### Where to see the distribution
+
+```bash
+shaperctl.py status --ratio
+```
+
+```
+Upload-to-download ratio
+addresses with at least 100 MB uploaded: 17
+    0-10  ████████████████████████ 8
+   10-20  ███████████████ 5
+   20-30  ███ 1
+   30-40  · 0
+   40-50  ██████ 2
+   50-75  · 0
+  75-100  ███ 1
+```
+
+The empty bucket in the middle is the gap. It shows where to put the threshold:
+every node has its own client profile, and there is no need to guess a number.
+In the menu: **Statistics → 🔍 Upload ratio**.
+
+The volume floor is mandatory: an address with 10 MB down and 8 MB up has a
+ratio of 80%, and that means nothing.
+
+The signal is **off** by default — enabled by a preset or by hand.
 
 ### Volume thresholds
 

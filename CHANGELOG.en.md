@@ -13,6 +13,181 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.24
+
+**The threshold drops to 35% on data from two nodes, and there is now a tool to
+keep tuning it without guessing.**
+
+### Why 50% turned out to be too lenient
+
+Fresh statistics from two servers. One was clean — nobody above 22%. The other
+had three:
+
+```
+95.32.199.197    857 MB ↓   756 MB ↑   = 88%
+176.59.54.33    1015 MB ↓   489 MB ↑   = 48%   ← the 50% threshold missed it
+95.26.73.25      1.1 GB ↓   500 MB ↑   = 45%   ← and this one
+188.66.34.198    1.1 GB ↓   280 MB ↑   = 25%
+…everyone else                           2-17%
+```
+
+Two sat right under the threshold. And that is not borderline noise: half a
+gigabyte of upload against a gigabyte of download cannot be acknowledgements —
+TCP produces 50-80 MB for that volume, not 500. They are seeding, they just
+download more than they upload.
+
+The picture is now clear: honest clients end at 25%, seeders start at 45%. The
+threshold moves to **35%** — the middle of the gap, with margin either way.
+
+### A tool instead of guesswork
+
+```bash
+shaperctl.py status --ratio
+```
+
+```
+Upload-to-download ratio
+addresses with at least 100 MB uploaded: 17
+    0-10  ████████████████████████ 8
+   10-20  ███████████████ 5
+   20-30  ███ 1
+   30-40  · 0
+   40-50  ██████ 2
+   50-75  · 0
+  75-100  ███ 1
+
+Highest by ratio:
+  95.32.199.197      857.2 MB ↓   756.3 MB ↑    88%
+  176.59.54.33      1014.7 MB ↓   489.1 MB ↑    48%
+  ...
+```
+
+The empty bucket in the middle is the border between honest clients and seeders.
+It used to be something you hunted for by eye in a list sorted by volume, where
+seeders are scattered among thousands of addresses. Now it is immediate.
+
+Every node has its own client profile, and the threshold is better set from
+observation. The 100 MB upload floor removes the noise: an address with 10 MB
+down and 8 MB up has a ratio of 80%, and in this picture it only gets in the way.
+
+In the menu: **Statistics → 🔍 Upload ratio**.
+
+### Tests
+
+12 new, on live figures from both nodes: the gap in the 30-40 bucket is visible,
+two in 40-50 and one in 75-100 are where they should be, the clean node stays
+clean, small-upload noise is filtered out, and upload without download does not
+divide by zero. 1000 in total.
+
+---
+
+## 3.23
+
+**A "total" column in the monitor: how much an address has moved, not just how
+fast it is going right now.**
+
+The monitor showed speed only. "0.1 Mbit now" looked identical for someone who
+had moved twenty gigabytes today and for someone who connected a minute ago —
+there was nothing to tell them apart without leaving for the statistics screen
+and hunting the address down there.
+
+```
+IP                       now  upload packet     avg    total holding  share of limit
+109.248.47.99           10.1     0.1    140     3.1  12.4 GB  12 min  ████████████ 101%
+91.79.15.94              1.4     2.7   1310     1.7  22.8 GB       —  █▊··········  14%
+```
+
+Counted down and up together, since the engine loaded — the same figure as in
+the statistics. Yellow from 5 GB, red from 20.
+
+The second row is exactly the case the column exists for: 1.4 Mbit, fourteen
+percent of the limit, nothing remarkable. And 22.8 GB behind it.
+
+### Tests
+
+7 new: the column is present, the value comes from the kernel maps rather than
+being recomputed, the label is translated, and the table width grew with it.
+988 in total.
+
+---
+
+## 3.22
+
+**The quiet seeder: a third kind of torrent that nothing caught.**
+
+### Who was slipping through
+
+From the live statistics of a node with 6143 addresses:
+
+```
+91.78.14.134   downloaded 379 MB   uploaded 916 MB   ← 2.4× more up than down
+91.78.46.46    downloaded 785 MB   uploaded 461 MB   ← 59%
+…everyone else                                          5-15%
+```
+
+The first fell under no rule at all. Do the arithmetic: even packing all that
+upload into four hours gives 0.5 Mbit up and about 0.2 down. The two-way
+condition demands at least 10% of the limit downward — one megabit. Instant
+thresholds never see it. Neither do volume ones: 916 MB against a two-gigabyte
+threshold.
+
+It passed between every sieve. And it uploaded more than twice what it
+downloaded — which nothing but seeding does.
+
+### The new signal: upload-to-download ratio
+
+```bash
+shaperctl.py guard --upload-ratio 50 --upload-ratio-mb 300
+```
+
+Uploaded more than half of the download in a day, with at least 300 MB of
+upload — penalty. The path is independent of the two-way condition: otherwise a
+quiet seeder would never reach it.
+
+**Why a ratio and not gigabytes.** For an ordinary client, upload is TCP
+acknowledgements, and their share is set by packet size rather than by the
+person: 5–15% of the download, at ten megabits or at a gigabit. It never rises
+above half, whatever the download. Between 21% and 59% in the data above lies a
+gap, and a 50% threshold sits in the middle of it with a twofold margin either
+way.
+
+The volume floor is mandatory: an address with 10 MB down and 8 MB up has a
+ratio of 80%, and that means nothing.
+
+The signal is **off** by default.
+
+### Preset [5]: everything at once
+
+You used to have to choose: the torrent preset caught seeding but ignored
+volume; the volume presets caught downloads but let seeders through. The new
+preset turns on all three paths:
+
+* instant seeding — the two-way condition with mandatory large packets;
+* heavy downloading — an hourly threshold derived from the channel;
+* the quiet seeder — the daily upload ratio.
+
+The other presets now switch the ratio off explicitly: a preset must define the
+whole state, or settings from another one would linger inside it.
+
+### A column in the statistics
+
+`91.78.14.134` sat sixteenth among six thousand addresses — the list is sorted
+by volume, and a seeder downloads little by definition. Spotting it by eye was
+nearly impossible.
+
+The statistics now carry an **up/down** column; suspicious rows are highlighted
+in red and lifted to the top. The rest stay sorted by volume: the list is also
+there to show who loads the channel.
+
+### Tests
+
+22 new: the signal against all seven addresses from the live statistics, the
+threshold and volume bounds from both sides, independence from the two-way
+counter, the composition of the preset, and that the other presets switch the
+ratio off. 981 in total.
+
+---
+
 ## 3.21
 
 **A follow-up to 3.20: attaching to `mq` queues does not always work, and then a
