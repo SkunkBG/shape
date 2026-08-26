@@ -186,6 +186,14 @@ MSG = {
         "tg_need_proxy": "похоже на блокировку — задай прокси",
         "tg_sent": "сообщение отправлено",
         "tg_test_text": "Проверка связи прошла успешно.",
+        "tg_pen_head": "🚦 <b>Ограничение</b>",
+        "tg_pen_addr": "📍 Адрес: <code>{ip}</code>",
+        "tg_pen_speed": "🐌 Скорость снижена до {mbps} Мбит/с на {d}",
+        "tg_pen_why": "Причина: <i>{why}</i>",
+        "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
+        "tg_ev": "События  ",
+        "tg_dg": "Сводка   ",
+        "tg_ev_off_hint": "— сообщения о штрафах не приходят",
         "pn_who_found": "адрес {ip} принадлежит:",
         "pn_who_name": "Имя",
         "pn_who_seen": "последний раз панель видела его",
@@ -247,7 +255,7 @@ MSG = {
         "pn_scan_found": "Найдено раздающих: {n}",
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
-        "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b> · {node}",
+        "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b>",
         "pn_card_name": "👤 <b>{name}</b>",
         "pn_card_tg": "🆔 Telegram: <code>{id}</code>",
         "pn_card_panel": "🔑 ID в панели: <code>{id}</code>",
@@ -524,6 +532,14 @@ MSG = {
         "tg_need_proxy": "looks like blocking — set a proxy",
         "tg_sent": "message sent",
         "tg_test_text": "Connection test passed.",
+        "tg_pen_head": "🚦 <b>Limited</b>",
+        "tg_pen_addr": "📍 Address: <code>{ip}</code>",
+        "tg_pen_speed": "🐌 Speed cut to {mbps} Mbit/s for {d}",
+        "tg_pen_why": "Reason: <i>{why}</i>",
+        "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
+        "tg_ev": "Events   ",
+        "tg_dg": "Digest   ",
+        "tg_ev_off_hint": "— penalty messages are not sent",
         "pn_who_found": "address {ip} belongs to:",
         "pn_who_name": "Name",
         "pn_who_seen": "the panel last saw it at",
@@ -585,7 +601,7 @@ MSG = {
         "pn_scan_found": "Sharing found: {n}",
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
-        "pn_msg_head": "🔎 <b>Looks like a shared subscription</b> · {node}",
+        "pn_msg_head": "🔎 <b>Looks like a shared subscription</b>",
         "pn_card_name": "👤 <b>{name}</b>",
         "pn_card_tg": "🆔 Telegram: <code>{id}</code>",
         "pn_card_panel": "🔑 Panel ID: <code>{id}</code>",
@@ -2617,16 +2633,42 @@ def tg_send(text, cfg=None, force=False):
         return False, scrub(f"{e}{hint}", {"telegram": tg})
 
 
+def offender_card(tg, subject, head):
+    """
+    Шапка сообщения о нарушителе: кто это, одинаково для всех поводов.
+
+    Раздача подписки и превышение по трафику — разные проверки, но вопрос у
+    человека, который читает сообщение, один и тот же: кто и за что. Поэтому
+    шапка общая, а различается только то, что ниже.
+
+    Идентификаторы стоят отдельными строками и в <code>: в Telegram такой
+    текст копируется одним касанием, а искать человека в панели придётся
+    именно по ним.
+    """
+    subject = subject or {}
+    out = [f"{head} · <b>{node_label(tg)}</b>", ""]
+    if subject.get("label"):
+        out.append(t("pn_card_name", name=html.escape(str(subject["label"]))))
+    if str(subject.get("telegram_id") or "").strip():
+        out.append(t("pn_card_tg", id=html.escape(str(subject["telegram_id"]))))
+    if str(subject.get("user_id") or "").strip():
+        out.append(t("pn_card_panel", id=html.escape(str(subject["user_id"]))))
+    if len(out) == 2:          # ничего, кроме заголовка, не нашлось
+        out.append(t("pn_card_unknown"))
+    out.append("")
+    return out
+
+
 def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None):
     """Событие: адрес получил ограничение."""
     tg = cfg["telegram"]
     if not tg.get("enabled") or not tg.get("events"):
         return
     why = ", ".join(t("why_" + r) for r in reasons) or "—"
-    lines = [f"🚦 <b>{node_label(tg)}</b>",
-             f"{t('tg_limited')} {subject_text(subject, ip)} → {mbps:g} Mbit/s "
-             f"{t('guard_for')} {fmt_hold(minutes * 60)}",
-             f"<i>{why}</i>"]
+    lines = offender_card(tg, subject, t("tg_pen_head"))
+    lines.append(t("tg_pen_addr", ip=html.escape(ip)))
+    lines.append(t("tg_pen_speed", mbps=f"{mbps:g}", d=fmt_hold(minutes * 60)))
+    lines.append(t("tg_pen_why", why=why))
     # За одним адресом может сидеть несколько человек — предупреждаем прямо
     # в сообщении, чтобы никто не обвинил не того.
     if subject and subject.get("shared"):
@@ -2980,7 +3022,16 @@ def panel_actions(p):
     опечатка в конфиге не повод останавливать сторож.
     """
     raw = str(p.get("action") or "").replace(";", ",").split(",")
-    return {w.strip().lower() for w in raw if w.strip().lower() in PANEL_ACTIONS}
+    out = {w.strip().lower() for w in raw if w.strip().lower() in PANEL_ACTIONS}
+    # Уведомление включено всегда и выключить его нельзя.
+    #
+    # Действие без уведомления — это то, что невозможно объяснить: соединения
+    # оборваны, человек жалуется, а в переписке ни следа. Именно так и вышло
+    # на живой ноде с action=drop: Shape молча рвал коннекты, и понять, кого
+    # и за что, было нечем. Что делать с нарушителем, решает человек, но
+    # узнать о нём он должен в любом случае.
+    out.add("notify")
+    return out
 
 
 def token_expiry(token):
@@ -3491,18 +3542,9 @@ def panel_notify(cfg, rec):
     person = rec.get("person") or {}
     minutes = max(1, int(p.get("limit_min") or 60))
 
-    # Карточка построена под одну задачу: увидеть сообщение и сразу пойти
-    # разбираться в панели. Поэтому оба идентификатора — отдельными строками и
-    # в <code>: в Telegram такой текст копируется одним касанием, а искать
-    # человека всё равно придётся по ним.
-    lines = [t("pn_msg_head", node=node_label(tg)), ""]
-    name = person.get("name")
-    if name:
-        lines.append(t("pn_card_name", name=html.escape(name)))
-    if person.get("telegram_id"):
-        lines.append(t("pn_card_tg", id=html.escape(person["telegram_id"])))
-    lines.append(t("pn_card_panel", id=html.escape(str(rec["user_id"]))))
-    lines.append("")
+    lines = offender_card(tg, {"label": person.get("name"),
+                               "telegram_id": person.get("telegram_id"),
+                               "user_id": rec["user_id"]}, t("pn_msg_head"))
     lines.append(t("pn_msg_ips", n=rec["count"],
                    w=max(1, int(p.get("window_min") or 10))))
 
@@ -3914,6 +3956,19 @@ def cmd_telegram(a):
         print(f"  {t('tg_chat')}    : {tg['chat_id'] or '—'}"
               f"{'  · ' + t('tg_thread') + ' ' + str(tg['thread_id']) if tg['thread_id'] else ''}")
         print(f"  {t('tg_proxy')}   : {tg['proxy'] or t('tg_direct')}")
+
+        # События и сводка — отдельные переключатели, и выключенные они
+        # молчат: штрафы выдаются, а сообщений нет. Раньше их не было видно
+        # на этом экране вообще, и «почему не приходит» превращалось в
+        # угадайку. Выключенные события подсвечиваем: именно они отвечают за
+        # сообщения о штрафах, ради которых Telegram обычно и включают.
+        if tg.get("events"):
+            print(f"  {t('tg_ev')}  : {C['grn']}{t('guard_on')}{C['r']}")
+        else:
+            print(f"  {t('tg_ev')}  : {C['yel']}{t('guard_off')}{C['r']}"
+                  f"  {C['gry']}{t('tg_ev_off_hint')}{C['r']}")
+        print(f"  {t('tg_dg')}  : "
+              + (t("guard_on") if tg.get("daily") else t("guard_off")))
         print(f"  {t('tg_at')}   : {tg.get('digest_at', '09:00')}")
         if tg.get("backup"):
             day = t("dow%d" % max(1, min(7, int(tg.get("backup_day", 1) or 1))))

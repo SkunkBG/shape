@@ -275,6 +275,48 @@ except SystemExit:
 except Exception as exc:
     check("guard --help отрабатывает", False, repr(exc))
 
+print("\n\033[1mПереключатели Telegram видны на экране\033[0m")
+# Выключённые «события» молчат: штраф выдан, ограничение стоит, а сообщения
+# нет. На экране настроек этого переключателя не было вообще, и «почему не
+# приходит» превращалось в угадайку. Тот же класс ошибки, что и с признаком
+# отношения: настройка есть, влияет, а увидеть её негде.
+import contextlib as _cx2
+
+
+def _tg_show(**kw):
+    S.save_config({"telegram": dict(S.TG_DEFAULT, enabled=True,
+                                    token="1:aa", chat_id="-100", **kw)})
+    buf = _io.StringIO()
+    with _cx2.redirect_stdout(buf):
+        S.cmd_telegram(argparse.Namespace(action="show"))
+    return buf.getvalue()
+
+
+_off = _tg_show(events=False)
+_on = _tg_show(events=True)
+check("выключенные события видны", S.t("tg_ev") in _off, _off)
+check("и объяснено, чем это грозит", S.t("tg_ev_off_hint") in _off, _off)
+check("включённые события тоже показаны", S.t("tg_ev") in _on)
+check("при включённых предупреждения нет", S.t("tg_ev_off_hint") not in _on, _on)
+check("сводка показана", S.t("tg_dg") in _on, _on)
+check("подписи переведены на оба языка",
+      S.MSG["ru"]["tg_ev"] != S.MSG["en"]["tg_ev"]
+      and S.MSG["ru"]["tg_dg"] != S.MSG["en"]["tg_dg"])
+
+# Сама причина молчания: без events сообщение не отправляется вовсе.
+_sent = []
+_real_send = S.tg_send
+S.tg_send = lambda text, cfg=None, force=False: (_sent.append(text), (True, "ok"))[1]
+S.tg_penalty({"telegram": dict(S.TG_DEFAULT, enabled=True, events=False)},
+             "1.2.3.4", 1, 60, ["ratio"])
+check("без events сообщение о штрафе не уходит", _sent == [], _sent)
+S.tg_penalty({"telegram": dict(S.TG_DEFAULT, enabled=True, events=True)},
+             "1.2.3.4", 1, 60, ["ratio"])
+check("с events уходит", len(_sent) == 1, _sent)
+check("и причина в тексте человеческая",
+      _sent and S.t("why_ratio") in _sent[0], _sent)
+S.tg_send = _real_send
+
 print("\n\033[1mПодпись нарушителя в сообщении\033[0m")
 # Сообщение о штрафе должно давать хоть что-то, за что можно зацепиться в
 # панели. Номер там есть почти всегда — он приходит вместе со списком

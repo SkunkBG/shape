@@ -261,7 +261,9 @@ check("пробелы и регистр", S.panel_actions({"action": " Notify , 
       {"notify", "drop"})
 check("неизвестное молча отбрасывается",
       S.panel_actions({"action": "notify,ерунда"}) == {"notify"})
-check("пусто — значит ничего", S.panel_actions({"action": ""}) == set())
+# Уведомление добирается всегда — подробности в разделе 39.
+check("пусто — остаётся хотя бы уведомление",
+      S.panel_actions({"action": ""}) == {"notify"})
 
 print("\n\033[1m7. Срок жизни токена читается из него самого\033[0m")
 
@@ -885,6 +887,60 @@ check("без права на пользователей адрес всё ра�
       "741" in out, out)
 check("и сказано, чего не хватает",
       "users:read" in out, out)
+
+print("\n\033[1m39. Уведомление нельзя выключить\033[0m")
+# Живой случай: action=drop без notify. Соединения рвались молча, человек
+# жаловался, а в переписке ни следа — понять, кого и за что, было нечем.
+# Решение о судьбе нарушителя за человеком, но узнать о нём он должен всегда.
+check("одиночный drop добирает уведомление",
+      S.panel_actions({"action": "drop"}) == {"drop", "notify"})
+check("одиночный block тоже",
+      S.panel_actions({"action": "block"}) == {"block", "notify"})
+check("пустое действие — всё равно уведомление",
+      S.panel_actions({"action": ""}) == {"notify"})
+check("мусор не проносит лишнего",
+      S.panel_actions({"action": "ерунда"}) == {"notify"})
+
+drop_state()
+fresh_cache()
+sent.clear(); docs.clear()
+PANEL["drops"] = []
+PANEL["directory"] = {"741": {"id": 741, "username": "Bashou",
+                             "telegramId": 637181482}}
+PANEL["users"] = make_users({741: 25}, age=60)
+S.read_users = lambda: {}
+cfg_silent = {"panel": conf(action="drop"),
+              "telegram": dict(S.TG_DEFAULT, enabled=True, token="x", chat_id="1")}
+S.panel_scan(cfg_silent)
+check("соединения оборваны", len(PANEL["drops"]) == 1, PANEL["drops"])
+check("и сообщение всё равно ушло", len(sent) == 1, sent)
+check("в нём есть имя", any("Bashou" in x for x in sent), sent)
+check("и номер в панели", any("741" in x for x in sent), sent)
+
+print("\n\033[1m40. Карточка одинакова для раздачи и для штрафа\033[0m")
+# Поводы разные, вопрос у читающего один: кто и за что. Значит и шапка одна.
+who = {"label": "Bashou", "telegram_id": "637181482", "user_id": "741"}
+tg_cfg = dict(S.TG_DEFAULT, enabled=True, events=True, node_name="Erebor")
+sent.clear()
+S.tg_penalty({"telegram": tg_cfg}, "91.78.46.46", 1, 60, ["ratio"], who)
+pen = sent[-1]
+share = "\n".join(S.offender_card(tg_cfg, who, S.t("pn_msg_head")))
+for part in ("Bashou", "637181482", "741", "Erebor"):
+    check(f"в обоих есть {part}", part in pen and part in share, (pen, share))
+check("в штрафе указан адрес", "91.78.46.46" in pen, pen)
+check("в штрафе указана скорость и срок", "1 Мбит" in pen or "1 Mbit" in pen, pen)
+check("в штрафе указана причина", S.t("why_ratio") in pen, pen)
+check("идентификаторы копируются касанием",
+      "<code>637181482</code>" in pen and "<code>741</code>" in pen, pen)
+
+# Нода без панели: сообщение обязано сказать, что личность неизвестна, а не
+# выглядеть так, будто мы просто забыли имя.
+sent.clear()
+S.tg_penalty({"telegram": tg_cfg}, "91.78.46.46", 1, 60, ["hourly"])
+check("без панели сказано, что кто это — неизвестно",
+      S.t("pn_card_unknown") in sent[-1], sent[-1])
+check("но адрес и причина на месте",
+      "91.78.46.46" in sent[-1] and S.t("why_hourly") in sent[-1], sent[-1])
 
 srv.shutdown()
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")

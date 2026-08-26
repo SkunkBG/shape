@@ -13,6 +13,264 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.32
+
+**Five presets became two, named by node type rather than by mechanism.**
+
+### Choosing between five was not possible
+
+"Mobile", "universal", "torrents", "fast", "everything" — they differed by their
+internals, not by the node they suit. To choose you had to keep in your head how
+`both-dl` differs from `download-gbh`.
+
+And the job is always the same: torrents and shared subscriptions. Only the
+channel differs, and what sits behind it.
+
+```
+  [1] 📱 Phones
+      mobile internet, usually 10 Mbit per address
+      3 GB per hour · sharing from 20 addresses
+
+  [2] 🖥  Home internet
+      wifi and cable, usually 50–100 Mbit per address
+      half the channel per hour · sharing from 10 addresses
+```
+
+Both catch the same things: torrents by two-way traffic, quiet seeders by the
+share of upload over a day, volume per hour and per day, shared subscriptions by
+the number of addresses. The penalty is shared too — 1 Mbit/s for an hour, and
+sharing gets dropped.
+
+### The hour is counted differently, and that is the point
+
+Three gigabytes an hour is a figure computed for a phone: 1080p fits twice over,
+and a download hits the threshold in forty minutes. It is deliberately not
+derived from the channel — mobile nodes all have roughly the same bandwidth, and
+the threshold here is about what a person needs, not what fits in the pipe.
+
+On a 100 Mbit node those same three gigabytes are one film, and the threshold
+would catch everyone. So at home it is derived from the channel: **half the
+bandwidth per hour**. Video is untouched, a bulk transfer is caught. The day is
+eight such hours; holding half the channel for a third of a day is no longer
+"watched a movie".
+
+If no speed is set on the node, the home preset takes 20 GB per hour and 160 per
+day, and says so on screen.
+
+### The sharing threshold is looser for phones
+
+20 addresses against 10. A mobile carrier changes the address several times an
+hour, and a dozen within the window is possible for an honest person. At home
+there is one address for the whole family, and ten at once is already sharing.
+
+### A preset configures both halves
+
+A preset used to touch only the auto-limiter, while sharing had to be enabled
+separately on the panel screen — and it was forgotten. The preset now sets the
+address threshold and the action (drop connections) as well.
+
+Manual settings are untouched: the auto-limit screen and the panel screen still
+change every parameter individually.
+
+### Also
+
+* Both READMEs rewritten around two presets.
+* Preset shell tests rewritten — 21 checks instead of scattered ones: that
+  there are exactly two presets, that the old keys are gone from both `menu.sh`
+  and `lang.sh`, that both catch torrents, quiet seeders and sharing, that the
+  address threshold is 20 against 10, that the hour is fixed for one and derived
+  for the other, and that the day is exactly eight hours.
+* 24 unused language keys removed, 16 new ones added in both languages.
+
+---
+
+## 3.31
+
+**Two mechanisms stopped looking like one, and the action is now picked from a
+list.**
+
+### They were confused, and fairly so
+
+"Preset [5] works for both torrents and sharing" — that is how it looked, and
+the screen explained nothing. They are in fact different things that only meet
+in Telegram:
+
+| What is caught | By what | What it does | Panel needed |
+| --- | --- | --- | --- |
+| Torrents, hourly and daily volume | Auto-limit, preset [5] | throttles | no |
+| Shared subscription | Remnawave panel | drops connections | yes |
+
+The auto-limiter counts traffic on its own and works on any node. Sharing cannot
+be found without the panel at all: a node sees addresses but does not know that
+three hundred of them belong to one person.
+
+The panel screen now says so on its first line: "Torrents and volume are a
+different thing: Auto-limit."
+
+### The action is chosen, not typed
+
+It used to be `notify · limit · block · drop — or several, comma-separated`,
+entered as text. Half the options were meaningless: `notify` is always on, and
+`block` is already `limit` plus `drop`.
+
+Now there are four mutually exclusive items, each explained:
+
+```
+Notification always goes out — that part is not optional.
+Here you choose only what happens to the offender besides it.
+
+[1] Only report
+    a card in Telegram, nothing else. Good for watching first.
+[2] Drop connections   — recommended for sharing
+    the panel disconnects every address of theirs on this node
+[3] Throttle the speed
+    a local penalty on the addresses this node can see
+[4] Cut off access
+    minimal speed plus a drop — the internet appears to be gone
+```
+
+On the command line `--action-set` still accepts comma-separated combinations:
+there it is occasionally useful, in the menu it only got in the way.
+
+### Small but noticeable
+
+"Penalty: 1 Mbit/s · 60 min" was shown always, including for the "drop" action
+where speed is irrelevant. That line now appears only when the chosen action
+actually throttles.
+
+### Tests
+
+10 new: the action is picked from a list, every item has an explanation, the
+recommendation is marked, the penalty speed is shown only when it throttles, and
+the panel screen states what it does not handle. 1084 in total.
+
+---
+
+## 3.30
+
+**Notification became mandatory, and offender messages became identical.**
+
+A shared subscription and a traffic overrun are different checks, but whoever
+reads the message asks the same thing: **who, and what for**. The decision is
+yours to make, and for that you need the name, the identifiers and the reason —
+whichever check fired.
+
+### Notification can no longer be switched off
+
+`action=drop` without `notify` meant silent drops: connections cut, the person
+complains, and nothing in the log. There was no way to tell who or why.
+
+`notify` is now added automatically to any set of actions. What to do with an
+offender is still your choice: `drop` cuts connections, `limit` throttles,
+`block` cuts off access. But you get told about them either way.
+
+### A shared card
+
+There used to be two different messages. Now both start the same way:
+
+```
+🚦 Limited · Erebor
+
+👤 Bashou
+🆔 Telegram: 637181482
+🔑 Panel ID: 741
+
+📍 Address: 91.78.46.46
+🐌 Speed cut to 1 Mbit/s for 1.0 h
+Reason: uploaded disproportionately much in 24h
+```
+
+```
+🔎 Looks like a shared subscription · Erebor
+
+👤 Bashou
+🆔 Telegram: 637181482
+🔑 Panel ID: 741
+
+Simultaneous addresses: 287 over the last 10 min
+Connections dropped: 287
+```
+
+The identifiers copy with a single tap in both.
+
+**If the panel is not set up on the node**, the message says so outright:
+"identity unknown: the panel link is not set up on this node". The line used to
+be simply absent, which read as "the name was not found" — while there was
+nowhere to look for it.
+
+### Setting it up for this scenario
+
+Sharing — drop connections at once, throttling is pointless, the addresses come
+in hundreds:
+
+```bash
+shaperctl.py panel set --action-set drop --threshold 20
+```
+
+Torrents and volume — throttle; that is the watchdog's job, configured by preset
+**[5]**. Notifications with the reason arrive in both cases on their own.
+
+### Tests
+
+18 new: notification is added to any action, the drop still happens, the card is
+identical for both causes, identifiers are copyable, and on a node without the
+panel the message says plainly that the identity is unknown. 1074 in total.
+
+---
+
+## 3.29
+
+**The switch that silently disables penalty messages is now visible.**
+
+The ratio signal fired on a node: `95.32.199.197` limited, present in the
+"Limited addresses" list, reason stated. And silence in Telegram.
+
+The cause is a separate `events` switch. It governs penalty messages, and when
+off it stays quiet: the limit is applied, the notification is not sent.
+
+The `telegram show` screen did not mention it at all:
+
+```
+Notifications : enabled
+Node label : Erebor
+Chat : -100…
+Proxy : direct
+Digest time : 09:00
+```
+
+Everything enabled, everything green — and no messages. Nothing to explain why.
+
+### How it looks now
+
+```
+Notifications : enabled
+Node label : Erebor
+Chat : -100…
+Proxy : direct
+Events : disabled  — penalty messages are not sent
+Digest : enabled
+Digest time : 09:00
+```
+
+Disabled events are highlighted and explained. One command turns them on:
+
+```bash
+shaperctl.py telegram set --events on
+```
+
+This is the same class of mistake as the ratio signal two releases ago: a
+setting exists, changes behaviour, and there is nowhere to see it. I am going
+through the remaining screens with that in mind.
+
+### Tests
+
+9 new: the switches are visible in both states, the warning appears only when
+events are off, the labels are translated; separately — that without `events` a
+penalty message truly is not sent, and with them it is, carrying a
+human-readable reason. 1056 in total.
+
+---
+
 ## 3.28
 
 **`panel who` — whose address is this, in one command.**

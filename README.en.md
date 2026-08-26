@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.28-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.32-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.28
+# Shape v3.32
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -397,31 +397,40 @@ hour — half of a three-gigabyte threshold — so you can watch all day.
 That is why the hourly rule should be the main one and the daily one should be
 kept high, purely as a backstop.
 
-### Presets
+### Presets: two, by node type
 
-Menu → Auto-limit → **[12] Ready-made presets**. They set every number at once,
-after which any of them can still be tuned by hand.
+Both do the same job — torrents and shared subscriptions. Only the channel
+differs, and what sits behind it.
 
-**Phone-only node** — 3 GB per hour, 25 GB per day, penalty 1 Mbit/s for 4
-hours. Modelled minute by minute over a full day:
+| | 📱 Phones | 🖥 Home internet |
+| --- | --- | --- |
+| Per-address limit | usually 10 Mbit | usually 50–100 Mbit |
+| Volume per hour | **3 GB** fixed | **half the channel** |
+| Volume per day | 25 GB | eight hourly thresholds |
+| Sharing: addresses | over 20 | over 10 |
+| Torrents | two-way traffic with large upload packets | same |
+| Quiet seeders | uploaded over 35% of the download in a day | same |
+| Penalty | 1 Mbit/s for 60 min | same |
+| Sharing | connections dropped | same |
 
-| Scenario | Per day | Penalties |
-|---|---|---|
-| YouTube 1080p, 10 hours straight | 18.0 GB | 0 |
-| YouTube 720p, all day | 16.9 GB | 0 |
-| TikTok all day | 13.5 GB | 0 |
-| YouTube 4K for two hours | 7.2 GB | 1 |
-| Game update, 3 hours | 6.5 GB | 1 |
-| Downloading around the clock | 25.7 GB | 6 |
+**Why phones get a number and homes get a share.** Three gigabytes an hour is a
+figure computed for a phone: 1080p fits twice over, and a download hits the
+threshold in forty minutes. On a 100 Mbit node those same three gigabytes are
+one film — the threshold would catch everyone. So at home it is derived from the
+channel: half the bandwidth for an hour leaves video alone and still catches a
+bulk transfer.
 
-Without limits the last one would have taken 108 GB in the same day.
+The daily figure at home is eight such hours. Holding half the channel for a
+third of a day is no longer "watched a movie".
 
-**Universal** — 50 GB per day, hourly threshold off. For nodes with generous
-traffic.
+**The sharing threshold is looser for phones.** A mobile carrier changes the
+address several times an hour, and a dozen addresses within the window is
+possible for an honest person. At home there is one address for the whole
+family, and ten at once is already sharing.
 
-**Torrents only** — volume thresholds off, only two-way load is used. For
-unmetered channels.
-
+A preset configures **both the auto-limiter and sharing** at once. Leaving the
+other half of the policy to a different screen meant forgetting it — which is
+exactly what happened.
 ### Fast node: half the channel for an hour
 
 The fourth preset differs from the rest in that it **does not set the hourly
@@ -957,7 +966,7 @@ own UUIDs, and those will not work here.
 
 | Action | Effect |
 | --- | --- |
-| `notify` | a Telegram card: who, how many addresses, examples |
+| `notify` | a Telegram card: who, how many addresses, examples. **Always on** |
 | `limit` | a local penalty on the addresses this node can see itself |
 | `block` | cut off access to the node: minimal speed plus a connection drop |
 | `drop` | drop connections through the panel — by address, on this node only |
@@ -969,6 +978,11 @@ shaperctl.py panel set --action-set notify,limit --mbps 1 --minutes 60
 ```
 
 Only `notify` is on by default.
+
+**Notification cannot be switched off.** An action without it is the one thing
+you cannot explain afterwards: connections dropped, the person complains, and
+nothing in the log. What to do with an offender is your call, but you must learn
+about them either way.
 
 > **Dropping is not a punishment.** The client reconnects a second later. As a
 > "we see you" signal it works; as a measure it does not. `limit` is what bites:

@@ -271,127 +271,101 @@ PY
 # Каждый пресет — один вызов shaperctl со всеми флагами сразу. Ручная
 # настройка остаётся: пресет только расставляет числа, дальше правь что хочешь.
 guard_preset() {
-    local speed ans gbh full
+    # Два пресета вместо пяти, и названы они по типу ноды, а не по механизму.
+    #
+    # Раньше их было пять — «мобильная», «универсальная», «торренты»,
+    # «быстрая», «всё сразу», — и выбрать между ними было нельзя: они
+    # различались внутренностями, а не тем, к какой ноде подходят. Задача же
+    # всегда одна и та же: торренты и раздача подписки. Отличается только
+    # канал и то, что за ним стоит — телефон или домашний интернет.
+    #
+    # Поэтому каждый пресет настраивает политику ноды целиком, включая
+    # раздачу. Настраивать её отдельно на другом экране означало забыть
+    # половину — что и происходило.
+    local speed ans gbh gbd full
     speed="$(cfg speed_mbps 0)"
     while :; do
         title "${T[gp_title]}"
         echo -e "  ${D}${T[gp_h1]}${N}"
+        echo -e "  ${D}${T[gp_h2]}${N}"
         echo
-        echo -e "  ${B}[1]${N} 📱 ${T[gp_mobile]}"
-        echo -e "      ${D}${T[gp_mobile_d1]}${N}"
-        echo -e "      ${D}${T[gp_mobile_d2]}${N}"
+        echo -e "  ${B}[1]${N} 📱 ${T[gp_mob]}"
+        echo -e "      ${D}${T[gp_mob_d1]}${N}"
+        echo -e "      ${D}${T[gp_mob_d2]}${N}"
         echo
-        echo -e "  ${B}[2]${N} 🖥  ${T[gp_mixed]}"
-        echo -e "      ${D}${T[gp_mixed_d]}${N}"
-        echo
-        echo -e "  ${B}[3]${N} 🚦 ${T[gp_torrent]}"
-        echo -e "      ${D}${T[gp_torrent_d]}${N}"
-        echo
-        echo -e "  ${B}[4]${N} 🚀 ${T[gp_fast]}"
-        echo -e "      ${D}${T[gp_fast_d1]}${N}"
-        echo -e "      ${D}${T[gp_fast_d2]}${N}"
-        echo
-        echo -e "  ${B}[5]${N} 🎯 ${T[gp_all]}"
-        echo -e "      ${D}${T[gp_all_d1]}${N}"
-        echo -e "      ${D}${T[gp_all_d2]}${N}"
+        echo -e "  ${B}[2]${N} 🖥  ${T[gp_home]}"
+        echo -e "      ${D}${T[gp_home_d1]}${N}"
+        echo -e "      ${D}${T[gp_home_d2]}${N}"
         echo
         echo -e "  ${B}[0]${N} ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
-            5) # Общий пресет: три пути к штрафу сразу, потому что торрент
-               # выглядит по-разному и одним правилом не ловится.
-               #
-               #   1. Быстрая раздача — мгновенно, по двустороннему условию с
-               #      обязательными крупными пакетами.
-               #   2. Тяжёлая закачка — по объёму за час, считанному от канала.
-               #   3. Тихий сидер — по суточному отношению отдачи к скачиванию.
-               #
-               # Третий путь нужен именно потому, что первые два его не видят:
-               # он отдаёт полмегабита круглосуточно, до мгновенных порогов не
-               # дотягивает, а 900 МБ отдачи меньше любого объёмного порога.
-               if [[ "$speed" == "0" ]]; then
-                   gbh=20
-                   echo -e "\n  ${Y}${T[gp_fast_nolimit]}${N}"
-                   echo -e "  ${D}${T[gp_fast_fixed]}${N}"
-               else
-                   gbh="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600*0.5}")"
-                   echo -e "\n  ${D}${T[gp_fast_calc]} ${B}${gbh} GB${N}"
-               fi
+            1) # Три гигабайта в час — то, что мы посчитали для телефона:
+               # 1080p помещается дважды, а закачка упирается за сорок минут.
+               # Число не вычисляется от канала намеренно: мобильные ноды все
+               # примерно одной полосы, а смысл порога здесь в том, сколько
+               # нужно человеку, а не сколько влезает в канал.
                echo -e "\n  ${T[gp_will]}:"
-               echo -e "  ${D}  · ${T[gp_all_w1]}${N}"
-               echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}"
-               echo -e "  ${D}  · ${T[gp_all_w3]}${N}"
+               echo -e "  ${D}  · ${T[gp_w_torrent]}${N}"
+               echo -e "  ${D}  · ${T[gp_w_ratio]}${N}"
+               echo -e "  ${D}  · ${T[gp_p_hour]} ${B}3 GB${N}${D} — ${T[gp_m1]}${N}"
+               echo -e "  ${D}  · ${T[gp_p_day]} 25 GB — ${T[gp_m2]}${N}"
+               echo -e "  ${D}  · ${T[gp_w_share]} 20${N}"
                echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
+               if [[ "$speed" != "0" ]]; then
+                   full="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600}")"
+                   echo
+                   echo -e "  ${D}${T[gp_hint_full]} ${B}${full} GB${N}"
+                   echo -e "  ${D}${T[gp_m3]} $(awk "BEGIN{printf \"%.0f\", 3/($speed/8/1000)/60}") ${T[min]}${N}"
+               fi
                echo
                read -rp "  ${T[apply_q]}: " ans
                [[ "$ans" =~ ^[NnНн] ]] && continue
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
-                   --download-gb 100 --download-gbh "$gbh" \
+                   --download-gb 25 --download-gbh 3 \
                    --upload-ratio 35 --upload-ratio-mb 300 \
-                   --penalty-mbps 1 --penalty-min 60 && pause; return ;;
-            1) echo -e "\n  ${T[gp_will]}:"
-               echo -e "  ${D}  · ${T[gp_p_hour]} ${B}3 GB${N}${D} — ${T[gp_m1]}${N}"
-               echo -e "  ${D}  · ${T[gp_p_day]} 25 GB — ${T[gp_m2]}${N}"
-               echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 240 ${T[min]}${N}"
-               if [[ "$speed" != "0" ]]; then
-                   echo
-                   echo -e "  ${D}${T[gp_m3]} $(awk "BEGIN{printf \"%.0f\", 3/($speed/8/1000)/60}") ${T[min]}${N}"
-                   echo -e "  ${D}${T[gp_m4]} ~19 GB${N}"
-               fi
-               echo
-               read -rp "  ${T[apply_q]}: " ans
-               [[ "$ans" =~ ^[NnНн] ]] && continue
-               "$CTL" guard --enable --score 3 --both-dl 50 --both-ul 15 --both-min 7 \
-                   --packet 600 --hours 4 --upload-gb 2 \
-                   --download-gb 25 --download-gbh 3 --upload-ratio 0 \
-                   --penalty-mbps 1 --penalty-min 240 && pause; return ;;
-            4) # Порог в гигабайтах за час осмыслен только относительно канала:
-               # 3 ГБ/час на десятимегабитной ноде — две трети её полосы, а на
-               # стомегабитной — шесть процентов, под такое попадёт один фильм.
-               # Поэтому считаем половину канала за час, а не берём число.
+                   --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
+               "$CTL" panel set --threshold 20 --window 10 \
+                   --action-set drop >/dev/null 2>&1 || true
+               echo -e "  ${G}✓ ${T[gp_done]}${N}"
+               pause; return ;;
+
+            2) # Домашний канал шире мобильного в пять-десять раз, и фиксированный
+               # порог здесь бессмыслен: три гигабайта в час на стомегабитной
+               # ноде — это один фильм. Поэтому час считается от канала, а сутки
+               # — как восемь таких часов: держать половину полосы треть суток
+               # это уже не «посмотрел кино».
                if [[ "$speed" == "0" ]]; then
-                   gbh=20
-                   echo -e "\n  ${Y}${T[gp_fast_nolimit]}${N}"
-                   echo -e "  ${D}${T[gp_fast_fixed]}${N}"
+                   gbh=20; gbd=160
+                   echo -e "\n  ${Y}${T[gp_nolimit]}${N}"
+                   echo -e "  ${D}${T[gp_nolimit_d]}${N}"
                else
                    full="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600}")"
                    gbh="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600*0.5}")"
-                   echo -e "\n  ${D}${T[gp_fast_full]} ${B}${full} GB${N}"
-                   echo -e "  ${D}${T[gp_fast_calc]} ${B}${gbh} GB${N}${D} ${T[gp_fast_why]}${N}"
+                   gbd="$(awk "BEGIN{printf \"%.0f\", $speed/8/1000*3600*0.5*8}")"
+                   echo -e "\n  ${D}${T[gp_hint_full]} ${B}${full} GB${N}"
+                   echo -e "  ${D}${T[gp_home_calc]} ${B}${gbh} GB${N}${D} ${T[gp_home_why]}${N}"
                fi
                echo -e "\n  ${T[gp_will]}:"
+               echo -e "  ${D}  · ${T[gp_w_torrent]}${N}"
+               echo -e "  ${D}  · ${T[gp_w_ratio]}${N}"
                echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}"
-               echo -e "  ${D}  · ${T[gp_p_day]} 100 GB${N}"
+               echo -e "  ${D}  · ${T[gp_p_day]} ${gbd} GB${N}"
+               echo -e "  ${D}  · ${T[gp_w_share]} 10${N}"
                echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
                echo
                read -rp "  ${T[apply_q]}: " ans
                [[ "$ans" =~ ^[NnНн] ]] && continue
-               "$CTL" guard --enable --score 3 --both-dl 50 --both-ul 15 --both-min 10 \
-                   --packet 600 --hours 4 --upload-gb 2 \
-                   --download-gb 100 --download-gbh "$gbh" --upload-ratio 0 \
-                   --penalty-mbps 1 --penalty-min 60 && pause; return ;;
-            2) "$CTL" guard --enable --score 3 --both-dl 50 --both-ul 15 --both-min 10 \
-                   --packet 600 --hours 4 --upload-gb 2 \
-                   --download-gb 50 --download-gbh 0 --upload-ratio 0 \
-                   --penalty-mbps 1 --penalty-min 60 && pause; return ;;
-            3) # Порог отдачи опущен до 3% — это полтора мегабита при лимите 50,
-               # то есть уровень слабой раздачи. Сам по себе такой порог поймал
-               # бы и обычную закачку: подтверждения вверх растут вместе со
-               # скоростью скачивания. Поэтому вместе с ним включается
-               # обязательное требование крупных пакетов — подтверждения через
-               # него не проходят ни на какой скорости.
-               # Порог скачивания опущен с 50% до 10%. Пятьдесят процентов
-               # требовали, чтобы раздающий заодно много качал, — а он по
-               # определению качает меньше, чем отдаёт: адрес с 3.4 Мбит вниз
-               # и 7.1 вверх при лимите 10 не проходил условие вообще, хотя
-               # пакеты вверх были по 1400 байт. С обязательным требованием
-               # крупных пакетов низкий порог вниз безопасен: обычная закачка
-               # его тоже проходит, но проваливается на размере пакета.
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
-                   --download-gb 0 --download-gbh 0 --upload-ratio 0 \
-                   --penalty-mbps 1 --penalty-min 60 && pause; return ;;
+                   --download-gb "$gbd" --download-gbh "$gbh" \
+                   --upload-ratio 35 --upload-ratio-mb 300 \
+                   --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
+               "$CTL" panel set --threshold 10 --window 10 \
+                   --action-set drop >/dev/null 2>&1 || true
+               echo -e "  ${G}✓ ${T[gp_done]}${N}"
+               pause; return ;;
             0|"") return ;;
         esac
     done
@@ -822,7 +796,7 @@ PY
 }
 
 screen_panel() {
-    local on url uuid tok texp every win thr act cool exempt mbps lmin
+    local on url uuid tok texp every win thr act act_txt cool exempt mbps lmin
     local rep rep_at names v
     while :; do
         IFS='|' read -r on url uuid tok texp every win thr act cool exempt \
@@ -830,6 +804,7 @@ screen_panel() {
         title "${T[pn_title]}"
         echo -e "  ${D}${T[pn_h1]}${N}"
         echo -e "  ${D}${T[pn_h2]}${N}"
+        echo -e "  ${D}${T[pn_h3]}${N}"
         echo
         # Подписи выровнены пробелами в самих строках, а не через printf:
         # %-14s в bash считает байты, а кириллица в UTF-8 занимает по два —
@@ -848,8 +823,18 @@ screen_panel() {
         fi
         echo -e "  ${T[pn_l_every]}: ${every} ${T[pn_u_sec]}"
         echo -e "  ${T[pn_l_thr]}: ${B}${thr}${N} ${T[pn_u_addr]} / ${win} ${T[pn_u_min]}"
-        echo -e "  ${T[pn_l_act]}: ${B}${act}${N}"
-        echo -e "  ${T[pn_l_lim]}: ${mbps} ${T[pn_u_mbps]} ${D}\u00b7${N} ${lmin} ${T[pn_u_min]}"
+        case "$act" in
+            *block*) act_txt="${T[pn_act_block]}" ;;
+            *drop*)  act_txt="${T[pn_act_drop]}"  ;;
+            *limit*) act_txt="${T[pn_act_limit]}" ;;
+            *)       act_txt="${T[pn_act_notify]}" ;;
+        esac
+        echo -e "  ${T[pn_l_act]}: ${B}${act_txt}${N} ${D}(${act})${N}"
+        # Скорость и срок относятся только к тем действиям, которые режут.
+        # При «оборвать» и «только сообщить» это лишние числа на экране.
+        if [[ "$act" == *limit* || "$act" == *block* ]]; then
+            echo -e "  ${T[pn_l_lim]}: ${mbps} ${T[pn_u_mbps]} ${D}\u00b7${N} ${lmin} ${T[pn_u_min]}"
+        fi
         echo -e "  ${T[pn_l_cool]}: ${cool} ${T[pn_u_min]}"
         if [[ "$names" == "1" ]]; then
             echo -e "  ${T[pn_l_names]}: ${G}${T[g_on]}${N}"
@@ -907,9 +892,26 @@ screen_panel() {
                [[ -n "$v" ]] && "$CTL" panel set --threshold "$v" >/dev/null ;;
             6) v="$(ask "${T[pn_set_win]}" "$win")"
                [[ -n "$v" ]] && "$CTL" panel set --window "$v" >/dev/null ;;
-            7) echo -e "  ${D}${T[pn_hint_act]}${N}"
-               v="$(ask "${T[pn_set_act]}" "$act")"
-               [[ -n "$v" ]] && { "$CTL" panel set --action-set "$v" >/dev/null || pause; } ;;
+            7) title "${T[pn_set_act]}"
+               echo -e "  ${D}${T[pn_act_h1]}${N}"
+               echo -e "  ${D}${T[pn_act_h2]}${N}"
+               echo
+               echo -e "  [1] ${T[pn_act_notify]}"
+               echo -e "      ${D}${T[pn_act_notify_d]}${N}"
+               echo -e "  [2] ${T[pn_act_drop]}   ${G}${T[pn_act_best]}${N}"
+               echo -e "      ${D}${T[pn_act_drop_d]}${N}"
+               echo -e "  [3] ${T[pn_act_limit]}"
+               echo -e "      ${D}${T[pn_act_limit_d]}${N}"
+               echo -e "  [4] ${T[pn_act_block]}"
+               echo -e "      ${D}${T[pn_act_block_d]}${N}"
+               echo -e "  [0] ← ${T[m0]}"
+               echo
+               case "$(ask "${T[choice]}")" in
+                   1) "$CTL" panel set --action-set notify >/dev/null ;;
+                   2) "$CTL" panel set --action-set drop   >/dev/null ;;
+                   3) "$CTL" panel set --action-set limit  >/dev/null ;;
+                   4) "$CTL" panel set --action-set block  >/dev/null ;;
+               esac ;;
             8) v="$(ask "${T[pn_set_speed]}" "$mbps")"
                [[ -n "$v" ]] && "$CTL" panel set --mbps "$v" >/dev/null ;;
             9) v="$(ask "${T[pn_set_min]}" "$lmin")"
