@@ -190,6 +190,8 @@ MSG = {
         "tg_pen_addr": "📍 Адрес: {ip}",
         "tg_pen_speed": "🐌 Скорость снижена до {mbps} Мбит/с на {d}",
         "tg_pen_why": "Причина: <i>{why}</i>",
+        "tg_pen_stat": "📈 За сутки: {s}",
+        "tg_pen_pkt": "пакет вверх {n} Б",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
         "pn_card_stale": "<i>кто это — неизвестно: панель не отвечает уже {m} мин</i>",
         "pn_card_absent": "<i>кто это — неизвестно: при последнем опросе панели ({m} мин назад) этого адреса не было среди подключённых</i>",
@@ -546,6 +548,8 @@ MSG = {
         "tg_pen_addr": "📍 Address: {ip}",
         "tg_pen_speed": "🐌 Speed cut to {mbps} Mbit/s for {d}",
         "tg_pen_why": "Reason: <i>{why}</i>",
+        "tg_pen_stat": "📈 For the day: {s}",
+        "tg_pen_pkt": "upload packet {n} B",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
         "pn_card_stale": "<i>identity unknown: the panel has not answered for {m} min</i>",
         "pn_card_absent": "<i>identity unknown: at the last panel poll ({m} min ago) this address was not among the connected ones</i>",
@@ -2251,6 +2255,7 @@ def traffic_sample(prev, cur, dt):
     Замер за интервал по каждому IP:
       dl, ul   — Мбит/с
       up_pkt   — средний размер пакета в отдаче, байт
+      up_pkts  — сколько пакетов отдано за интервал
       up_bytes — сколько отдано за интервал
     """
     out = {}
@@ -2263,6 +2268,7 @@ def traffic_sample(prev, cur, dt):
             "dl": d_bytes * 8 / 1e6 / dt,
             "ul": u_bytes * 8 / 1e6 / dt,
             "up_pkt": (u_bytes / u_pkts) if u_pkts else 0,
+            "up_pkts": u_pkts,
             "up_bytes": u_bytes,
             "dl_bytes": d_bytes,
         }
@@ -2512,10 +2518,15 @@ def cmd_watch(a):
                 # суточные счётчики ведём для всех, даже для уже наказанных
                 d = daily.setdefault(ip, {"active": 0, "up": 0, "down": 0})
                 d.setdefault("down", 0)
+                # Средний размер пакета за сутки — то самое, что отличает
+                # отдачу данных от подтверждений. Мгновенный сюда не годится:
+                # в момент штрафа адрес мог как раз молчать вверх.
+                d.setdefault("upkts", 0)
                 if max(s["dl"], s["ul"]) >= active_floor:
                     d["active"] += interval
                 d["up"] += s["up_bytes"]
                 d["down"] += s["dl_bytes"]
+                d["upkts"] += s["up_pkts"]
                 if s["dl_bytes"]:
                     hourly_add(hourly, ip, s["dl_bytes"], time.time())
 
@@ -2579,7 +2590,7 @@ def cmd_watch(a):
                     if notify_due(notified, ip, reasons):
                         tg_penalty(cfg, ip, mbps, g["penalty_min"],
                                    reasons, subject=entry.get("subject"),
-                                   unknown=unknown)
+                                   unknown=unknown, day=daily.get(ip))
 
             if time.time() - last_daily_save > 60:
                 # чистим тех, кто за сутки не набрал ничего заметного
@@ -2798,7 +2809,33 @@ def offender_card(tg, subject, head, why=None):
     return out
 
 
-def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None, unknown=None):
+def penalty_figures(day):
+    """
+    Строка с цифрами за сутки — или пусто, если считать не из чего.
+
+    «Отдал непропорционально много» не отвечает на вопрос, за что человека
+    ограничили: торрент это или он залил бэкап в облако. Ответ дают три числа,
+    и все три у сторожа на руках в момент штрафа.
+
+    Размер пакета решающий: 1200-1400 байт — это данные, 100-170 — подтвержде-
+    ния обычной закачки. Пропорция одна и та же, а поводы разные.
+    """
+    if not day:
+        return ""
+    down, up = float(day.get("down", 0)), float(day.get("up", 0))
+    if not (down or up):
+        return ""
+    out = f"↓ {fmt_bytes(down)} · ↑ {fmt_bytes(up)}"
+    if down:
+        out += f" ({up * 100 / down:.0f}%)"
+    pkts = float(day.get("upkts", 0))
+    if pkts:
+        out += " · " + t("tg_pen_pkt", n=int(up / pkts))
+    return out
+
+
+def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None, unknown=None,
+               day=None):
     """Событие: адрес получил ограничение."""
     tg = cfg["telegram"]
     if not tg.get("enabled") or not tg.get("events"):
@@ -2808,6 +2845,9 @@ def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None, unknown=None):
     lines.append(t("tg_pen_addr", ip=html.escape(ip)))
     lines.append(t("tg_pen_speed", mbps=f"{mbps:g}", d=fmt_hold(minutes * 60)))
     lines.append(t("tg_pen_why", why=why))
+    figures = penalty_figures(day)
+    if figures:
+        lines.append(t("tg_pen_stat", s=figures))
     # За одним адресом может сидеть несколько человек — предупреждаем прямо
     # в сообщении, чтобы никто не обвинил не того.
     if subject and subject.get("shared"):

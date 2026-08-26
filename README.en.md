@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.35-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.36-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.35
+# Shape v3.36
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -670,7 +670,23 @@ the reason. Once a day — a digest for the day that just ended. That comes out 
 📍 Address: 185.12.34.56
 🐌 Speed reduced to 1 Mbit/s for 4 h
 Reason: downloaded gigabytes within an hour
+📈 For the day: ↓ 40.0 GB · ↑ 409.6 MB (1%) · upload packet 150 B
 ```
+
+**The figures line answers "but what for, exactly".** The reason names the rule,
+but does not say whether this was a torrent or someone uploading a backup to the
+cloud. Three numbers do:
+
+| | What it was |
+| --- | --- |
+| ↓ 40 GB · ↑ 0.4 GB (1%) · packet 150 B | a download: only acknowledgements go up |
+| ↓ 2.1 GB · ↑ 3.4 GB (162%) · packet 1310 B | seeding: data goes up |
+| ↓ 0.1 GB · ↑ 5.0 GB · packet 1400 B | a cloud upload: almost nothing comes down |
+
+Packet size is the decisive one and does not depend on the channel speed: an
+acknowledgement stays short at ten megabits and at a gigabit. It is averaged
+**over the day**, not taken from the last sample — at the moment of the penalty
+the address may have been silent upward.
 
 Who this is comes from the panel. When it does not, the card says **why**
 instead of blaming the configuration:

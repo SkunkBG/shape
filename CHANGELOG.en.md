@@ -13,6 +13,68 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.36
+
+**The penalty message now says what exactly for — in numbers, not just by the
+name of the rule.**
+
+### The reason named the rule, not the act
+
+```
+Reason: uploaded disproportionately much in 24h
+```
+
+True, but it does not answer "what was he doing?". The same proportion comes
+from seeding a torrent, from uploading a backup to the cloud, and from a day of
+video calls. To find out you had to go to the node and look at `status --full`.
+
+All the numbers needed are in the watchdog's hands at the moment of the penalty.
+Now they are in the message:
+
+```
+📍 Address: 176.15.128.93
+🐌 Speed reduced to 1 Mbit/s for 12 h
+Reason: uploaded disproportionately much in 24h
+📈 For the day: ↓ 2.1 GB · ↑ 3.4 GB (162%) · upload packet 1310 B
+```
+
+| The line | What it was |
+| --- | --- |
+| ↓ 40 GB · ↑ 0.4 GB (1%) · packet 150 B | a download: only acknowledgements go up |
+| ↓ 2.1 GB · ↑ 3.4 GB (162%) · packet 1310 B | seeding: data goes up |
+| ↓ 0.1 GB · ↑ 5.0 GB · packet 1400 B | a cloud upload: almost nothing comes down |
+
+### The packet is averaged over the day, not taken from the last sample
+
+The average upload packet size is the decisive number: a TCP acknowledgement is
+100–170 bytes, a torrent chunk is 1200–1400, and this does not depend on the
+channel speed.
+
+Taking it from the last ten-second sample will not do: at the moment of the
+penalty the address may have been silent upward, and the message would carry a
+zero. So the daily counter gained a fourth number — how many packets went up —
+and the average is computed across the whole day.
+
+Old `daily.json` files read as before: the missing field defaults to zero, and
+on the first day after the update the line simply arrives without the packet.
+
+### What stayed the same
+
+The line is added for every reason, not just the upload ratio. For hourly volume
+it is just as useful: "↓ 40 GB, acknowledgements upward" is a game download, not
+a torrent.
+
+If there are no counters at all, there is no line. If there was no download, the
+proportion is not printed: no need to divide by zero for it.
+
+### Also
+
+* `penalty_figures()` was pulled out into a function and covered by tests: both
+  pictures (a download and seeding), zero download, missing counters.
+* `traffic_sample()` returns `up_pkts` alongside `up_pkt`.
+
+---
+
 ## 3.35
 
 **A penalty no longer goes to an address nobody is behind. And the "panel link
