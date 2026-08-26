@@ -124,10 +124,30 @@ check "у телефонов часовой порог фиксированны�
       'grep -q -- "--download-gb 25 --download-gbh 3" "$SRC/menu.sh"'
 check "у домашних он вычисляется от канала" \
       'grep -q "speed/8/1000\*3600\*0.5" "$SRC/menu.sh"'
-check "и сутки считаются от того же часа" \
-      'grep -q "speed/8/1000\*3600\*0.5\*8" "$SRC/menu.sh"'
+check "и сутки — это шестнадцать таких часов" \
+      'grep -q "speed/8/1000\*3600\*0.5\*16" "$SRC/menu.sh"'
 check "без лимита есть запасные числа" \
-      'grep -q "gbh=20; gbd=160" "$SRC/menu.sh"'
+      'grep -q "gbh=20; gbd=320; soft=25" "$SRC/menu.sh"'
+
+# Порог в половину канала срабатывает через полчаса на полной скорости — на
+# любом канале, потому что это и есть определение половины. Игра в Steam
+# весит под 120 ГБ, то есть честная покупка ловилась гарантированно.
+check "у домашних часовой объём требует пакетов вверх" \
+      'grep -qE -- "--volume-needs-upload on" "$SRC/menu.sh"'
+check "у телефонов он их не требует" \
+      'grep -qE -- "--volume-needs-upload off" "$SRC/menu.sh"'
+check "домашняя мягкая скорость — треть канала" \
+      'grep -q "speed\*0.3" "$SRC/menu.sh"'
+check "у телефонов мягкой скорости нет" \
+      'grep -qE -- "--volume-mbps 0" "$SRC/menu.sh"'
+check "обе настройки выставляет пресет, а не оставляет от прежнего" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--volume-needs-upload") -eq 2 ]]'
+check "мягкая скорость видна на экране автоограничения" \
+      'grep -q "g_vol_soft" "$SRC/menu.sh"'
+check "требование отдачи тоже видно" \
+      'grep -q "g_vol_needs" "$SRC/menu.sh"'
+check "обе настройки правятся руками" \
+      'grep -q "g_set_vnu" "$SRC/menu.sh" && grep -q "g_set_vmb" "$SRC/menu.sh"'
 check "числа показываются до применения" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 2 ]]'
 check "после применения сказано, что настроено всё" \

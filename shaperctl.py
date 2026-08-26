@@ -332,6 +332,10 @@ MSG = {
         "h_upload_gb": "гигабайт отдачи за сутки",
         "h_download_gb": "гигабайт скачивания за сутки, 0 = выкл",
         "h_download_gbh": "гигабайт скачивания за час, 0 = выкл",
+        "h_volume_needs": "часовой объём срабатывает только с крупными пакетами вверх",
+        "h_volume_mbps": "скорость штрафа, когда сработал только объём, 0 = обычная",
+        "guard_vol_needs": "часовой объём — только с пакетами вверх от {n} Б: закачка из магазина проходит мимо",
+        "guard_vol_soft": "за один объём режем до {mbps} Мбит/с, а не до штрафной",
         "why_hourly": "выкачал гигабайты за час",
         "h_watch_iv": "период опроса карт, сек (больше = легче процессору)",
         "why_download": "выкачал десятки гигабайт за сутки",
@@ -680,6 +684,10 @@ MSG = {
         "h_upload_gb": "gigabytes uploaded per day",
         "h_download_gb": "gigabytes downloaded per day, 0 = off",
         "h_download_gbh": "gigabytes downloaded per hour, 0 = off",
+        "h_volume_needs": "hourly volume fires only alongside large upload packets",
+        "h_volume_mbps": "penalty speed when volume alone fired, 0 = the usual one",
+        "guard_vol_needs": "hourly volume needs upload packets from {n} B: a store download goes free",
+        "guard_vol_soft": "volume alone is cut to {mbps} Mbit/s, not to the penalty speed",
         "why_hourly": "downloaded gigabytes within an hour",
         "h_watch_iv": "map polling period, sec (higher = lighter on CPU)",
         "why_download": "downloaded tens of gigabytes in 24h",
@@ -1001,6 +1009,29 @@ GUARD_DEFAULT = {
     # означает «держал канал почти весь час». По умолчанию выключен: на
     # капнутом канале столько же дают 4K-стриминг и загрузка игры.
     "download_gb_per_hour": 0,
+
+    # Часовой порог сам по себе не отличает торрент от покупки в Steam.
+    #
+    # Порог, заданный долей канала, срабатывает ровно через полчаса на полной
+    # скорости — на любом канале, потому что это и есть определение половины.
+    # Современная игра весит под сто двадцать гигабайт, и человек, который её
+    # честно купил, получал штраф через тридцать минут.
+    #
+    # С этим признаком часовой объём требует ещё и крупных пакетов вверх.
+    # Закачка из магазина отдаёт подтверждения по 100-170 байт, торрент —
+    # куски данных по 1200-1400. Цена известна и принята: торрент с наглухо
+    # выключенной раздачей в час не поймается, потому что на сетевом уровне
+    # он и есть обычная закачка. Его ловит суточный порог.
+    "volume_needs_upload": False,
+
+    # Скорость штрафа, когда сработал ТОЛЬКО объём.
+    #
+    # Объём — единственный признак, который срабатывает и на честном
+    # поведении. Резать за него до мессенджерных 1 Мбит/с значит наказывать
+    # за покупку игры. Мягкая скорость (треть канала) закачку не убивает —
+    # она докачается медленнее, — но канал от неё уже не страдает.
+    # 0 = мягкой скорости нет, действует обычный penalty_mbps.
+    "volume_penalty_mbps": 0,
 
     # Третий отдельный путь: за сутки отдал больше, чем скачал.
     #
@@ -2130,6 +2161,7 @@ def cmd_guard(a):
         (a.download_gbh, "download_gb_per_hour", 0, 1000),
         (a.upload_ratio, "upload_ratio_percent", 0, 1000),
         (a.upload_ratio_mb, "upload_ratio_min_mb", 1, 100000),
+        (a.volume_mbps, "volume_penalty_mbps", 0, 1000),
         (a.interval,   "watch_interval",     5, 60),
         (a.packet,     "packet_bytes",      100, 1500),
     )
@@ -2141,6 +2173,8 @@ def cmd_guard(a):
 
     if a.require_packet is not None:
         g["require_packet"] = a.require_packet == "on"
+    if a.volume_needs_upload is not None:
+        g["volume_needs_upload"] = a.volume_needs_upload == "on"
 
     # Секцию telegram сюда обязательно: раньше её здесь не было, и любая
     # правка автоограничения молча стирала токен, чат, прокси и время сводки.
@@ -2169,8 +2203,15 @@ def cmd_guard_show(speed, g):
         line = t("guard_ratio", p=g["upload_ratio_percent"],
                  mb=g.get("upload_ratio_min_mb", 300))
         print(f"  {C['gry']}{line}{C['r']}")
+    if g.get("download_gb_per_hour") and g.get("volume_needs_upload"):
+        print(f"  {C['gry']}{t('guard_vol_needs', n=g['packet_bytes'])}{C['r']}")
     print(f"  {t('guard_penalty')}: {g['penalty_mbps']:g} Mbit/s "
           f"{t('guard_for')} {g['penalty_min']} {t('min')}")
+    # Мягкая скорость меняет исход, а из строки выше её не видно. Ровно так
+    # уже терялись признак отношения и действие панели.
+    if g.get("volume_penalty_mbps"):
+        soft = t("guard_vol_soft", mbps=f"{g['volume_penalty_mbps']:g}")
+        print(f"  {C['gry']}{soft}{C['r']}")
     print()
 
 
@@ -2247,9 +2288,19 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
         return max(g["score_needed"], SIGNAL_WEIGHTS["download"]), ["download"]
 
     # То же самое, но по скользящему часу: реагирует за час вместо суток.
+    #
+    # С volume_needs_upload часовой объём перестаёт быть самостоятельным
+    # поводом и требует крупных пакетов вверх. Иначе он бьёт по закачке из
+    # Steam: порог в половину канала срабатывает через полчаса на полной
+    # скорости, а игра весит столько, что качается часами.
     gbh = g.get("download_gb_per_hour", 0)
     if gbh and hourly and sum(hourly.get(ip, {}).values()) >= gbh * 1e9:
-        return max(g["score_needed"], SIGNAL_WEIGHTS["hourly"]), ["hourly"]
+        if not g.get("volume_needs_upload"):
+            return max(g["score_needed"], SIGNAL_WEIGHTS["hourly"]), ["hourly"]
+        if s["up_pkt"] >= g["packet_bytes"] and s["ul"] >= 0.3:
+            return (max(g["score_needed"],
+                        SIGNAL_WEIGHTS["hourly"] + SIGNAL_WEIGHTS["packet"]),
+                    ["hourly", "packet"])
 
     # Третий независимый путь: за сутки отдал непропорционально много.
     #
@@ -2285,6 +2336,23 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
         reasons.append("upload")
 
     return sum(SIGNAL_WEIGHTS[r] for r in reasons), reasons
+
+
+VOLUME_ONLY = {"download", "hourly"}
+
+
+def penalty_rate(g, reasons):
+    """
+    Скорость штрафа: за один объём — мягкая, за торрент — заданная.
+
+    Объём срабатывает и на честном поведении: человек купил игру и качает её
+    на полной скорости. Отличить это от торрента по одному объёму нельзя, а
+    значит и наказывать одинаково нельзя.
+    """
+    soft = float(g.get("volume_penalty_mbps") or 0)
+    if soft and reasons and set(reasons) <= VOLUME_ONLY:
+        return soft
+    return g["penalty_mbps"]
 
 
 def cmd_watch(a):
@@ -2406,8 +2474,9 @@ def cmd_watch(a):
                                           peak_streak[ip], daily, hourly)
                 if score >= need_score:
                     until = time.time() + g["penalty_min"] * 60
-                    penalty_apply(ip, g["penalty_mbps"], until)
-                    entry = {"until": until, "mbps": g["penalty_mbps"],
+                    mbps = penalty_rate(g, reasons)
+                    penalty_apply(ip, mbps, until)
+                    entry = {"until": until, "mbps": mbps,
                              "since": time.time(), "source": "watchdog",
                              "kind": "auto", "reason": ",".join(reasons),
                              "score": score, "reasons": reasons}
@@ -2424,7 +2493,7 @@ def cmd_watch(a):
                     penalties_update(lambda p, i=ip, e=entry: p.__setitem__(i, e))
                     pens[ip] = entry
                     log_event("guard_triggered", ip=ip, source="watchdog",
-                              mbps=g["penalty_mbps"], minutes=g["penalty_min"],
+                              mbps=mbps, minutes=g["penalty_min"],
                               score=score, reason=",".join(reasons),
                               subject=(entry.get("subject") or {}).get("label"),
                               telegram_id=(entry.get("subject") or {}).get("telegram_id"))
@@ -2432,10 +2501,10 @@ def cmd_watch(a):
                     # Окно очищаем: иначе после снятия штрафа те же гигабайты
                     # в скользящем часе тут же уронили бы человека повторно.
                     hourly.pop(ip, None)
-                    print(t("watch_hit", ip=ip, mbps=g["penalty_mbps"],
+                    print(t("watch_hit", ip=ip, mbps=mbps,
                             m=g["penalty_min"]) +
                           f" [{score}: {','.join(reasons)}]", flush=True)
-                    tg_penalty(cfg, ip, g["penalty_mbps"], g["penalty_min"],
+                    tg_penalty(cfg, ip, mbps, g["penalty_min"],
                                reasons, subject=entry.get("subject"))
 
             if time.time() - last_daily_save > 60:
@@ -5201,6 +5270,11 @@ def build_parser():
                    help=t("h_upload_ratio"))
     g.add_argument("--upload-ratio-mb", dest="upload_ratio_mb", type=float,
                    default=None, help=t("h_upload_ratio_mb"))
+    g.add_argument("--volume-needs-upload", dest="volume_needs_upload",
+                   choices=["on", "off"], default=None,
+                   help=t("h_volume_needs"))
+    g.add_argument("--volume-mbps", dest="volume_mbps", type=float,
+                   default=None, help=t("h_volume_mbps"))
     g.add_argument("--interval", type=int, default=None, help=t("h_watch_iv"))
     g.add_argument("--packet", type=int, default=None, help=t("h_packet"))
     g.add_argument("--require-packet", dest="require_packet",

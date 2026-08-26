@@ -13,6 +13,90 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.34
+
+**Buying a game on Steam stopped counting as a torrent. Applies to home nodes.**
+
+### The threshold caught the wrong people
+
+An hourly threshold set as a share of the channel fires **after exactly thirty
+minutes at full speed** — on any channel, because that is what a half means:
+
+| limit | a full hour at that speed | threshold | fires after |
+| --- | --- | --- | --- |
+| 10 Mbit/s | 4.5 GB | 2.2 GB | 30 min |
+| 50 Mbit/s | 22.5 GB | 11.2 GB | 30 min |
+| 100 Mbit/s | 45 GB | 22.5 GB | 30 min |
+
+A modern Steam game weighs about 120 GB, the heaviest reach 235. Someone who
+honestly bought one got 1 Mbit/s after half an hour — and then fell into a
+cycle: thirty minutes fast, an hour crawling, thirty minutes again. The game
+took eight hours instead of three, and the node owner got five notifications
+about an honest customer.
+
+### Told apart by the packet, not by the volume
+
+By volume a store download cannot be told from a torrent. By upload packet size
+it can, and Shape was already measuring it:
+
+| | Steam | Torrent |
+| --- | --- | --- |
+| Upload as a share of download | 1–3% | 20–200% |
+| Upload packet size | 100–170 B, acknowledgements | 1200–1400 B, data |
+
+New setting `volume_needs_upload`: hourly volume stops being a standalone reason
+and also requires large upload packets.
+
+The cost is known and accepted: a torrent with uploading turned off entirely
+will not be caught within the hour — at the network layer it *is* an ordinary
+download. The daily threshold catches it.
+
+### The penalty for volume got softer
+
+Volume is the one signal that fires on honest behaviour too. Cutting to
+messenger-grade 1 Mbit/s for it means punishing someone for buying a game.
+
+New setting `volume_penalty_mbps`: the penalty speed when **only** volume fired.
+The home preset sets a third of the channel — 30 Mbit/s on a hundred, 15 on
+fifty. The download does not die, the channel does not suffer. If torrent
+signals fired alongside the volume, the usual penalty applies.
+
+### The home preset
+
+| | was | now |
+| --- | --- | --- |
+| Hourly volume | a reason on its own | only with upload packets |
+| Daily threshold | 8 hourly ones | **16 hourly ones** |
+| Penalty for volume alone | 1 Mbit/s | **a third of the channel** |
+
+The daily figure went up because on fifty megabits eight hourly thresholds
+(90 GB) simply were not enough for a single game.
+
+**The mobile preset is unchanged.** There 3 GB/h is "what a person needs", not
+"what fits in the channel", and game downloads are beside the point: on ten
+megabits a game takes a day regardless. The preset now sets both options
+explicitly to off, so switching over from the home preset leaves no leftovers.
+
+### After updating
+
+Both settings are off by default, so **the update on its own changes nothing**.
+To make them take effect, go to Auto-limit → ⚡ Presets and apply the home preset
+again.
+
+### Also
+
+* Both settings are visible on the auto-limit screen and editable by hand:
+  entries `[13]` and `[14]`. A setting that changes the outcome while staying
+  invisible on screen is now the third case of its kind, and it does not repeat
+  silently any more.
+* `guard --volume-needs-upload on|off` and `--volume-mbps` on the command line.
+* Both READMEs: the "Fast node" section was rewritten — it still talked about
+  the fourth preset out of the old five.
+* Tests: a store download is not caught, a torrent at the same volume is, a
+  feeble upload does not count as a torrent, penalty speed chosen by reasons.
+
+---
+
 ## 3.33
 
 **The offender card gained a name, and a tap stopped copying the address.**

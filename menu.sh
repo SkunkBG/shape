@@ -243,7 +243,7 @@ print(','.join(map(str, p)))" 2>/dev/null || echo 443)"
 # Все настройки читаются одним вызовом: запуск python3 стоит десятки
 # миллисекунд, а раньше их было десять на каждую отрисовку экрана.
 guard_read() {
-    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300"
+    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300|0|0"
 import json
 try:
     g = json.load(open("/etc/shaper/config.json")).get("guard", {})
@@ -253,7 +253,8 @@ d = {"enabled": False, "score_needed": 3, "both_dl_percent": 50,
      "both_ul_percent": 15, "both_ways_min": 10, "penalty_mbps": 1,
      "penalty_min": 60, "hours_per_day": 4, "upload_gb_per_day": 2,
      "download_gb_per_day": 50, "download_gb_per_hour": 0, "packet_bytes": 600,
-     "upload_ratio_percent": 0, "upload_ratio_min_mb": 300}
+     "upload_ratio_percent": 0, "upload_ratio_min_mb": 300,
+     "volume_needs_upload": False, "volume_penalty_mbps": 0}
 d.update(g)
 print("|".join([
     "1" if d["enabled"] else "0",
@@ -263,6 +264,8 @@ print("|".join([
     f"{d['download_gb_per_day']:g}", f"{d['download_gb_per_hour']:g}",
     f"{d['packet_bytes']:g}",
     f"{d['upload_ratio_percent']:g}", f"{d['upload_ratio_min_mb']:g}",
+    "1" if d["volume_needs_upload"] else "0",
+    f"{d['volume_penalty_mbps']:g}",
 ]))
 PY
 }
@@ -282,7 +285,7 @@ guard_preset() {
     # Поэтому каждый пресет настраивает политику ноды целиком, включая
     # раздачу. Настраивать её отдельно на другом экране означало забыть
     # половину — что и происходило.
-    local speed ans gbh gbd full
+    local speed ans gbh gbd full soft
     speed="$(cfg speed_mbps 0)"
     while :; do
         title "${T[gp_title]}"
@@ -321,10 +324,17 @@ guard_preset() {
                echo
                read -rp "  ${T[apply_q]}: " ans
                [[ "$ans" =~ ^[NnНн] ]] && continue
+               # На телефоне порог в 3 ГБ/час — это «сколько нужно человеку»,
+               # а не «сколько влезает в канал», и закачка игр сюда не
+               # относится: на десяти мегабитах игра качается сутки в любом
+               # случае. Поэтому проверка отдачи и мягкая скорость здесь
+               # выключены — но выключены ЯВНО, чтобы переключение с
+               # домашнего пресета не оставляло его хвостов.
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb 25 --download-gbh 3 \
                    --upload-ratio 35 --upload-ratio-mb 300 \
+                   --volume-needs-upload off --volume-mbps 0 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 20 --window 10 \
                    --action-set drop >/dev/null 2>&1 || true
@@ -333,27 +343,34 @@ guard_preset() {
 
             2) # Домашний канал шире мобильного в пять-десять раз, и фиксированный
                # порог здесь бессмыслен: три гигабайта в час на стомегабитной
-               # ноде — это один фильм. Поэтому час считается от канала, а сутки
-               # — как восемь таких часов: держать половину полосы треть суток
-               # это уже не «посмотрел кино».
+               # ноде — это один фильм. Поэтому час считается от канала.
+               #
+               # Но сам по себе часовой объём здесь ловит не торрент, а покупку
+               # в Steam: порог в половину канала срабатывает ровно через
+               # полчаса на полной скорости, а игра весит под сто двадцать
+               # гигабайт. Поэтому часовой порог требует крупных пакетов
+               # вверх, объём в одиночку режет мягко (треть канала), а сутки
+               # подняты до шестнадцати часов — одна игра проходит, ферма нет.
                if [[ "$speed" == "0" ]]; then
-                   gbh=20; gbd=160
+                   gbh=20; gbd=320; soft=25
                    echo -e "\n  ${Y}${T[gp_nolimit]}${N}"
                    echo -e "  ${D}${T[gp_nolimit_d]}${N}"
                else
                    full="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600}")"
                    gbh="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600*0.5}")"
-                   gbd="$(awk "BEGIN{printf \"%.0f\", $speed/8/1000*3600*0.5*8}")"
+                   gbd="$(awk "BEGIN{printf \"%.0f\", $speed/8/1000*3600*0.5*16}")"
+                   soft="$(awk "BEGIN{printf \"%.0f\", $speed*0.3}")"
                    echo -e "\n  ${D}${T[gp_hint_full]} ${B}${full} GB${N}"
                    echo -e "  ${D}${T[gp_home_calc]} ${B}${gbh} GB${N}${D} ${T[gp_home_why]}${N}"
                fi
                echo -e "\n  ${T[gp_will]}:"
                echo -e "  ${D}  · ${T[gp_w_torrent]}${N}"
                echo -e "  ${D}  · ${T[gp_w_ratio]}${N}"
-               echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}"
+               echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}${D} — ${T[gp_h_vol]}${N}"
                echo -e "  ${D}  · ${T[gp_p_day]} ${gbd} GB${N}"
                echo -e "  ${D}  · ${T[gp_w_share]} 10${N}"
                echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
+               echo -e "  ${D}  · ${T[gp_h_soft]} ${B}${soft} Mbit/s${N}"
                echo
                read -rp "  ${T[apply_q]}: " ans
                [[ "$ans" =~ ^[NnНн] ]] && continue
@@ -361,6 +378,7 @@ guard_preset() {
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb "$gbd" --download-gbh "$gbh" \
                    --upload-ratio 35 --upload-ratio-mb 300 \
+                   --volume-needs-upload on --volume-mbps "$soft" \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 10 --window 10 \
                    --action-set drop >/dev/null 2>&1 || true
@@ -373,10 +391,11 @@ guard_preset() {
 
 screen_guard() {
     local on score both_min bdl bul pen dur hours gb dgb dgbh pkt urp urm speed v
+    local vnu vmb
     while :; do
         speed="$(cfg speed_mbps 0)"
         IFS='|' read -r on score bdl bul both_min pen dur hours gb dgb dgbh pkt \
-            urp urm <<< "$(guard_read)"
+            urp urm vnu vmb <<< "$(guard_read)"
 
         title "${T[g_title]}"
         echo -e "  ${D}${T[g_h1]}${N}"
@@ -405,6 +424,11 @@ screen_guard() {
         [[ "$dgb" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_download]} (>${dgb} GB)${N}"
         [[ "$dgbh" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_hourly]} (>${dgbh} GB)${N}"
         [[ "$urp" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_ratio_menu]} (>${urp}%, >${urm} MB)${N}"
+        # Обе настройки меняют исход, и обеих не видно из строк выше. Ровно
+        # так уже терялись признак отношения и действие панели.
+        [[ "$dgbh" != "0" && "$vnu" == "1" ]] && \
+            echo -e "  ${D}      └ ${T[g_vol_needs]}${N}"
+        [[ "$vmb" != "0" ]] && echo -e "  ${D}${T[g_vol_soft]} ${B}${vmb} Mbit/s${N}"
         hr
         echo "  [1] ${T[g_toggle]}"
         echo "  [2] ${T[g_set_score]}"
@@ -418,8 +442,14 @@ screen_guard() {
         echo -e " [10] ${T[g_set_dgb]} ${D}(${dgb} GB)${N}"
         echo -e " [11] ${T[g_set_dgbh]} ${D}(${dgbh} GB)${N}"
         echo -e " [12] ${T[g_set_ratio]} ${D}(${urp}%)${N}"
+        if [[ "$vnu" == "1" ]]; then
+            echo -e " [13] ${T[g_set_vnu]} ${D}(${T[g_on]})${N}"
+        else
+            echo -e " [13] ${T[g_set_vnu]} ${D}(${T[g_off]})${N}"
+        fi
+        echo -e " [14] ${T[g_set_vmb]} ${D}(${vmb} Mbit/s)${N}"
         hr
-        echo -e " ${B}[13]${N} ⚡ ${T[gp_menu]}"
+        echo -e " ${B}[15]${N} ⚡ ${T[gp_menu]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -454,7 +484,18 @@ screen_guard() {
             12) echo -e "  ${D}${T[g_hint_ratio]}${N}"
                 v="$(ask "${T[g_set_ratio]}" "$urp")"
                 [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" guard --upload-ratio "$v" --quiet ;;
-            13) guard_preset ;;
+            13) echo -e "  ${D}${T[g_hint_vnu]}${N}"
+                if [[ "$vnu" == "1" ]]; then
+                    "$CTL" guard --volume-needs-upload off --quiet
+                else
+                    "$CTL" guard --volume-needs-upload on --quiet
+                fi ;;
+            14) echo -e "  ${D}${T[g_hint_vmb]}${N}"
+                [[ "$speed" != "0" ]] && echo -e "  ${D}${T[g_hint_vmb2]}" \
+                    "$(awk "BEGIN{printf \"%.0f\", $speed*0.3}") Mbit/s${N}"
+                v="$(ask "${T[g_set_vmb]}" "$vmb")"
+                [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --volume-mbps "$v" --quiet ;;
+            15) guard_preset ;;
             0|"") return ;;
         esac
     done

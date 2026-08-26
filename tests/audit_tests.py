@@ -46,7 +46,8 @@ def guard(**kw):
              both_ul=None, percent=None, sustain=None, penalty_mbps=None,
              penalty_min=None, hours=None, upload_gb=None, download_gb=None,
              download_gbh=None, interval=None, packet=None, require_packet=None,
-             upload_ratio=None, upload_ratio_mb=None, quiet=True)
+             upload_ratio=None, upload_ratio_mb=None,
+             volume_needs_upload=None, volume_mbps=None, quiet=True)
     d.update(kw); return argparse.Namespace(**d)
 
 def tg(**kw):
@@ -479,6 +480,57 @@ score, why = S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 0}, RATIO_G, 10,
 check("работает при нулевом двустороннем счётчике", why == ["ratio"], why)
 check("у причины есть человекочитаемое название",
       S.t("why_ratio") != "why_ratio")
+
+print("\n\033[1mЧасовой объём против покупки в Steam\033[0m")
+# Порог, заданный долей канала, срабатывает ровно через полчаса на полной
+# скорости — на любом канале, потому что это и есть определение половины.
+# Современная игра весит под сто двадцать гигабайт, то есть человек, честно
+# купивший её, получал штраф гарантированно. Отличить закачку из магазина от
+# торрента по одному объёму нельзя — только по размеру пакета вверх.
+GB = 1e9
+VOL_G = dict(S.GUARD_DEFAULT, download_gb_per_hour=22.5,
+             volume_needs_upload=True, volume_penalty_mbps=30,
+             download_gb_per_day=0)
+HOUR = {"x": {0: 23 * GB}}
+STEAM = {"dl": 95, "ul": 1.2, "up_pkt": 150}     # подтверждения TCP
+TORRENT = {"dl": 40, "ul": 4.0, "up_pkt": 1310}  # куски данных
+
+
+def hourly_verdict(sample, g=VOL_G):
+    return S.evaluate("x", sample, g, 100, 0, 0, {}, HOUR)[1]
+
+
+check("закачка из магазина проходит мимо", hourly_verdict(STEAM) == [],
+      hourly_verdict(STEAM))
+check("торрент на том же объёме пойман",
+      hourly_verdict(TORRENT) == ["hourly", "packet"], hourly_verdict(TORRENT))
+check("без настройки ловятся оба — как было раньше",
+      hourly_verdict(STEAM, dict(VOL_G, volume_needs_upload=False)) == ["hourly"])
+check("вялая отдача не считается за торрент",
+      hourly_verdict({"dl": 95, "ul": 0.1, "up_pkt": 1310}) == [])
+check("объёма всё ещё должно хватать",
+      S.evaluate("x", TORRENT, VOL_G, 100, 0, 0, {},
+                 {"x": {0: 5 * GB}})[1] == [], "сработало ниже порога")
+check("по умолчанию настройка выключена",
+      S.GUARD_DEFAULT["volume_needs_upload"] is False)
+
+# Объём — единственный признак, который срабатывает и на честном поведении.
+# Значит и наказание за него не может быть тем же, что за торрент.
+check("за один часовой объём режем мягко",
+      S.penalty_rate(VOL_G, ["hourly"]) == 30)
+check("за суточный объём тоже",
+      S.penalty_rate(VOL_G, ["download"]) == 30)
+check("за объём с торрент-пакетами — полный штраф",
+      S.penalty_rate(VOL_G, ["hourly", "packet"]) == VOL_G["penalty_mbps"])
+check("за торрент без объёма — полный штраф",
+      S.penalty_rate(VOL_G, ["packet", "peak"]) == VOL_G["penalty_mbps"])
+check("без мягкой скорости всё как раньше",
+      S.penalty_rate(dict(VOL_G, volume_penalty_mbps=0), ["hourly"])
+      == VOL_G["penalty_mbps"])
+check("пустая причина не выбирает мягкую скорость",
+      S.penalty_rate(VOL_G, []) == VOL_G["penalty_mbps"])
+check("по умолчанию мягкой скорости нет",
+      S.GUARD_DEFAULT["volume_penalty_mbps"] == 0)
 
 print("\n\033[1mГотовность к ограничению скачивания\033[0m")
 # Движок расставляет время отправки, но придержать пакет умеет только fq.

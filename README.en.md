@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.33-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.34-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.33
+# Shape v3.34
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -406,11 +406,13 @@ differs, and what sits behind it.
 | --- | --- | --- |
 | Per-address limit | usually 10 Mbit | usually 50–100 Mbit |
 | Volume per hour | **3 GB** fixed | **half the channel** |
-| Volume per day | 25 GB | eight hourly thresholds |
+| Hourly volume is a reason on its own | yes | **only with upload packets** |
+| Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
 | Torrents | two-way traffic with large upload packets | same |
 | Quiet seeders | uploaded over 35% of the download in a day | same |
-| Penalty | 1 Mbit/s for 60 min | same |
+| Penalty for a torrent | 1 Mbit/s for 60 min | same |
+| Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
 | Sharing | connections dropped | same |
 
 **Why phones get a number and homes get a share.** Three gigabytes an hour is a
@@ -420,8 +422,9 @@ one film — the threshold would catch everyone. So at home it is derived from t
 channel: half the bandwidth for an hour leaves video alone and still catches a
 bulk transfer.
 
-The daily figure at home is eight such hours. Holding half the channel for a
-third of a day is no longer "watched a movie".
+The daily figure at home is sixteen such hours — eight hours at full speed.
+Any less will not do: one Steam game weighs some 120 GB, and on fifty megabits
+eight hourly thresholds simply were not enough for it.
 
 **The sharing threshold is looser for phones.** A mobile carrier changes the
 address several times an hour, and a dozen addresses within the window is
@@ -431,43 +434,61 @@ family, and ten at once is already sharing.
 A preset configures **both the auto-limiter and sharing** at once. Leaving the
 other half of the policy to a different screen meant forgetting it — which is
 exactly what happened.
-### Fast node: half the channel for an hour
+### A Steam purchase is not a torrent
 
-The fourth preset differs from the rest in that it **does not set the hourly
-cap as a number — it derives it from the speed limit**.
+An hourly threshold set as a share of the channel fires **after exactly thirty
+minutes at full speed** — on any channel, because that is what a half means:
 
-The reason is that gigabytes per hour mean nothing on their own:
+| per-address limit | a full hour at that speed | threshold | fires after |
+|---|---|---|---|
+| 10 Mbit/s | 4.5 GB | 2.2 GB | 30 min |
+| 50 Mbit/s | 22.5 GB | 11.2 GB | 30 min |
+| 100 Mbit/s | 45 GB | 22.5 GB | 30 min |
 
-| per-address limit | a full hour at that speed | what 3 GB/h is |
+A modern Steam game weighs about 120 GB, and the heaviest reach 235. So a person
+who honestly bought one got penalised after half an hour — and then fell into a
+cycle: thirty minutes fast, an hour crawling, thirty minutes again. The game
+took eight hours instead of three, and the node owner got five notifications
+about an honest customer.
+
+**A store download cannot be told from a torrent by volume.** By upload packet
+size it can, and Shape already measures that:
+
+| | Steam | Torrent |
 |---|---|---|
-| 10 Mbit/s | 4.5 GB | two thirds of the channel |
-| 100 Mbit/s | 45 GB | six percent |
+| Upload as a share of download | 1–3% | 20–200% |
+| Upload packet size | 100–170 B, acknowledgements | 1200–1400 B, data |
+| Duration | it ends | for days |
 
-The same threshold catches a downloader on a slow node and fires on a single
-film on a fast one. So the preset takes **half the channel per hour**:
+So in the home preset the hourly volume **stopped being a standalone reason**:
+it also needs large upload packets. A torrent produces them, a store download
+does not.
 
-```
-cap = limit_Mbit/s ÷ 8 ÷ 1000 × 3600 × 0.5
-```
+The cost is known and accepted: a torrent with uploading turned off entirely
+will not be caught within the hour, because at the network layer it *is* an
+ordinary download. The daily threshold catches it, where 300 GB in a day is no
+longer "bought a game".
 
-| limit | cap |
+**Second: the penalty for volume got softer.** Volume is the one signal that
+fires on honest behaviour too, so cutting to messenger-grade 1 Mbit/s for it is
+not acceptable. The home preset sets a third of the channel:
+
+| limit | penalty for volume alone |
 |---|---|
-| 10 Mbit/s | 2.2 GB/h |
-| 50 Mbit/s | 11.2 GB/h |
-| 100 Mbit/s | 22.5 GB/h |
+| 50 Mbit/s | 15 Mbit/s |
+| 100 Mbit/s | 30 Mbit/s |
 
-The meaning is one thing: "held more than half of its own bandwidth for a
-full hour". Video takes a fraction of that — 4K runs around 7 GB/h — while a
-sustained bulk transfer takes it all and gets caught.
+The download does not die from that — it just finishes slower — but the channel
+no longer suffers. If torrent signals fired alongside the volume, the usual
+1 Mbit/s penalty applies.
 
-The computed number is shown before it is applied, together with what a full
-hour at the limit would amount to. With no speed limit set there is nothing to
-derive from; the preset says so plainly and offers a fixed 20 GB.
+Both settings are visible on the auto-limit screen and editable by hand: entries
+`[13]` and `[14]`, or `--volume-needs-upload on|off` and `--volume-mbps` on the
+command line.
 
-The rest: a 100 GB daily cap as a backstop for the slow but persistent, and a
-1 Mbit/s penalty for an hour. An hour rather than four: the trigger is already
-strict, and whoever carries on will simply be caught again.
-
+On mobile nodes both are deliberately off. There the 3 GB/h threshold is "what a
+person needs", not "what fits in the channel", and game downloads are beside the
+point: on ten megabits a game takes a day regardless.
 ### Reading the verdict
 
 The limited list shows exactly which signals caught the person:
