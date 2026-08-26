@@ -191,8 +191,10 @@ MSG = {
         "tg_pen_speed": "🐌 Скорость снижена до {mbps} Мбит/с на {d}",
         "tg_pen_why": "Причина: <i>{why}</i>",
         "tg_pen_stat": "📈 За сутки: {s}",
-        "tg_pen_pkt": "пакет вверх {n} Б",
-        "tg_pen_pkt_max": "(макс {n})",
+        "tg_pen_pkts": "📦 Отдача за {d}: {s}",
+        "tg_pen_bulk": "данными {p}%",
+        "tg_pen_pkt": "пакет {n} Б",
+        "tg_pen_pkt_max": "макс {n}",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
         "pn_card_never": "<i>кто это — неизвестно: панель ещё ни разу не ответила — проверьте её командой <code>shaperctl panel show</code></i>",
         "pn_card_stale": "<i>кто это — неизвестно: панель не отвечает уже {m} мин</i>",
@@ -341,7 +343,8 @@ MSG = {
         "h_volume_needs": "часовой объём срабатывает только с крупными пакетами вверх",
         "h_volume_mbps": "скорость штрафа, когда сработал только объём, 0 = обычная",
         "h_ratio_needs": "отношение срабатывает только если отдача шла данными",
-        "guard_ratio_pkt": "и только если пакет вверх за сутки доходил до {n} Б: звонки проходят мимо",
+        "h_ratio_bulk_hint": "доля отдачи крупными пакетами",
+        "guard_ratio_pkt": "и только если крупными пакетами ушло больше {n}% отдачи: звонки проходят мимо",
         "guard_vol_needs": "часовой объём — только с пакетами вверх от {n} Б: закачка из магазина проходит мимо",
         "guard_vol_soft": "за один объём режем до {mbps} Мбит/с, а не до штрафной",
         "guard_ratio_live": "и только пока адрес отдаёт: за отвалившегося штраф не выдаём",
@@ -553,8 +556,10 @@ MSG = {
         "tg_pen_speed": "🐌 Speed cut to {mbps} Mbit/s for {d}",
         "tg_pen_why": "Reason: <i>{why}</i>",
         "tg_pen_stat": "📈 For the day: {s}",
-        "tg_pen_pkt": "upload packet {n} B",
-        "tg_pen_pkt_max": "(max {n})",
+        "tg_pen_pkts": "📦 Upload over {d}: {s}",
+        "tg_pen_bulk": "{p}% as data",
+        "tg_pen_pkt": "packet {n} B",
+        "tg_pen_pkt_max": "max {n}",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
         "pn_card_never": "<i>identity unknown: the panel has never answered yet — check it with <code>shaperctl panel show</code></i>",
         "pn_card_stale": "<i>identity unknown: the panel has not answered for {m} min</i>",
@@ -703,7 +708,8 @@ MSG = {
         "h_volume_needs": "hourly volume fires only alongside large upload packets",
         "h_volume_mbps": "penalty speed when volume alone fired, 0 = the usual one",
         "h_ratio_needs": "the ratio fires only if the upload was actual data",
-        "guard_ratio_pkt": "and only if the daily upload packet reached {n} B: calls go free",
+        "h_ratio_bulk_hint": "share of upload in large packets",
+        "guard_ratio_pkt": "and only if over {n}% of the upload went in large packets: calls go free",
         "guard_vol_needs": "hourly volume needs upload packets from {n} B: a store download goes free",
         "guard_vol_soft": "volume alone is cut to {mbps} Mbit/s, not to the penalty speed",
         "guard_ratio_live": "and only while the address is uploading: no penalty for one that left",
@@ -1144,6 +1150,19 @@ UPKT_MAX_FLOOR = 20_000
 # набивается до предела сегмента — это 1300-1400 и на проводе, и внутри
 # туннеля, потому что шифрование размер не уменьшает.
 RATIO_PACKET_BYTES = 1000
+
+# Какая доля отдачи должна уйти крупными пакетами, чтобы считать её данными.
+#
+# Максимума мало. Максимум — отметка «хоть раз дошло», и её ставит одно
+# десятисекундное окно: отправил человек видео в мессенджере, и весь день
+# после этого его звонки проходят фильтр как раздача.
+#
+# Доля отвечает на правильный вопрос. У сидера крупными пакетами уходит почти
+# всё, у звонящего с одним вложением — единицы процентов. Разрыв между ними
+# такой, что порог можно ставить где угодно в середине; тридцать процентов
+# оставляют запас на смешанные окна, где человек одновременно говорит и
+# отдаёт, и среднее в окне размывается.
+RATIO_BULK_PERCENT = 30
 
 # Как часто напоминать об одном и том же адресе с той же причиной.
 #
@@ -2299,7 +2318,7 @@ def cmd_guard_show(speed, g):
         print(f"  {C['gry']}{t('guard_ratio_live')}{C['r']}")
         if g.get("ratio_needs_packet"):
             print(f"  {C['gry']}"
-                  f"{t('guard_ratio_pkt', n=RATIO_PACKET_BYTES)}{C['r']}")
+                  f"{t('guard_ratio_pkt', n=RATIO_BULK_PERCENT)}{C['r']}")
     if g.get("download_gb_per_hour") and g.get("volume_needs_upload"):
         print(f"  {C['gry']}{t('guard_vol_needs', n=g['packet_bytes'])}{C['r']}")
     print(f"  {t('guard_penalty')}: {g['penalty_mbps']:g} Mbit/s "
@@ -2371,15 +2390,37 @@ def hourly_add(hourly, ip, nbytes, now):
         del d[old]
 
 
-def day_upkt_max(day):
-    """Самый крупный средний пакет вверх за сутки. Нет данных — ноль."""
+def day_upkt(day):
+    """
+    Поле с пакетами: (байты, пакеты, максимум, данными, начало). Иначе None.
+
+    Пять чисел живут ОДНИМ полем и начинаются вместе. Половину такого поля
+    получить нельзя — а два поля можно, и мы это уже проходили дважды.
+    """
     upkt = (day or {}).get("upkt")
-    if isinstance(upkt, list) and len(upkt) == 3:
-        try:
-            return float(upkt[2] or 0)
-        except (TypeError, ValueError):
-            return 0.0
-    return 0.0
+    if not (isinstance(upkt, list) and len(upkt) == 5):
+        return None
+    try:
+        b, n, top, bulk, since = (float(x or 0) for x in upkt)
+    except (TypeError, ValueError):
+        return None
+    if b < 0 or n < 0 or bulk < 0:
+        return None
+    return b, n, top, bulk, since
+
+
+def day_upkt_max(day):
+    """Самый крупный средний пакет вверх за окно. Нет данных — ноль."""
+    parsed = day_upkt(day)
+    return parsed[2] if parsed else 0.0
+
+
+def bulk_share(day):
+    """Доля отдачи, ушедшей крупными пакетами, 0..100. Нет данных — ноль."""
+    parsed = day_upkt(day)
+    if not parsed or not parsed[0]:
+        return 0.0
+    return min(100.0, parsed[3] * 100.0 / parsed[0])
 
 
 def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
@@ -2426,8 +2467,8 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
     floor_bytes = float(g.get("upload_ratio_min_mb", 300)) * 1e6
     if ratio and day.get("up", 0) >= floor_bytes \
             and s["ul"] >= RATIO_LIVE_MBPS \
-            and (not g.get("ratio_needs_packet") or day_upkt_max(day)
-                 >= RATIO_PACKET_BYTES):
+            and (not g.get("ratio_needs_packet")
+                 or bulk_share(day) >= RATIO_BULK_PERCENT):
         # Нулевое скачивание при заметной отдаче — это тем более перекос,
         # делить на ноль ради такого вывода незачем.
         down = day.get("down", 0)
@@ -2604,8 +2645,8 @@ def cmd_watch(a):
                 # деление даёт бессмыслицу. Одного поля либо нет целиком,
                 # либо оно есть целиком.
                 upkt = d.get("upkt")
-                if not (isinstance(upkt, list) and len(upkt) == 3):
-                    upkt = d["upkt"] = [0, 0, 0]
+                if not (isinstance(upkt, list) and len(upkt) == 5):
+                    upkt = d["upkt"] = [0, 0, 0, 0, time.time()]
                 if max(s["dl"], s["ul"]) >= active_floor:
                     d["active"] += interval
                 d["up"] += s["up_bytes"]
@@ -2614,6 +2655,11 @@ def cmd_watch(a):
                 upkt[1] += s["up_pkts"]
                 if s["up_bytes"] >= UPKT_MAX_FLOOR:
                     upkt[2] = max(upkt[2], int(s["up_pkt"]))
+                # Байты, ушедшие крупными пакетами. Пола по объёму здесь нет
+                # намеренно: маленькое окно с крупными пакетами — это тоже
+                # данные, просто их мало, и доля это учтёт сама.
+                if s["up_pkt"] >= RATIO_PACKET_BYTES:
+                    upkt[3] += s["up_bytes"]
                 if s["dl_bytes"]:
                     hourly_add(hourly, ip, s["dl_bytes"], time.time())
 
@@ -2915,22 +2961,37 @@ def penalty_figures(day):
     out = f"↓ {fmt_bytes(down)} · ↑ {fmt_bytes(up)}"
     if down:
         out += f" ({up * 100 / down:.0f}%)"
-    # Байты и пакеты приходят одним полем и растут в одном месте, поэтому их
-    # частное осмысленно с первого же замера после обновления. Границы — на
-    # случай, если поле всё-таки окажется испорченным: соврать хуже, чем
-    # промолчать.
-    upkt = day.get("upkt")
-    if not (isinstance(upkt, list) and len(upkt) == 3):
-        return out
-    if upkt[1]:
-        avg = float(upkt[0]) / float(upkt[1])
-        if MIN_PACKET_BYTES <= avg <= MAX_PACKET_BYTES:
-            out += " · " + t("tg_pen_pkt", n=int(avg))
-    # Максимум отвечает на вопрос «отдавал ли данные», а среднее — нет.
-    top = float(upkt[2] or 0)
-    if MIN_PACKET_BYTES <= top <= MAX_PACKET_BYTES:
-        out += " " + t("tg_pen_pkt_max", n=int(top))
     return out
+
+
+def penalty_packets(day, now=None):
+    """
+    Вторая строка: чем именно была отдача. Не из чего считать — пусто.
+
+    Отдельной строкой, потому что срок у неё свой. Поле с пакетами
+    обнуляется при смене формата, и сразу после обновления оно покрывает
+    минуты, а не сутки. Подписывать такое «за сутки» — врать; поэтому срок
+    печатается всегда, какой есть.
+    """
+    parsed = day_upkt(day)
+    if not parsed:
+        return "", 0.0
+    b, n, top, _bulk, since = parsed
+    if not b:
+        return "", 0.0
+    now = now if now is not None else time.time()
+
+    parts = [t("tg_pen_bulk", p=f"{bulk_share(day):.0f}")]
+    if n:
+        avg = b / n
+        if MIN_PACKET_BYTES <= avg <= MAX_PACKET_BYTES:
+            parts.append(t("tg_pen_pkt", n=int(avg)))
+    # Максимум оставлен рядом с долей: он говорит, доходило ли вообще, а
+    # доля — сколько. Вместе они читаются, порознь каждый вводит в
+    # заблуждение, и оба раза ввёл.
+    if MIN_PACKET_BYTES <= top <= MAX_PACKET_BYTES:
+        parts.append(t("tg_pen_pkt_max", n=int(top)))
+    return " · ".join(parts), max(0.0, now - since)
 
 
 def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None, unknown=None,
@@ -2947,6 +3008,9 @@ def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None, unknown=None,
     figures = penalty_figures(day)
     if figures:
         lines.append(t("tg_pen_stat", s=figures))
+    pkts, window = penalty_packets(day)
+    if pkts:
+        lines.append(t("tg_pen_pkts", d=fmt_hold(window), s=pkts))
     # За одним адресом может сидеть несколько человек — предупреждаем прямо
     # в сообщении, чтобы никто не обвинил не того.
     if subject and subject.get("shared"):

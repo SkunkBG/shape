@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.40-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.41-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.40
+# Shape v3.41
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -419,7 +419,7 @@ differs, and what sits behind it.
 | Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
 | Torrents | two-way traffic with large upload packets | same |
-| Quiet seeders | 35% a day, uploading now, packet up to 1000 B | same |
+| Quiet seeders | 35% a day, uploading now, 30%+ as data | same |
 | Penalty for a torrent | 1 Mbit/s for 60 min | same |
 | Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
 | Sharing | connections dropped | same |
@@ -674,7 +674,8 @@ the reason. Once a day — a digest for the day that just ended. That comes out 
 📍 Address: 185.12.34.56
 🐌 Speed reduced to 1 Mbit/s for 4 h
 Reason: downloaded gigabytes within an hour
-📈 For the day: ↓ 40.0 GB · ↑ 409.6 MB (1%) · upload packet 150 B
+📈 For the day: ↓ 40.0 GB · ↑ 409.6 MB (1%)
+📦 Upload over 6.2 h: 0% as data · packet 150 B · max 210
 ```
 
 **The figures line answers "but what for, exactly".** The reason names the rule,
@@ -708,17 +709,35 @@ The maximum is only updated on samples with more than 20 KB uploaded: a handful
 of stray packets must not set it, yet a quiet seeder on half a megabit must
 still land in it.
 
-**The home preset requires that maximum for the ratio signal.** Uploading more
-than 35% of the download in a day is not enough; the upload packet must also
-have reached 1000 bytes at least once. A conversation never gets to a thousand,
-a seeder gets there in its first transfer window.
+**But what decides is the share, not the maximum.** The maximum is a "it got
+there once" mark, and a single ten-second window sets it: send a video in a
+messenger and for the rest of the day your calls pass the filter as seeding. So
+how many bytes of the upload went in packets of 1000 and above is counted too:
 
-A thousand rather than the six hundred of the instantaneous signal: six hundred
-was chosen for an average over ten seconds of active transfer, while on a daily
-maximum a video call reaches seven hundred.
+```
+📈 For the day: ↓ 146.7 MB · ↑ 976.1 MB (665%)
+📦 Upload over 11.9 h: 96% as data · packet 1279 B · max 1400
+```
+
+| Upload | What it is | As data |
+| --- | --- | --- |
+| 976 MB, packet 1279 | seeding | **96%** |
+| 347 MB, packet 780, max 1539 | a conversation plus one attachment | **1%** |
+
+The gap is wide enough that the threshold can sit anywhere in the middle. It
+sits at **30%** — with room for mixed windows where someone talks and uploads at
+the same time.
+
+**Both presets require that share for the ratio signal.** Uploading more than
+35% of the download in a day is not enough; the upload must also have been data.
 
 The manual toggle is entry `[15]` on the auto-limit screen, or
 `--ratio-needs-packet on|off` on the command line.
+
+**There are two lines, and their periods differ.** Volumes are counted over the
+day, while the packet field is reset on a format change, so right after an update
+it covers minutes. The second line therefore always states its own period
+honestly instead of inheriting "for the day" from the first.
 
 The bytes and the packets behind that average live in **one field of two
 numbers**, not in two fields. Two fields can be had by halves — a record from an

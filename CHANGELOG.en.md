@@ -13,6 +13,70 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.41
+
+**What decides is "how much", not "did it ever". And the packet line no longer
+labels itself "for the day" when that is untrue.**
+
+### The maximum turned out not to be enough
+
+The maximum added in 3.39 is a "it got there once" mark, and a **single
+ten-second window** sets it. Send a video in a messenger or a file to the cloud,
+and the maximum is 1400 for the rest of the day — after which calls pass the
+filter as seeding.
+
+Here are two live addresses, indistinguishable by the maximum:
+
+| Daily upload | Average | Maximum | **As data** | What it is |
+| --- | --- | --- | --- | --- |
+| 976 MB | 1279 B | 1400 | **96%** | seeding |
+| 347 MB | 780 B | 1539 | **1%** | a conversation plus one attachment |
+
+How many bytes of the upload went in packets of 1000 and above is now counted.
+The gap between 1% and 96% is wide enough that the threshold can sit anywhere in
+the middle; it sits at **30%** — with room for mixed windows where someone talks
+and uploads at once and the in-window average is diluted.
+
+The ratio signal now requires that share rather than the maximum. The maximum
+stays in the message: together with the share it reads correctly, separately each
+one misleads — and each one did.
+
+### Two lines now, each with its own period
+
+```
+📈 For the day: ↓ 146.7 MB · ↑ 976.1 MB (665%)
+📦 Upload over 11.9 h: 96% as data · packet 1279 B · max 1400
+```
+
+Volumes are counted over the day. The packet field is reset on a format change,
+and the format changed in 3.39 and changes now — so right after an update it
+covers minutes, not a day.
+
+This was checkable by arithmetic in the messages themselves: on one address the
+average packet grew from 267 to 781 over sixteen minutes, while the packet count
+derived from the daily bytes "fell" from 1.23 million to 445 thousand. That does
+not happen — the bytes in those two numbers simply came from different periods.
+
+One line covering two periods was lying about one of them. The second line now
+always states its own period honestly.
+
+### What to do
+
+Update. The packet field will reset once more — this is the last format change
+for this task; all five numbers now live in one field and start together.
+
+For the first hours after the update the second line will cover a short period,
+and that is written plainly in it. By tomorrow the period will match the day.
+
+### Also
+
+* Tests: 22 new ones. A call with an attachment does not pass the filter, a
+  seeder does, the share is computed from its own window's bytes, the threshold
+  exactly on the boundary, the window length returned separately, a field of the
+  wrong length not breaking the line.
+
+---
+
 ## 3.40
 
 **The ratio signal was catching video calls. It now requires the upload to be
