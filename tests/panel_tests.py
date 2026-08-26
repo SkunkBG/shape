@@ -837,6 +837,22 @@ code, age = S.panel_owner_reason(cfg_why, "1.2.3.4")
 check("карта протухла — панель не отвечает", code == "stale", (code, age))
 check("и возраст карты посчитан", age > S.PANEL_IP_OWNER_TTL, age)
 
+# Карта живёт в памяти процесса: после перезапуска сторожа отметка времени
+# равна нулю. Возраст считался от неё, и в сообщение уходило «панель не
+# отвечает уже 29796012 мин» — пятьдесят шесть лет, вся эпоха Unix целиком.
+S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
+code, age = S.panel_owner_reason(cfg_why, "1.2.3.4")
+check("ни одного опроса — это отдельный случай", code == "never", (code, age))
+check("и возраст от нуля не считается", age == 0.0, age)
+never = "\n".join(S.offender_card(dict(S.TG_DEFAULT, node_name="x"),
+                                  None, "x", (code, age)))
+check("в тексте нет числа из эпохи Unix",
+      not any(w.isdigit() and len(w) > 5 for w in never.split()), never)
+check("это не тот же текст, что у «панель не отвечает»",
+      never != "\n".join(S.offender_card(dict(S.TG_DEFAULT, node_name="x"),
+                                         None, "x", ("stale", 3600))))
+check("зато сказано, чем проверить", "panel show" in never, never)
+
 # Текст в сообщении обязан отличаться: ради этого всё и делалось.
 tg_why = dict(S.TG_DEFAULT, node_name="Netherlands-3")
 cards = {c: "\n".join(S.offender_card(tg_why, None, "x", (c, 300)))

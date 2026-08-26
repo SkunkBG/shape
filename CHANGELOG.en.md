@@ -13,6 +13,67 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.37
+
+**Two lies in the penalty message. Both from 3.35 and 3.36, both mine.**
+
+### "the panel has not answered for 29796012 min"
+
+Fifty-six years. That is the whole Unix epoch.
+
+The "address → whose it is" map lives in the process memory, and after the
+watchdog restarts — that is, after every update — the timestamp is zero. The age
+was computed from it: `now - 0` is the current unix timestamp.
+
+There are now four reasons why an owner fails to resolve, not three:
+
+| What is printed | When |
+| --- | --- |
+| the panel link is not set up on this node | the panel is off on this node |
+| **the panel has never answered yet** | the watchdog has just started, or the panel is unreachable |
+| the panel has not answered for N min | there was a successful poll, but long ago |
+| at the last poll (N min ago) this address was not among the connected ones | the person was not on the node |
+
+In the new case no age is printed at all — there is nothing to print. Instead it
+says what to check it with: `shaperctl.py panel show`.
+
+In the first minutes after an update this message is normal: the panel is polled
+every five minutes, and until the first poll the map is empty.
+
+### "upload packet 168750 B"
+
+The maximum for a packet is fifteen hundred bytes. A hundred and sixty-eight
+thousand does not happen.
+
+The average was computed as "daily bytes ÷ daily packets". After an update the
+byte counter held the whole day gone by, while the packets had only started
+counting when the new version launched. Hence the number.
+
+In 3.36 I wrote in these very release notes that "on the first day after the
+update the line simply arrives without the packet". That was wrong: the field
+was not missing, it was partial, and I did not account for it.
+
+The bytes behind that average are now kept by **their own pair of counters**,
+incremented in the same place at the same moment. Their quotient is meaningful
+from the very first sample after an update, with no transitional day.
+
+Plus a ceiling in case they drift apart anyway: an average above a jumbo frame
+(9000 bytes) is not printed at all. Lying is worse than saying nothing.
+
+### What to do
+
+Update. Nothing needs reconfiguring, old `daily.json` files read as before — the
+missing field defaults to zero, and until the first sample the line arrives
+without the packet. The first sample is ten seconds away.
+
+### Also
+
+* Tests: nine new ones. A separate cause code for an empty map, the absence of
+  an epoch-sized number in the text, an impossible average not being printed, a
+  possible one being printed, the ceiling equalling a jumbo frame.
+
+---
+
 ## 3.36
 
 **The penalty message now says what exactly for — in numbers, not just by the

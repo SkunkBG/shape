@@ -193,6 +193,7 @@ MSG = {
         "tg_pen_stat": "📈 За сутки: {s}",
         "tg_pen_pkt": "пакет вверх {n} Б",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
+        "pn_card_never": "<i>кто это — неизвестно: панель ещё ни разу не ответила — проверьте её командой <code>shaperctl.py panel show</code></i>",
         "pn_card_stale": "<i>кто это — неизвестно: панель не отвечает уже {m} мин</i>",
         "pn_card_absent": "<i>кто это — неизвестно: при последнем опросе панели ({m} мин назад) этого адреса не было среди подключённых</i>",
         "tg_ev": "События  ",
@@ -551,6 +552,7 @@ MSG = {
         "tg_pen_stat": "📈 For the day: {s}",
         "tg_pen_pkt": "upload packet {n} B",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
+        "pn_card_never": "<i>identity unknown: the panel has never answered yet — check it with <code>shaperctl.py panel show</code></i>",
         "pn_card_stale": "<i>identity unknown: the panel has not answered for {m} min</i>",
         "pn_card_absent": "<i>identity unknown: at the last panel poll ({m} min ago) this address was not among the connected ones</i>",
         "tg_ev": "Events   ",
@@ -1085,6 +1087,10 @@ GUARD_DEFAULT = {
 # Настоящий сидер отдаёт непрерывно, отвалившийся не отдаёт ничего. Порог
 # низкий нарочно: тихий сидер держит полмегабита, а под ограничением — один.
 RATIO_LIVE_MBPS = 0.05
+
+# Больше джамбо-кадра пакет не бывает. Значение выше означает, что счётчики
+# байтов и пакетов разъехались, и печатать среднее нельзя.
+MAX_PACKET_BYTES = 9000
 
 # Как часто напоминать об одном и том же адресе с той же причиной.
 #
@@ -2521,12 +2527,18 @@ def cmd_watch(a):
                 # Средний размер пакета за сутки — то самое, что отличает
                 # отдачу данных от подтверждений. Мгновенный сюда не годится:
                 # в момент штрафа адрес мог как раз молчать вверх.
+                # Байты считаем вторым счётчиком, а не берём из d["up"]:
+                # после обновления в d["up"] лежит весь день, а пакеты
+                # начали считаться только что. Деление одного на другое дало
+                # «пакет вверх 168750 Б» — при максимуме в полторы тысячи.
                 d.setdefault("upkts", 0)
+                d.setdefault("upkb", 0)
                 if max(s["dl"], s["ul"]) >= active_floor:
                     d["active"] += interval
                 d["up"] += s["up_bytes"]
                 d["down"] += s["dl_bytes"]
                 d["upkts"] += s["up_pkts"]
+                d["upkb"] += s["up_bytes"]
                 if s["dl_bytes"]:
                     hourly_add(hourly, ip, s["dl_bytes"], time.time())
 
@@ -2757,8 +2769,8 @@ def tg_send(text, cfg=None, force=False):
         return False, scrub(f"{e}{hint}", {"telegram": tg})
 
 
-PANEL_WHY_KEY = {"off": "pn_card_unknown", "stale": "pn_card_stale",
-                 "absent": "pn_card_absent"}
+PANEL_WHY_KEY = {"off": "pn_card_unknown", "never": "pn_card_never",
+                 "stale": "pn_card_stale", "absent": "pn_card_absent"}
 
 
 def offender_card(tg, subject, head, why=None):
@@ -2803,8 +2815,8 @@ def offender_card(tg, subject, head, why=None):
     if len(out) == 2:          # ничего, кроме заголовка, не нашлось
         code, age = why if why else ("off", 0.0)
         key = PANEL_WHY_KEY.get(code, "pn_card_unknown")
-        out.append(t(key, m=int(age // 60)) if key != "pn_card_unknown"
-                   else t(key))
+        out.append(t(key, m=int(age // 60))
+                   if key in ("pn_card_stale", "pn_card_absent") else t(key))
     out.append("")
     return out
 
@@ -2828,9 +2840,14 @@ def penalty_figures(day):
     out = f"↓ {fmt_bytes(down)} · ↑ {fmt_bytes(up)}"
     if down:
         out += f" ({up * 100 / down:.0f}%)"
+    # Оба счётчика растут в одном месте и в один момент, поэтому их частное
+    # осмысленно с первого же замера после обновления. Потолок — на случай,
+    # если они всё-таки разъедутся: средний пакет физически не бывает больше
+    # джамбо-кадра, и напечатать такое значит соврать.
     pkts = float(day.get("upkts", 0))
-    if pkts:
-        out += " · " + t("tg_pen_pkt", n=int(up / pkts))
+    avg = (float(day.get("upkb", 0)) / pkts) if pkts else 0
+    if 0 < avg <= MAX_PACKET_BYTES:
+        out += " · " + t("tg_pen_pkt", n=int(avg))
     return out
 
 
@@ -3492,14 +3509,23 @@ def panel_owner_reason(cfg, ip, now=None):
     отправлял искать поломку не туда.
 
       off    — панель на этой ноде выключена
+      never  — ни одного успешного опроса с момента запуска сторожа
       stale  — карта адресов устарела: панель давно не отвечает
       absent — карта свежая, но этого адреса в ней нет
+
+    «never» отделено от «stale» не ради красоты. Карта живёт в памяти
+    процесса, и после перезапуска сторожа отметка времени равна нулю. Возраст
+    считался от неё, и в сообщение уходило «панель не отвечает уже 29796012
+    мин» — то есть пятьдесят шесть лет, весь Unix-эпох целиком.
     """
     p = cfg.get("panel") or {}
     if not p.get("enabled"):
         return "off", 0.0
     now = now if now is not None else time.time()
-    age = now - float(_PANEL_IP_OWNER.get("at") or 0)
+    at = float(_PANEL_IP_OWNER.get("at") or 0)
+    if at <= 0:
+        return "never", 0.0
+    age = now - at
     if age > PANEL_IP_OWNER_TTL:
         return "stale", age
     if not (_PANEL_IP_OWNER.get("map") or {}).get(ip):

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.36-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.37-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.36
+# Shape v3.37
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -688,12 +688,21 @@ acknowledgement stays short at ten megabits and at a gigabit. It is averaged
 **over the day**, not taken from the last sample — at the moment of the penalty
 the address may have been silent upward.
 
+The bytes and the packets behind that average are kept by **their own pair of
+counters**, incremented in the same place. Taking the bytes from the daily
+volume will not do: after an update that holds the whole day while the packets
+have only just started counting, and the message ends up saying something like
+"upload packet 168750 B" against a physical maximum of fifteen hundred. There is
+a ceiling for that case too: an average above a jumbo frame is not printed at
+all.
+
 Who this is comes from the panel. When it does not, the card says **why**
 instead of blaming the configuration:
 
 | What the message says | What it means |
 | --- | --- |
 | the panel link is not set up on this node | the panel is off on this node |
+| the panel has never answered yet | the watchdog has just started, or the panel is unreachable |
 | the panel has not answered for N min | set up but unreachable — check `panel show` |
 | at the last poll (N min ago) this address was not among the connected ones | the person was not on the node then |
 
