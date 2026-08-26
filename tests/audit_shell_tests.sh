@@ -156,6 +156,12 @@ check "условие живости видно рядом с признаком
       'grep -q "g_ratio_live" "$SRC/menu.sh"'
 check "кулдаун уведомлений виден рядом со штрафом" \
       'grep -q "g_notify_cd" "$SRC/menu.sh"'
+check "требование данных вверх видно рядом с отношением" \
+      'grep -q "g_ratio_pkt" "$SRC/menu.sh"'
+check "и правится руками" \
+      'grep -q "g_set_rnp" "$SRC/menu.sh"'
+check "оба пресета включают его явно" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--ratio-needs-packet on") -eq 2 ]]'
 check "числа показываются до применения" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 2 ]]'
 check "после применения сказано, что настроено всё" \

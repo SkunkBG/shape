@@ -47,7 +47,8 @@ def guard(**kw):
              penalty_min=None, hours=None, upload_gb=None, download_gb=None,
              download_gbh=None, interval=None, packet=None, require_packet=None,
              upload_ratio=None, upload_ratio_mb=None,
-             volume_needs_upload=None, volume_mbps=None, quiet=True)
+             volume_needs_upload=None, volume_mbps=None,
+             ratio_needs_packet=None, quiet=True)
     d.update(kw); return argparse.Namespace(**d)
 
 def tg(**kw):
@@ -497,6 +498,63 @@ check("работает при нулевом двустороннем счёт�
 check("у причины есть человекочитаемое название",
       S.t("why_ratio") != "why_ratio")
 
+print("\n\033[1mОтношение отдачи против видеосвязи\033[0m")
+# Живой случай, три адреса за один вечер. Непропорциональная отдача бывает не
+# только у раздачи: разговор симметричен по определению, обе стороны говорят
+# поровну. Штраф получали Discord, Telegram и WhatsApp.
+#
+# Отличает их размер пакета, но только МАКСИМАЛЬНЫЙ за сутки: кусок торрента
+# всегда набивается до предела сегмента, голос пишется мелкими порциями.
+RNP_G = dict(S.GUARD_DEFAULT, upload_ratio_percent=35, upload_ratio_min_mb=300,
+             ratio_needs_packet=True)
+SAMPLE = {"dl": 0.2, "ul": 0.5, "up_pkt": 300}
+
+
+def rnp(down, up, top, g=RNP_G):
+    daily = {"x": {"active": 0, "down": down, "up": up, "upkt": [up, 1, top]}}
+    return S.evaluate("x", SAMPLE, g, 100, 0, 0, daily)[1]
+
+
+check("звонок 329↓/328↑ (100%), макс 349 — не трогаем",
+      rnp(329.4e6, 328.1e6, 349) == [], rnp(329.4e6, 328.1e6, 349))
+check("видеосвязь 1.2ГБ↓/479МБ↑ (38%), макс 697 — тоже",
+      rnp(1.2e9, 478.8e6, 697) == [])
+check("сидер 379↓/916↑ (242%), макс 1340 — ловим",
+      rnp(379e6, 916e6, 1340) == ["ratio"])
+check("ровно на пороге максимума — ловим",
+      rnp(379e6, 916e6, S.RATIO_PACKET_BYTES) == ["ratio"])
+check("на байт ниже — нет",
+      rnp(379e6, 916e6, S.RATIO_PACKET_BYTES - 1) == [])
+check("максимума нет вовсе — нет",
+      rnp(379e6, 916e6, 0) == [])
+check("без настройки всё как было: звонок ловится",
+      rnp(329.4e6, 328.1e6, 349, dict(RNP_G, ratio_needs_packet=False))
+      == ["ratio"])
+check("по умолчанию настройка выключена",
+      S.GUARD_DEFAULT["ratio_needs_packet"] is False)
+
+# Порог именно 1000, а не 600 как у мгновенного признака: на суточном
+# максимуме видеосвязь доходит до семисот, и 600 её не отсекает.
+check("порог максимума выше мгновенного",
+      S.RATIO_PACKET_BYTES > S.GUARD_DEFAULT["packet_bytes"],
+      (S.RATIO_PACKET_BYTES, S.GUARD_DEFAULT["packet_bytes"]))
+check("и выше живого звонка на 697", S.RATIO_PACKET_BYTES > 697)
+
+# Пол, при котором максимум вообще обновляется, должен пропускать тихого
+# сидера: он отдаёт полмегабита, а совсем тихий и того меньше. Со ста
+# килобайт за замер он не набрал бы ни одного окна и проскочил бы мимо
+# проверки, которая как раз для него и ставится.
+check("пол обновления максимума пропускает тихого сидера",
+      S.UPKT_MAX_FLOOR <= 0.05 * 1e6 / 8 * 10, S.UPKT_MAX_FLOOR)
+check("но не пропускает единичные пакеты", S.UPKT_MAX_FLOOR >= 10_000)
+
+check("испорченное поле не роняет проверку",
+      S.day_upkt_max({"upkt": "мусор"}) == 0
+      and S.day_upkt_max({"upkt": [1, 2]}) == 0
+      and S.day_upkt_max({}) == 0
+      and S.day_upkt_max(None) == 0)
+check("а целое — читается", S.day_upkt_max({"upkt": [1, 2, 1340]}) == 1340)
+
 print("\n\033[1mЦифры в сообщении о штрафе\033[0m")
 # «Отдал непропорционально много» не отвечает на вопрос, за что человека
 # ограничили: торрент это или он залил бэкап в облако. Ответ дают три числа,
@@ -578,7 +636,7 @@ check("максимума нет — и строки про него нет",
 check("невозможный максимум не печатается",
       "99999" not in S.penalty_figures(dict(D, upkt=[1e6, 1000, 99999])))
 check("пол по объёму мешает случайным пакетам назначить максимум",
-      S.UPKT_MAX_FLOOR >= 100_000, S.UPKT_MAX_FLOOR)
+      S.UPKT_MAX_FLOOR >= 10_000, S.UPKT_MAX_FLOOR)
 
 # Средний пакет обязан считаться за сутки, а не по последнему замеру: в
 # момент штрафа адрес мог как раз молчать вверх, и вышло бы «0 Б».

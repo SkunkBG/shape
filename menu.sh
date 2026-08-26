@@ -243,7 +243,7 @@ print(','.join(map(str, p)))" 2>/dev/null || echo 443)"
 # Все настройки читаются одним вызовом: запуск python3 стоит десятки
 # миллисекунд, а раньше их было десять на каждую отрисовку экрана.
 guard_read() {
-    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300|0|0"
+    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300|0|0|0"
 import json
 try:
     g = json.load(open("/etc/shaper/config.json")).get("guard", {})
@@ -254,7 +254,8 @@ d = {"enabled": False, "score_needed": 3, "both_dl_percent": 50,
      "penalty_min": 60, "hours_per_day": 4, "upload_gb_per_day": 2,
      "download_gb_per_day": 50, "download_gb_per_hour": 0, "packet_bytes": 600,
      "upload_ratio_percent": 0, "upload_ratio_min_mb": 300,
-     "volume_needs_upload": False, "volume_penalty_mbps": 0}
+     "volume_needs_upload": False, "volume_penalty_mbps": 0,
+     "ratio_needs_packet": False}
 d.update(g)
 print("|".join([
     "1" if d["enabled"] else "0",
@@ -266,6 +267,7 @@ print("|".join([
     f"{d['upload_ratio_percent']:g}", f"{d['upload_ratio_min_mb']:g}",
     "1" if d["volume_needs_upload"] else "0",
     f"{d['volume_penalty_mbps']:g}",
+    "1" if d["ratio_needs_packet"] else "0",
 ]))
 PY
 }
@@ -311,6 +313,7 @@ guard_preset() {
                echo -e "\n  ${T[gp_will]}:"
                echo -e "  ${D}  · ${T[gp_w_torrent]}${N}"
                echo -e "  ${D}  · ${T[gp_w_ratio]}${N}"
+               echo -e "  ${D}    ${T[gp_h_ratio]}${N}"
                echo -e "  ${D}  · ${T[gp_p_hour]} ${B}3 GB${N}${D} — ${T[gp_m1]}${N}"
                echo -e "  ${D}  · ${T[gp_p_day]} 25 GB — ${T[gp_m2]}${N}"
                echo -e "  ${D}  · ${T[gp_w_share]} 20${N}"
@@ -335,6 +338,7 @@ guard_preset() {
                    --download-gb 25 --download-gbh 3 \
                    --upload-ratio 35 --upload-ratio-mb 300 \
                    --volume-needs-upload off --volume-mbps 0 \
+                   --ratio-needs-packet on \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 20 --window 10 \
                    --action-set drop >/dev/null 2>&1 || true
@@ -366,6 +370,7 @@ guard_preset() {
                echo -e "\n  ${T[gp_will]}:"
                echo -e "  ${D}  · ${T[gp_w_torrent]}${N}"
                echo -e "  ${D}  · ${T[gp_w_ratio]}${N}"
+               echo -e "  ${D}    ${T[gp_h_ratio]}${N}"
                echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}${D} — ${T[gp_h_vol]}${N}"
                echo -e "  ${D}  · ${T[gp_p_day]} ${gbd} GB${N}"
                echo -e "  ${D}  · ${T[gp_w_share]} 10${N}"
@@ -379,6 +384,7 @@ guard_preset() {
                    --download-gb "$gbd" --download-gbh "$gbh" \
                    --upload-ratio 35 --upload-ratio-mb 300 \
                    --volume-needs-upload on --volume-mbps "$soft" \
+                   --ratio-needs-packet on \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 10 --window 10 \
                    --action-set drop >/dev/null 2>&1 || true
@@ -391,11 +397,11 @@ guard_preset() {
 
 screen_guard() {
     local on score both_min bdl bul pen dur hours gb dgb dgbh pkt urp urm speed v
-    local vnu vmb
+    local vnu vmb rnp
     while :; do
         speed="$(cfg speed_mbps 0)"
         IFS='|' read -r on score bdl bul both_min pen dur hours gb dgb dgbh pkt \
-            urp urm vnu vmb <<< "$(guard_read)"
+            urp urm vnu vmb rnp <<< "$(guard_read)"
 
         title "${T[g_title]}"
         echo -e "  ${D}${T[g_h1]}${N}"
@@ -428,6 +434,8 @@ screen_guard() {
         # Условие «отдаёт прямо сейчас» решает, кому прилетит штраф, а из
         # строки выше его не видно. Такое уже терялось трижды.
         [[ "$urp" != "0" ]] && echo -e "  ${D}      └ ${T[g_ratio_live]}${N}"
+        [[ "$urp" != "0" && "$rnp" == "1" ]] && \
+            echo -e "  ${D}      └ ${T[g_ratio_pkt]}${N}"
         # Обе настройки меняют исход, и обеих не видно из строк выше. Ровно
         # так уже терялись признак отношения и действие панели.
         [[ "$dgbh" != "0" && "$vnu" == "1" ]] && \
@@ -452,8 +460,13 @@ screen_guard() {
             echo -e " [13] ${T[g_set_vnu]} ${D}(${T[g_off]})${N}"
         fi
         echo -e " [14] ${T[g_set_vmb]} ${D}(${vmb} Mbit/s)${N}"
+        if [[ "$rnp" == "1" ]]; then
+            echo -e " [15] ${T[g_set_rnp]} ${D}(${T[g_on]})${N}"
+        else
+            echo -e " [15] ${T[g_set_rnp]} ${D}(${T[g_off]})${N}"
+        fi
         hr
-        echo -e " ${B}[15]${N} ⚡ ${T[gp_menu]}"
+        echo -e " ${B}[16]${N} ⚡ ${T[gp_menu]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -499,7 +512,13 @@ screen_guard() {
                     "$(awk "BEGIN{printf \"%.0f\", $speed*0.3}") Mbit/s${N}"
                 v="$(ask "${T[g_set_vmb]}" "$vmb")"
                 [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --volume-mbps "$v" --quiet ;;
-            15) guard_preset ;;
+            15) echo -e "  ${D}${T[g_hint_rnp]}${N}"
+                if [[ "$rnp" == "1" ]]; then
+                    "$CTL" guard --ratio-needs-packet off --quiet
+                else
+                    "$CTL" guard --ratio-needs-packet on --quiet
+                fi ;;
+            16) guard_preset ;;
             0|"") return ;;
         esac
     done

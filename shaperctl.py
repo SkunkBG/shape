@@ -340,6 +340,8 @@ MSG = {
         "h_download_gbh": "гигабайт скачивания за час, 0 = выкл",
         "h_volume_needs": "часовой объём срабатывает только с крупными пакетами вверх",
         "h_volume_mbps": "скорость штрафа, когда сработал только объём, 0 = обычная",
+        "h_ratio_needs": "отношение срабатывает только если отдача шла данными",
+        "guard_ratio_pkt": "и только если пакет вверх за сутки доходил до {n} Б: звонки проходят мимо",
         "guard_vol_needs": "часовой объём — только с пакетами вверх от {n} Б: закачка из магазина проходит мимо",
         "guard_vol_soft": "за один объём режем до {mbps} Мбит/с, а не до штрафной",
         "guard_ratio_live": "и только пока адрес отдаёт: за отвалившегося штраф не выдаём",
@@ -700,6 +702,8 @@ MSG = {
         "h_download_gbh": "gigabytes downloaded per hour, 0 = off",
         "h_volume_needs": "hourly volume fires only alongside large upload packets",
         "h_volume_mbps": "penalty speed when volume alone fired, 0 = the usual one",
+        "h_ratio_needs": "the ratio fires only if the upload was actual data",
+        "guard_ratio_pkt": "and only if the daily upload packet reached {n} B: calls go free",
         "guard_vol_needs": "hourly volume needs upload packets from {n} B: a store download goes free",
         "guard_vol_soft": "volume alone is cut to {mbps} Mbit/s, not to the penalty speed",
         "guard_ratio_live": "and only while the address is uploading: no penalty for one that left",
@@ -1040,6 +1044,18 @@ GUARD_DEFAULT = {
     # он и есть обычная закачка. Его ловит суточный порог.
     "volume_needs_upload": False,
 
+    # Признак отношения требует, чтобы отдача была ДАННЫМИ.
+    #
+    # Непропорциональная отдача бывает не только у раздачи. Живой случай:
+    # 329 МБ вниз и 328 вверх, ровно 100%, средний пакет 267 байт, максимум за
+    # сутки 349 — это разговор, где обе стороны говорят поровну, а не торрент.
+    # Штраф получали Discord, Telegram и WhatsApp.
+    #
+    # С этим признаком отношение срабатывает, только если максимальный размер
+    # пакета вверх за сутки дошёл до RATIO_PACKET_BYTES. Сидер до него дойдёт
+    # в первое же окно передачи, разговор — никогда.
+    "ratio_needs_packet": False,
+
     # Скорость штрафа, когда сработал ТОЛЬКО объём.
     #
     # Объём — единственный признак, который срабатывает и на честном
@@ -1113,7 +1129,21 @@ MAX_PACKET_BYTES = 9000
 # Максимум за десятисекундное окно отвечает: если хоть раз за сутки средний
 # пакет в окне дошёл до 1300, значит куски данных вверх шли. Пол по объёму
 # нужен, чтобы десяток случайных пакетов не назначил максимум.
-UPKT_MAX_FLOOR = 100_000
+#
+# Двадцать килобайт за замер — это 16 Кбит/с. Выше брать нельзя: тихий сидер
+# отдаёт полмегабита, а совсем тихий и того меньше, и со ста килобайт он не
+# набирал бы ни одного подходящего окна за сутки — то есть проскакивал бы
+# мимо проверки, которая как раз для него и ставится.
+UPKT_MAX_FLOOR = 20_000
+
+# До какого размера должен дойти максимум, чтобы считать отдачу данными.
+#
+# Тысяча, а не шестьсот как у мгновенного признака. Шестьсот выбирались для
+# среднего за десять секунд активной передачи; на суточном максимуме видеосвязь
+# доходит до семисот, и порог в шестьсот её не отсекает. Кусок торрента всегда
+# набивается до предела сегмента — это 1300-1400 и на проводе, и внутри
+# туннеля, потому что шифрование размер не уменьшает.
+RATIO_PACKET_BYTES = 1000
 
 # Как часто напоминать об одном и том же адресе с той же причиной.
 #
@@ -2236,6 +2266,8 @@ def cmd_guard(a):
         g["require_packet"] = a.require_packet == "on"
     if a.volume_needs_upload is not None:
         g["volume_needs_upload"] = a.volume_needs_upload == "on"
+    if a.ratio_needs_packet is not None:
+        g["ratio_needs_packet"] = a.ratio_needs_packet == "on"
 
     # Секцию telegram сюда обязательно: раньше её здесь не было, и любая
     # правка автоограничения молча стирала токен, чат, прокси и время сводки.
@@ -2265,6 +2297,9 @@ def cmd_guard_show(speed, g):
                  mb=g.get("upload_ratio_min_mb", 300))
         print(f"  {C['gry']}{line}{C['r']}")
         print(f"  {C['gry']}{t('guard_ratio_live')}{C['r']}")
+        if g.get("ratio_needs_packet"):
+            print(f"  {C['gry']}"
+                  f"{t('guard_ratio_pkt', n=RATIO_PACKET_BYTES)}{C['r']}")
     if g.get("download_gb_per_hour") and g.get("volume_needs_upload"):
         print(f"  {C['gry']}{t('guard_vol_needs', n=g['packet_bytes'])}{C['r']}")
     print(f"  {t('guard_penalty')}: {g['penalty_mbps']:g} Mbit/s "
@@ -2336,6 +2371,17 @@ def hourly_add(hourly, ip, nbytes, now):
         del d[old]
 
 
+def day_upkt_max(day):
+    """Самый крупный средний пакет вверх за сутки. Нет данных — ноль."""
+    upkt = (day or {}).get("upkt")
+    if isinstance(upkt, list) and len(upkt) == 3:
+        try:
+            return float(upkt[2] or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
 def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
     """
     Решает, нарушитель ли это. Возвращает (баллы, сработавшие признаки).
@@ -2379,7 +2425,9 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
     ratio = g.get("upload_ratio_percent", 0)
     floor_bytes = float(g.get("upload_ratio_min_mb", 300)) * 1e6
     if ratio and day.get("up", 0) >= floor_bytes \
-            and s["ul"] >= RATIO_LIVE_MBPS:
+            and s["ul"] >= RATIO_LIVE_MBPS \
+            and (not g.get("ratio_needs_packet") or day_upkt_max(day)
+                 >= RATIO_PACKET_BYTES):
         # Нулевое скачивание при заметной отдаче — это тем более перекос,
         # делить на ноль ради такого вывода незачем.
         down = day.get("down", 0)
@@ -5490,6 +5538,9 @@ def build_parser():
                    help=t("h_volume_needs"))
     g.add_argument("--volume-mbps", dest="volume_mbps", type=float,
                    default=None, help=t("h_volume_mbps"))
+    g.add_argument("--ratio-needs-packet", dest="ratio_needs_packet",
+                   choices=["on", "off"], default=None,
+                   help=t("h_ratio_needs"))
     g.add_argument("--interval", type=int, default=None, help=t("h_watch_iv"))
     g.add_argument("--packet", type=int, default=None, help=t("h_packet"))
     g.add_argument("--require-packet", dest="require_packet",

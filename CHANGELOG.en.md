@@ -13,6 +13,76 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.40
+
+**The ratio signal was catching video calls. It now requires the upload to be
+data.**
+
+### Three calls in one evening
+
+The maximum packet size added in 3.39 answered the question on its first day:
+
+| Address | Ratio | Average packet | Daily maximum |
+| --- | --- | --- | --- |
+| 176.193.214.172 | 38% | 538 B | **697** |
+| 176.62.109.20 | 100% | 267 B | **349** |
+| 5.35.115.136 | 55% | 368 B | **399** |
+
+Not one came near 1300 over a whole day. A torrent uploading pieces would have
+reached the segment limit at least once — a peer's chunk is always filled to the
+top. Here the ceiling is 697.
+
+329 MB down against 328 up, exactly 100%, is a conversation: both sides speak
+equally. Discord, Telegram and WhatsApp were the ones being penalised.
+
+The 35% threshold is still right. Disproportionate upload really is suspicious —
+it just is not unique to seeding.
+
+### What changed
+
+A new setting, `ratio_needs_packet`. With it the ratio signal fires only if the
+**maximum** upload packet of the day reached 1000 bytes.
+
+Both presets turn it on. The signal catches the same thing on a phone and at
+home, and conversations happen everywhere.
+
+**Why a thousand rather than six hundred.** Six hundred is the threshold of the
+instantaneous signal, chosen for an average over ten seconds of active transfer.
+On a daily maximum a video call reaches seven hundred, and six hundred does not
+cut it off.
+
+**Why the maximum and not the average.** The average is arithmetic and small
+packets outnumber large ones by an order of magnitude — 440 MB in 1400-byte
+chunks plus 550 MB in 60-byte acknowledgements come to 109. The maximum says it
+outright: did anything reach the segment limit or not.
+
+### The maximum's update floor was lowered
+
+From 100 KB to 20 KB per sample — that is 16 Kbit/s.
+
+Otherwise a quiet seeder would not gather a single qualifying window in a day and
+would slip past the very check that is meant for him. He uploads half a megabit,
+and one megabit while limited; at a hundred kilobytes per ten seconds the margin
+was too thin.
+
+### What to do
+
+Update and apply the preset again — the setting is off by default and will not
+turn itself on.
+
+To confirm it did: the Auto-limit screen, the line under the ratio signal. Or
+`shaperctl guard`.
+
+### Also
+
+* The manual toggle is entry `[15]` on the auto-limit screen; presets moved to
+  `[16]`.
+* Tests: 16 new ones. All three live calls go free, a seeder is caught, the
+  maximum threshold exactly on the boundary and one byte below, a corrupted
+  field, the update floor admitting a quiet seeder.
+
+---
+
 ## 3.39
 
 **The daily average packet answered the wrong question. A maximum was added. And

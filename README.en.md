@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.39-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.40-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.39
+# Shape v3.40
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -419,7 +419,7 @@ differs, and what sits behind it.
 | Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
 | Torrents | two-way traffic with large upload packets | same |
-| Quiet seeders | over 35% in a day and uploading right now | same |
+| Quiet seeders | 35% a day, uploading now, packet up to 1000 B | same |
 | Penalty for a torrent | 1 Mbit/s for 60 min | same |
 | Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
 | Sharing | connections dropped | same |
@@ -704,8 +704,21 @@ not, whatever the upload was.
 | ↑ 997 MB (67%) · upload packet 109 B | no data went up at any point |
 | ↑ 997 MB (67%) · upload packet 109 B (max 1340) | it did, it just drowned in the average |
 
-The maximum is only updated on samples with more than 100 KB uploaded: a handful
-of stray packets must not set it.
+The maximum is only updated on samples with more than 20 KB uploaded: a handful
+of stray packets must not set it, yet a quiet seeder on half a megabit must
+still land in it.
+
+**The home preset requires that maximum for the ratio signal.** Uploading more
+than 35% of the download in a day is not enough; the upload packet must also
+have reached 1000 bytes at least once. A conversation never gets to a thousand,
+a seeder gets there in its first transfer window.
+
+A thousand rather than the six hundred of the instantaneous signal: six hundred
+was chosen for an average over ten seconds of active transfer, while on a daily
+maximum a video call reaches seven hundred.
+
+The manual toggle is entry `[15]` on the auto-limit screen, or
+`--ratio-needs-packet on|off` on the command line.
 
 The bytes and the packets behind that average live in **one field of two
 numbers**, not in two fields. Two fields can be had by halves — a record from an
