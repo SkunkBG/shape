@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.41-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.42-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.41
+# Shape v3.42
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -419,7 +419,7 @@ differs, and what sits behind it.
 | Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
 | Torrents | two-way traffic with large upload packets | same |
-| Quiet seeders | 35% a day, uploading now, 30%+ as data | same |
+| Quiet seeders | 35% a day, uploading now, 70%+ as data | same |
 | Penalty for a torrent | 1 Mbit/s for 60 min | same |
 | Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
 | Sharing | connections dropped | same |
@@ -719,14 +719,20 @@ how many bytes of the upload went in packets of 1000 and above is counted too:
 📦 Upload over 11.9 h: 96% as data · packet 1279 B · max 1400
 ```
 
-| Upload | What it is | As data |
+| Ratio | As data | What it is |
 | --- | --- | --- |
-| 976 MB, packet 1279 | seeding | **96%** |
-| 347 MB, packet 780, max 1539 | a conversation plus one attachment | **1%** |
+| 660% | **100%** | seeding |
+| 100% | **32%** | a video call |
+| 102% | **1%** | audio plus one attachment |
 
-The gap is wide enough that the threshold can sit anywhere in the middle. It
-sits at **30%** — with room for mixed windows where someone talks and uploads at
-the same time.
+The threshold sits in the middle of the gap — **70%** — chosen the same way as
+the ratio threshold. Video calls travel in packets just under a thousand, so
+their share is not a few percent but a third.
+
+A real seeder uploads almost nothing but chunks: 90–100%. It can drop to seventy
+only if something else is going on alongside — and then the ratio still stays
+above 150%, while a conversation hovers around a hundred, because both sides send
+the same stream.
 
 **Both presets require that share for the ratio signal.** Uploading more than
 35% of the download in a day is not enough; the upload must also have been data.

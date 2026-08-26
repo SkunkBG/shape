@@ -13,6 +13,63 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.42
+
+**The share threshold went from 30% to 70%. Thirty did not work — it missed in
+the right direction.**
+
+### A video call passed the filter with two points to spare
+
+```
+📈 For the day: ↓ 361.5 MB · ↑ 361.5 MB (100%)
+📦 Upload over 10 min: 32% as data · packet 497 B · max 1354
+```
+
+It uploaded exactly as much as it downloaded — matching to hundredths of a
+percent. Seeding never looks like that: the seeders caught so far were at 660%,
+242%, 88%. An exact 1:1 comes from a conversation, where both sides send the same
+stream at the same bitrate.
+
+Yesterday the same address was at 267 B with a maximum of 349 — pure audio. Today
+497 and 1354: video was turned on. A video stream travels in packets just under a
+thousand, so its share is not a few percent but a third.
+
+It passed my 30% threshold with 32.
+
+### Where the threshold sits now
+
+| Ratio | As data | What it is |
+| --- | --- | --- |
+| 660% | **100%** | seeding |
+| 100% | **32%** | a video call |
+| 102% | **1%** | audio plus one attachment |
+
+Seventy percent is the middle of the real gap. The method is the same one used
+for the ratio threshold: not from theory, but from where the live data is empty.
+
+A real seeder uploads almost nothing but chunks: 90–100%. It can drop to seventy
+only if something else is going on alongside — and then the ratio still stays
+above 150%, while a conversation hovers around a hundred.
+
+### A caveat
+
+The packet field for that address covered ten minutes, not a day: the field is
+reset on a format change, and the format changed in 3.41. Over a full day the
+share may come out differently, and then the threshold will have to move again.
+
+Three data points so far. That is few, but the gap between 32 and 100 is wide
+enough not to wait: the cost of waiting is people on video calls getting 1 Mbit/s
+for an hour.
+
+### Also
+
+* The 3.41 release notes name the threshold as thirty percent. That is true for
+  3.41 and untrue from 3.42 onwards.
+* Tests: 4 new ones, all three live data points plus a seeder with a call
+  running alongside.
+
+---
+
 ## 3.41
 
 **What decides is "how much", not "did it ever". And the packet line no longer
