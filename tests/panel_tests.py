@@ -813,6 +813,20 @@ check("и карточка не падает", "Кто-то" in card_own, card_o
 check("имя без telegram ссылкой не становится",
       "tg://user" not in card_own, card_own)
 
+print("\n\033[1m35a. Причина отказа панели не теряется\033[0m")
+# Живой случай: панель молчала три часа, `panel show` показывал последний
+# успешный опрос и ни слова об ошибке. panel_scan ловил только PanelError,
+# всё остальное улетало в общий обработчик цикла сторожа и оседало в журнале
+# строкой «watch: ...» — то есть причина была, а узнать её было негде.
+_real_fetch = S.panel_fetch
+for exc in (ValueError("битый JSON"), KeyError("users"),
+            OSError("сеть недоступна"), RuntimeError("что угодно")):
+    S.panel_fetch = lambda p, e=exc: (_ for _ in ()).throw(e)
+    res = S.panel_scan({"panel": conf(), "telegram": dict(S.TG_DEFAULT)})
+    check(f"{type(exc).__name__} не улетает наружу и записан",
+          res["ok"] is False and type(exc).__name__ in res["error"], res)
+S.panel_fetch = _real_fetch
+
 print("\n\033[1m35b. Почему владелец не нашёлся — четыре разных ответа\033[0m")
 # Живой случай: на домашних нодах приходили карточки «связь с панелью не
 # настроена на этой ноде», хотя панель была настроена и рядом, в ту же минуту,
@@ -841,11 +855,24 @@ check("и возраст карты посчитан", age > S.PANEL_IP_OWNER_TT
 # равна нулю. Возраст считался от неё, и в сообщение уходило «панель не
 # отвечает уже 29796012 мин» — пятьдесят шесть лет, вся эпоха Unix целиком.
 S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
+drop_state()
 code, age = S.panel_owner_reason(cfg_why, "1.2.3.4")
 check("ни одного опроса — это отдельный случай", code == "never", (code, age))
 check("и возраст от нуля не считается", age == 0.0, age)
 never = "\n".join(S.offender_card(dict(S.TG_DEFAULT, node_name="x"),
                                   None, "x", (code, age)))
+
+# Живой случай: панель молчала три часа, а сообщение говорило «ещё ни разу не
+# ответила». Карта пуста после каждого перезапуска сторожа, но на диске лежит
+# отметка последнего удачного опроса, и она отвечает точнее.
+st = S.panel_state()
+st["last_ok"] = time.time() - 3 * 3600
+S.panel_state_save(st)
+code, age = S.panel_owner_reason(cfg_why, "1.2.3.4")
+check("был удачный опрос — значит «не отвечает», а не «ни разу»",
+      code == "stale", (code, age))
+check("и срок молчания взят с диска", 10700 < age < 10900, age)
+drop_state()
 check("в тексте нет числа из эпохи Unix",
       not any(w.isdigit() and len(w) > 5 for w in never.split()), never)
 check("это не тот же текст, что у «панель не отвечает»",

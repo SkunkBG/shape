@@ -504,10 +504,10 @@ print("\n\033[1mЦифры в сообщении о штрафе\033[0m")
 GiB = 1024 ** 3
 
 
-def figures(down_gb, up_gb, pkt=None):
+def figures(down_gb, up_gb, pkt=None, top=0):
     day = {"down": down_gb * GiB, "up": up_gb * GiB}
     if pkt:
-        day["upkt"] = [up_gb * GiB, int(up_gb * GiB / pkt)]
+        day["upkt"] = [up_gb * GiB, int(up_gb * GiB / pkt), top]
     return S.penalty_figures(day)
 
 
@@ -537,13 +537,13 @@ check("без счётчика пакетов строка всё равно с�
 # поставил только потолок — и получил вторую половину той же ошибки.
 D = {"down": 305.5e6, "up": 302.5e6}
 check("невозможно большое среднее не печатается",
-      "·" not in S.penalty_figures(dict(D, upkt=[302.5e6, 3612])).split("(")[1],
-      S.penalty_figures(dict(D, upkt=[302.5e6, 3612])))
+      "·" not in S.penalty_figures(dict(D, upkt=[302.5e6, 3612, 0])).split("(")[1],
+      S.penalty_figures(dict(D, upkt=[302.5e6, 3612, 0])))
 check("невозможно малое — тоже",
-      "11" not in S.penalty_figures(dict(D, upkt=[302.5e6, 27500000])),
-      S.penalty_figures(dict(D, upkt=[302.5e6, 27500000])))
+      "11" not in S.penalty_figures(dict(D, upkt=[302.5e6, 27500000, 0])),
+      S.penalty_figures(dict(D, upkt=[302.5e6, 27500000, 0])))
 check("а правдоподобное печатается",
-      "1315" in S.penalty_figures(dict(D, upkt=[302.5e6, 230000])))
+      "1315" in S.penalty_figures(dict(D, upkt=[302.5e6, 230000, 0])))
 check("границы: от подтверждения до джамбо-кадра",
       (S.MIN_PACKET_BYTES, S.MAX_PACKET_BYTES) == (40, 9000))
 
@@ -554,9 +554,31 @@ check("испорченное поле не роняет строку",
 check("половина поля тоже не роняет",
       "·" not in S.penalty_figures(dict(D, upkt=[302.5e6])).split("(")[1])
 check("нулевое число пакетов не делит на ноль",
-      "·" not in S.penalty_figures(dict(D, upkt=[1, 0])).split("(")[1])
+      "·" not in S.penalty_figures(dict(D, upkt=[1, 0, 0])).split("(")[1])
 check("поля нет вовсе — строка без пакета",
       "·" not in S.penalty_figures(dict(D)).split("(")[1])
+check("поле не той длины — тоже без пакета",
+      "·" not in S.penalty_figures(
+          dict(D, upkt=[302.5e6, 230000])).split("(")[1])
+
+# Живой случай, из-за которого максимум и появился: 1.5 ГБ вниз, 997 МБ вверх
+# и «пакет вверх 109 Б». Среднее за сутки арифметическое, а мелких пакетов в
+# потоке на порядок больше крупных — 440 МБ кусками по 1400 и 550 МБ
+# подтверждениями по 60 дают ровно такое среднее. Ответить «отдавал ли он
+# данные» по нему нельзя, а печаталось оно именно за этим.
+mixed = [997.2e6, 9146788, 1340]
+check("среднее показывает поток целиком",
+      "109" in S.penalty_figures(dict(D, upkt=mixed)),
+      S.penalty_figures(dict(D, upkt=mixed)))
+check("а максимум отвечает, отдавал ли он данные",
+      "1340" in S.penalty_figures(dict(D, upkt=mixed)))
+check("максимума нет — и строки про него нет",
+      "макс" not in S.penalty_figures(dict(D, upkt=[997.2e6, 9146788, 0]))
+      and "max" not in S.penalty_figures(dict(D, upkt=[997.2e6, 9146788, 0])))
+check("невозможный максимум не печатается",
+      "99999" not in S.penalty_figures(dict(D, upkt=[1e6, 1000, 99999])))
+check("пол по объёму мешает случайным пакетам назначить максимум",
+      S.UPKT_MAX_FLOOR >= 100_000, S.UPKT_MAX_FLOOR)
 
 # Средний пакет обязан считаться за сутки, а не по последнему замеру: в
 # момент штрафа адрес мог как раз молчать вверх, и вышло бы «0 Б».

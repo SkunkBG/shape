@@ -192,6 +192,7 @@ MSG = {
         "tg_pen_why": "Причина: <i>{why}</i>",
         "tg_pen_stat": "📈 За сутки: {s}",
         "tg_pen_pkt": "пакет вверх {n} Б",
+        "tg_pen_pkt_max": "(макс {n})",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
         "pn_card_never": "<i>кто это — неизвестно: панель ещё ни разу не ответила — проверьте её командой <code>shaperctl panel show</code></i>",
         "pn_card_stale": "<i>кто это — неизвестно: панель не отвечает уже {m} мин</i>",
@@ -551,6 +552,7 @@ MSG = {
         "tg_pen_why": "Reason: <i>{why}</i>",
         "tg_pen_stat": "📈 For the day: {s}",
         "tg_pen_pkt": "upload packet {n} B",
+        "tg_pen_pkt_max": "(max {n})",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
         "pn_card_never": "<i>identity unknown: the panel has never answered yet — check it with <code>shaperctl panel show</code></i>",
         "pn_card_stale": "<i>identity unknown: the panel has not answered for {m} min</i>",
@@ -1099,6 +1101,19 @@ RATIO_LIVE_MBPS = 0.05
 # определению.
 MIN_PACKET_BYTES = 40
 MAX_PACKET_BYTES = 9000
+
+# Ниже какого объёма за замер не обновляем максимум размера пакета.
+#
+# Средний пакет ЗА СУТКИ отвечает не на тот вопрос, на который я его выдал.
+# Он арифметический, а мелких пакетов в потоке на порядок больше, чем
+# крупных: 440 МБ кусками по 1400 и 550 МБ подтверждениями по 60 дают
+# среднее 109 байт. По нему нельзя сказать, отдавал ли человек данные —
+# а именно за этим он и печатался.
+#
+# Максимум за десятисекундное окно отвечает: если хоть раз за сутки средний
+# пакет в окне дошёл до 1300, значит куски данных вверх шли. Пол по объёму
+# нужен, чтобы десяток случайных пакетов не назначил максимум.
+UPKT_MAX_FLOOR = 100_000
 
 # Как часто напоминать об одном и том же адресе с той же причиной.
 #
@@ -2541,14 +2556,16 @@ def cmd_watch(a):
                 # деление даёт бессмыслицу. Одного поля либо нет целиком,
                 # либо оно есть целиком.
                 upkt = d.get("upkt")
-                if not (isinstance(upkt, list) and len(upkt) == 2):
-                    upkt = d["upkt"] = [0, 0]
+                if not (isinstance(upkt, list) and len(upkt) == 3):
+                    upkt = d["upkt"] = [0, 0, 0]
                 if max(s["dl"], s["ul"]) >= active_floor:
                     d["active"] += interval
                 d["up"] += s["up_bytes"]
                 d["down"] += s["dl_bytes"]
                 upkt[0] += s["up_bytes"]
                 upkt[1] += s["up_pkts"]
+                if s["up_bytes"] >= UPKT_MAX_FLOOR:
+                    upkt[2] = max(upkt[2], int(s["up_pkt"]))
                 if s["dl_bytes"]:
                     hourly_add(hourly, ip, s["dl_bytes"], time.time())
 
@@ -2855,10 +2872,16 @@ def penalty_figures(day):
     # случай, если поле всё-таки окажется испорченным: соврать хуже, чем
     # промолчать.
     upkt = day.get("upkt")
-    if isinstance(upkt, list) and len(upkt) == 2 and upkt[1]:
+    if not (isinstance(upkt, list) and len(upkt) == 3):
+        return out
+    if upkt[1]:
         avg = float(upkt[0]) / float(upkt[1])
         if MIN_PACKET_BYTES <= avg <= MAX_PACKET_BYTES:
             out += " · " + t("tg_pen_pkt", n=int(avg))
+    # Максимум отвечает на вопрос «отдавал ли данные», а среднее — нет.
+    top = float(upkt[2] or 0)
+    if MIN_PACKET_BYTES <= top <= MAX_PACKET_BYTES:
+        out += " " + t("tg_pen_pkt_max", n=int(top))
     return out
 
 
@@ -3535,7 +3558,13 @@ def panel_owner_reason(cfg, ip, now=None):
     now = now if now is not None else time.time()
     at = float(_PANEL_IP_OWNER.get("at") or 0)
     if at <= 0:
-        return "never", 0.0
+        # Карта живёт в памяти процесса и после перезапуска пуста. Но на диске
+        # лежит отметка последнего удачного опроса, и она отвечает на вопрос
+        # точнее: «не отвечает уже три часа» — это диагноз, а «ещё ни разу» —
+        # только про текущий процесс.
+        at = float((panel_state() or {}).get("last_ok") or 0)
+        if at <= 0:
+            return "never", 0.0
     age = now - at
     if age > PANEL_IP_OWNER_TTL:
         return "stale", age
@@ -3940,6 +3969,14 @@ def panel_scan(cfg, now=None, act=True):
         users = panel_fetch(p)
     except PanelError as e:
         return {"ok": False, "error": str(e), "code": e.code,
+                "users": 0, "offenders": []}
+    except Exception as e:
+        # Ловим всё, а не только PanelError. Живой случай: панель молчала три
+        # часа, `panel show` показывал последний успешный опрос и НИ СЛОВА об
+        # ошибке — потому что не-PanelError улетал наружу, в общий обработчик
+        # цикла сторожа, и оседал в журнале строкой «watch: ...». Причина
+        # была, узнать её было негде.
+        return {"ok": False, "error": f"{type(e).__name__}: {e}", "code": 0,
                 "users": 0, "offenders": []}
 
     # Побочный, но полезный итог опроса: карта «адрес → чей он». Стоила она

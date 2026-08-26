@@ -13,6 +13,74 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.39
+
+**The daily average packet answered the wrong question. A maximum was added. And
+the panel no longer stays silent about why it is silent.**
+
+### "upload packet 109 B" against a gigabyte of upload
+
+I offered this figure as the answer to "torrent or not". It does not answer that,
+and here is why.
+
+It is an arithmetic mean, and a stream carries an order of magnitude more small
+packets than large ones. 440 MB in 1400-byte chunks plus 550 MB in 60-byte
+acknowledgements is 314 thousand large packets against 9.2 million small ones,
+and the mean comes out at 109. Exactly what you saw. Data was going up, and the
+mean does not show it.
+
+The "from 600 bytes it is data" threshold came from the monitor, where the
+average is taken over ten seconds of active transfer. In a daily aggregate it
+does not hold: that is a different quantity.
+
+A **maximum** is now tracked as well — the largest average packet over any
+ten-second window in the day:
+
+```
+📈 For the day: ↓ 1.5 GB · ↑ 997.2 MB (67%) · upload packet 109 B (max 1340)
+```
+
+| The line | What it was |
+| --- | --- |
+| upload packet 109 B | no data went up at any point |
+| upload packet 109 B (max 1340) | it did, it just drowned in the average |
+
+The maximum is only updated on samples with more than 100 KB uploaded: a handful
+of stray packets must not set it.
+
+### The panel was silent for three hours and did not say so
+
+`panel show` displayed a last successful poll at 16:32 and not a word about an
+error, even though the field for it exists and is printed.
+
+`panel_scan` caught `PanelError` only. Everything else — broken JSON, an
+unexpected response, a socket failure outside the wrapper — escaped into the
+watchdog loop's generic handler and settled in the journal as a `watch: ...`
+line. There was a cause, and there was no way to learn it from `panel show`.
+
+Everything is caught now, and `last_error` receives the exception name with its
+text.
+
+### "the panel has never answered yet" with a successful poll at 16:32
+
+The address map lives in the process memory and is empty after every watchdog
+restart — that is, after every update. Hence "never".
+
+But the disk holds the timestamp of the last successful poll, and it answers more
+precisely. With an empty map that timestamp is now used: "the panel has not
+answered for 179 min" is a diagnosis, while "never" is left for the case where
+there genuinely were no successful polls.
+
+### Also
+
+* The `upkt` field is now three numbers: bytes, packets, maximum. Records of the
+  earlier length are reset wholesale — all three must start together.
+* Tests: 15 new ones. A mixed stream yields a low mean and a high maximum, the
+  volume floor, an impossible maximum is not printed, four different exceptions
+  from `panel_fetch` are not lost, the silence period is taken from disk.
+
+---
+
 ## 3.38
 
 **The `shaperctl` command finally exists. And an average packet is no longer

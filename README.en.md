@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.38-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.39-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.38
+# Shape v3.39
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -684,13 +684,28 @@ cloud. Three numbers do:
 | | What it was |
 | --- | --- |
 | ↓ 40 GB · ↑ 0.4 GB (1%) · packet 150 B | a download: only acknowledgements go up |
+| ↓ 1.5 GB · ↑ 1.0 GB (67%) · packet 109 B | small packets both ways: calls, games |
 | ↓ 2.1 GB · ↑ 3.4 GB (162%) · packet 1310 B | seeding: data goes up |
 | ↓ 0.1 GB · ↑ 5.0 GB · packet 1400 B | a cloud upload: almost nothing comes down |
 
-Packet size is the decisive one and does not depend on the channel speed: an
-acknowledgement stays short at ten megabits and at a gigabit. It is averaged
-**over the day**, not taken from the last sample — at the moment of the penalty
-the address may have been silent upward.
+There are two packet sizes, and the one to read is the **maximum**.
+
+The daily average is arithmetic, and a stream carries an order of magnitude more
+small packets than large ones: 440 MB in 1400-byte chunks plus 550 MB in 60-byte
+acknowledgements average out to 109. That number cannot tell you whether the
+person uploaded data — which is exactly what is needed.
+
+The maximum is the largest average packet over any ten-second window in the day.
+If it ever reached 1300, data chunks were going up. If it never did, they were
+not, whatever the upload was.
+
+| The line | What it was |
+| --- | --- |
+| ↑ 997 MB (67%) · upload packet 109 B | no data went up at any point |
+| ↑ 997 MB (67%) · upload packet 109 B (max 1340) | it did, it just drowned in the average |
+
+The maximum is only updated on samples with more than 100 KB uploaded: a handful
+of stray packets must not set it.
 
 The bytes and the packets behind that average live in **one field of two
 numbers**, not in two fields. Two fields can be had by halves — a record from an
