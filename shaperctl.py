@@ -187,7 +187,7 @@ MSG = {
         "tg_sent": "сообщение отправлено",
         "tg_test_text": "Проверка связи прошла успешно.",
         "tg_pen_head": "🚦 <b>Ограничение</b>",
-        "tg_pen_addr": "📍 Адрес: <code>{ip}</code>",
+        "tg_pen_addr": "📍 Адрес: {ip}",
         "tg_pen_speed": "🐌 Скорость снижена до {mbps} Мбит/с на {d}",
         "tg_pen_why": "Причина: <i>{why}</i>",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
@@ -256,8 +256,10 @@ MSG = {
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
         "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b>",
-        "pn_card_name": "👤 <b>{name}</b>",
+        "pn_card_name": "👤 {name}",
         "pn_card_tg": "🆔 Telegram: <code>{id}</code>",
+        "pn_card_login": "🔑 В панели: <code>{login}</code>",
+        "pn_card_login_plain": "Логин в панели: {login}",
         "pn_card_panel": "🔑 ID в панели: <code>{id}</code>",
         "pn_card_panel_plain": "ID в панели: {id}",
         "pn_msg_blocked": "🚫 Доступ к ноде перекрыт на {m} мин, адресов: {n}",
@@ -533,7 +535,7 @@ MSG = {
         "tg_sent": "message sent",
         "tg_test_text": "Connection test passed.",
         "tg_pen_head": "🚦 <b>Limited</b>",
-        "tg_pen_addr": "📍 Address: <code>{ip}</code>",
+        "tg_pen_addr": "📍 Address: {ip}",
         "tg_pen_speed": "🐌 Speed cut to {mbps} Mbit/s for {d}",
         "tg_pen_why": "Reason: <i>{why}</i>",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
@@ -602,8 +604,10 @@ MSG = {
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
         "pn_msg_head": "🔎 <b>Looks like a shared subscription</b>",
-        "pn_card_name": "👤 <b>{name}</b>",
+        "pn_card_name": "👤 {name}",
         "pn_card_tg": "🆔 Telegram: <code>{id}</code>",
+        "pn_card_login": "🔑 Panel login: <code>{login}</code>",
+        "pn_card_login_plain": "Panel login: {login}",
         "pn_card_panel": "🔑 Panel ID: <code>{id}</code>",
         "pn_card_panel_plain": "Panel ID: {id}",
         "pn_msg_blocked": "🚫 Access to the node cut off for {m} min, addresses: {n}",
@@ -1914,40 +1918,6 @@ def owner_of(ip, owners=None):
         return None
 
 
-def subject_text(subject, ip):
-    """
-    Как назвать нарушителя в сообщении.
-
-    Ссылка делается через tg://user?id=…, а не через @username: имя
-    пользователя есть далеко не у всех, а telegram_id панель знает всегда.
-    """
-    if not subject:
-        return f"<code>{ip}</code>"
-    label = html.escape(str(subject.get("label") or "")).strip()
-
-    # Идентификатор Telegram приходит и из панели, и из owners.json, который
-    # правят руками. Нечисловое значение раньше роняло отправку целиком:
-    # int() на «нет данных» — исключение, и сообщение о штрафе не уходило.
-    tg_id = str(subject.get("telegram_id") or "").strip()
-    tg_id = int(tg_id) if tg_id.lstrip("-").isdigit() else None
-
-    if label and tg_id:
-        return f'<a href="tg://user?id={tg_id}">{label}</a> · <code>{ip}</code>'
-    if label:
-        return f"{label} · <code>{ip}</code>"
-    if tg_id:
-        return f'<a href="tg://user?id={tg_id}">id {tg_id}</a> · <code>{ip}</code>'
-
-    # Имени нет, Telegram нет — но номер в панели есть почти всегда: он
-    # приходит вместе со списком соединений, ещё до того, как мы спросим
-    # карточку. Показать «#741» куда полезнее, чем не показать ничего:
-    # по нему человек ищется в панели так же, как по имени.
-    uid = html.escape(str(subject.get("user_id") or "")).strip()
-    if uid:
-        return f"<code>#{uid}</code> · <code>{ip}</code>"
-    return f"<code>{ip}</code>"
-
-
 # ──────────────────────────── история по суткам ───────────────────────────
 # Суточные счётчики обнуляются в полночь, и до сих пор от них не оставалось
 # ничего. Одна строка в день стоит около сотни байт — зато появляется ответ
@@ -2641,18 +2611,37 @@ def offender_card(tg, subject, head):
     человека, который читает сообщение, один и тот же: кто и за что. Поэтому
     шапка общая, а различается только то, что ниже.
 
-    Идентификаторы стоят отдельными строками и в <code>: в Telegram такой
-    текст копируется одним касанием, а искать человека в панели придётся
-    именно по ним.
+    Касанием копируется только то, по чему человека ищут: логин панели и
+    Telegram ID. Адрес — обычным текстом. Раньше он тоже был в <code>, и
+    касание по карточке отдавало в буфер именно его — а искать по адресу
+    негде: ни панель, ни бот его не знают.
     """
     subject = subject or {}
     out = [f"{head} · <b>{node_label(tg)}</b>", ""]
-    if subject.get("label"):
-        out.append(t("pn_card_name", name=html.escape(str(subject["label"]))))
-    if str(subject.get("telegram_id") or "").strip():
-        out.append(t("pn_card_tg", id=html.escape(str(subject["telegram_id"]))))
-    if str(subject.get("user_id") or "").strip():
-        out.append(t("pn_card_panel", id=html.escape(str(subject["user_id"]))))
+
+    name = html.escape(str(subject.get("label") or "")).strip()
+    handle = html.escape(str(subject.get("handle") or "")).strip()
+    tg_id = str(subject.get("telegram_id") or "").strip()
+
+    # Имя — ссылкой на профиль: открыть переписку одним касанием проще, чем
+    # искать человека по идентификатору руками.
+    if name and tg_id.lstrip("-").isdigit():
+        name = f'<a href="tg://user?id={tg_id}">{name}</a>'
+    if name or handle:
+        out.append(t("pn_card_name",
+                     name=" · ".join(x for x in (name, handle) if x)))
+    if tg_id:
+        out.append(t("pn_card_tg", id=html.escape(tg_id)))
+
+    login = html.escape(str(subject.get("username") or "")).strip()
+    uid = html.escape(str(subject.get("user_id") or "")).strip()
+    if login:
+        # Логин — то самое, что вставляют в поиск панели. Внутренний номер
+        # рядом и без <code>: он нужен глазам, а не буферу.
+        out.append(t("pn_card_login", login=login)
+                   + (f" · #{uid}" if uid else ""))
+    elif uid:
+        out.append(t("pn_card_panel", id=uid))
     if len(out) == 2:          # ничего, кроме заголовка, не нашлось
         out.append(t("pn_card_unknown"))
     out.append("")
@@ -3229,22 +3218,66 @@ PANEL_DIR_MAX_PAGES = 40    # страховка от бесконечной п�
 PANEL_MSG_LIMIT = 3500      # предел сообщения в Telegram 4096, берём с запасом
 
 
+PERSON_NAME_MAX = 48
+PERSON_HANDLE_RE = re.compile(r"@([A-Za-z0-9_]{4,32})")
+
+
+def person_name(desc):
+    """
+    Имя и @ник из описания учётной записи. Не разобралось — две пустые строки.
+
+    Отдельного поля под имя в панели нет: логин там вида «user_637181482», а
+    имя, если оно вообще есть, кладёт в описание бот. Формат у каждого бота
+    свой — «Bot user: Иван @ivan», «Иван», просто «@ivan», — поэтому разбираем
+    осторожно и на удачу не рассчитываем: не вышло, и в сообщении останется
+    логин, как было раньше.
+    """
+    s = " ".join(str(desc or "").split())
+    if not s:
+        return "", ""
+
+    # «Bot user: Иван @ivan» → «Иван @ivan». Подпись отрезаем первой и только
+    # если она короткая и написана латиницей: описание вроде «Оплата: до 3
+    # октября» так уцелеет целиком, а свою метку бот ставит по-английски.
+    # Порядок важен: сделай это после @ника — от «Bot user: @ivan» осталось
+    # бы имя «Bot user:».
+    head, sep, tail = s.partition(":")
+    if sep and tail.strip() and len(head) <= 16 and head.isascii():
+        s = tail
+
+    m = PERSON_HANDLE_RE.search(s)
+    handle = "@" + m.group(1) if m else ""
+    if m:
+        s = s[:m.start()] + s[m.end():]
+
+    return " ".join(s.split()).strip(" ·,-:")[:PERSON_NAME_MAX], handle
+
+
 def panel_person(u):
-    """Из карточки панели оставляем три поля. Остальные двадцать — мимо."""
+    """Из карточки панели оставляем пять полей. Остальные два десятка — мимо."""
     if not isinstance(u, dict) or u.get("id") is None:
         return None
+    name, handle = person_name(u.get("description"))
     return {"id": str(u.get("id")),
-            "name": str(u.get("username") or ""),
+            "username": str(u.get("username") or ""),
+            "name": name,
+            "handle": handle,
             "telegram_id": str(u.get("telegramId") or "")}
 
 
 def panel_label(uid, person=None):
-    """«Елена (851400228)» — или внутренний номер, если справочника нет."""
+    """
+    «Елена · user_97 (851400228)» — сколько известно, столько и пишем.
+
+    Логин остаётся в подписи даже когда имя известно: имя нужно глазам, а
+    ищут человека в панели по логину, и отчёт открывают именно для этого.
+    """
     if not person:
         return "#" + str(uid)
-    name = person.get("name") or ("#" + str(uid))
+    head = " · ".join(x for x in (person.get("name"), person.get("username"))
+                      if x) or ("#" + str(uid))
     tg = person.get("telegram_id")
-    return f"{name} ({tg})" if tg else name
+    return f"{head} ({tg})" if tg else head
 
 
 def panel_user(p, uid):
@@ -3284,10 +3317,12 @@ def panel_owner(cfg, ip, now=None):
     out = {"user_id": str(uid)}
     person = panel_user(p, uid)
     if person:
-        if person.get("name"):
-            out["label"] = person["name"]
-        # subject_text прогоняет идентификатор через int() — нечисловое
-        # значение уронило бы отправку сообщения о штрафе.
+        for src, dst in (("name", "label"), ("username", "username"),
+                         ("handle", "handle")):
+            if person.get(src):
+                out[dst] = person[src]
+        # Карточка делает из идентификатора ссылку tg://user?id=… — нечисловое
+        # значение уронило бы отправку сообщения о штрафе целиком.
         if str(person.get("telegram_id") or "").isdigit():
             out["telegram_id"] = person["telegram_id"]
     return out
@@ -3543,6 +3578,8 @@ def panel_notify(cfg, rec):
     minutes = max(1, int(p.get("limit_min") or 60))
 
     lines = offender_card(tg, {"label": person.get("name"),
+                               "handle": person.get("handle"),
+                               "username": person.get("username"),
                                "telegram_id": person.get("telegram_id"),
                                "user_id": rec["user_id"]}, t("pn_msg_head"))
     lines.append(t("pn_msg_ips", n=rec["count"],
@@ -3584,8 +3621,11 @@ def panel_notify(cfg, rec):
         who = panel_label(rec["user_id"], rec.get("person"))
         # Шапка внутри файла — чтобы вложение оставалось понятным само по
         # себе: его пересылают и открывают отдельно от сообщения.
-        head = [who,
-                t("pn_card_panel_plain", id=rec["user_id"]),
+        head = [who]
+        if (rec.get("person") or {}).get("username"):
+            head.append(t("pn_card_login_plain",
+                          login=rec["person"]["username"]))
+        head += [t("pn_card_panel_plain", id=rec["user_id"]),
                 t("pn_rep_head", node=node_label(tg),
                   at=time.strftime("%Y-%m-%d %H:%M")), ""]
         body = "\n".join(head + list(rec["ips"])) + "\n"
@@ -3894,8 +3934,12 @@ def cmd_panel(a):
         person = panel_user(p, uid)
         print(f"  {C['grn']}✓{C['r']} {t('pn_who_found', ip=ip)}")
         print(f"      {t('pn_card_panel_plain', id=uid)}")
-        if person and person.get("name"):
-            print(f"      {t('pn_who_name')}: {C['b']}{person['name']}{C['r']}")
+        if person and person.get("username"):
+            print(f"      {t('pn_card_login_plain', login=person['username'])}")
+        if person and (person.get("name") or person.get("handle")):
+            who = " · ".join(x for x in (person.get("name"),
+                                         person.get("handle")) if x)
+            print(f"      {t('pn_who_name')}: {C['b']}{who}{C['r']}")
         if person and person.get("telegram_id"):
             print(f"      Telegram: {C['b']}{person['telegram_id']}{C['r']}")
         if not person:

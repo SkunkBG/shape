@@ -13,6 +13,70 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.33
+
+**The offender card gained a name, and a tap stopped copying the address.**
+
+### The wrong thing was copyable
+
+```
+🚦 Limited · Erebor
+Limited user_6825740098 · 91.78.46.46 → 1 Mbit/s for 12 h
+```
+
+Tapping such a message put the address in the clipboard — and there is nowhere
+to search by an address: neither the panel nor the bot knows it. What needs
+copying is exactly what goes into the panel's search box: the account login.
+
+Now:
+
+```
+🚦 Limited · Erebor
+
+👤 Ivan · @ivan_k
+🆔 Telegram: 637181482
+🔑 Panel login: user_637181482 · #741
+
+📍 Address: 91.78.46.46
+🐌 Speed reduced to 1 Mbit/s for 12 h
+Reason: uploaded disproportionately much in 24h
+```
+
+A tap copies the panel login and the Telegram ID. The address is plain text.
+The internal number sits next to the login and is not copyable either: it is
+there for the eye, not for the clipboard.
+
+### The name
+
+The name line used to hold the login: `user_6825740098`. The panel has no field
+for a name — the name, if it exists at all, is written into the account
+description by a bot, usually as a line like `Bot user: Ivan @ivan_k`.
+
+Shape now parses that description into a name and a handle. The parse is
+cautious: every bot has its own format, and if it fails the card simply keeps
+the login, as before. A note like `Paid: until 3 October` is left alone and
+shown in full.
+
+The name became tappable: behind it sits a `tg://user?id=…` link that opens the
+chat, and it works even for people without a username.
+
+### Node report
+
+The label in the report and in the address-list file now carries both the name
+and the login: `Ivan · user_637181482 (637181482)`. It used to carry the login
+alone. The login stays even when the name is known — the report is opened
+precisely in order to find the person in the panel.
+
+### Also
+
+* `panel who` prints the login and the handle alongside the name.
+* `subject_text` removed: `offender_card` builds the whole card, and a second
+  function for the same job only drifted away from the first.
+* Tests: description parsing (name, handle, bot label, Cyrillic note, length),
+  login in `<code>`, address not in `<code>`, the profile link.
+
+---
+
 ## 3.32
 
 **Five presets became two, named by node type rather than by mechanism.**

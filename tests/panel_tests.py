@@ -472,6 +472,7 @@ def directory(n, tg=True):
     out = {}
     for i in range(1, n + 1):
         rec = {"id": i, "username": "user_%d" % i, "email": "x@y",
+               "description": "Bot user: Имя%d @nick_%d" % (i, i),
                "shortUuid": "s%d" % i, "status": "ACTIVE"}
         if tg:
             rec["telegramId"] = 850000000 + i
@@ -498,10 +499,29 @@ d = S.panel_directory(conf())
 check("справочник собран целиком", len(d) == 5, len(d))
 check("страниц запрошено больше одной", PANEL["pages"] >= 3, PANEL["pages"])
 check("короткая страница не обрывает обход", set(d) == {"1", "2", "3", "4", "5"})
-check("имя разобрано", d["1"]["name"] == "user_1", d["1"])
+check("логин разобран", d["1"]["username"] == "user_1", d["1"])
+check("имя разобрано из описания", d["1"]["name"] == "Имя1", d["1"])
+check("ник разобран из описания", d["1"]["handle"] == "@nick_1", d["1"])
 check("telegram разобран", d["1"]["telegram_id"] == "850000001", d["1"])
-check("лишние поля выброшены", set(d["1"]) == {"id", "name", "telegram_id"},
+check("лишние поля выброшены",
+      set(d["1"]) == {"id", "username", "name", "handle", "telegram_id"},
       sorted(d["1"]))
+
+# Отдельного поля под имя в панели нет: логин там «user_637181482», а имя,
+# если оно есть, кладёт в описание бот — и формат у каждого бота свой.
+# Разбор обязан быть терпимым: не понял — вернул пусто, и останется логин.
+check("имя без ника", S.person_name("Иван") == ("Иван", ""))
+check("ник без имени", S.person_name("@ivanov") == ("", "@ivanov"))
+check("подпись бота отрезана",
+      S.person_name("Bot user: Ольга Петровна @olga7")
+      == ("Ольга Петровна", "@olga7"))
+check("подпись бота без имени не становится именем",
+      S.person_name("Bot user: @nick7") == ("", "@nick7"))
+check("кириллическая заметка уцелела целиком",
+      S.person_name("Оплата: до 3 октября") == ("Оплата: до 3 октября", ""))
+check("пустое описание — пусто", S.person_name(None) == ("", ""))
+check("длинное описание обрезано",
+      len(S.person_name("я" * 300)[0]) == S.PERSON_NAME_MAX)
 
 was = PANEL["pages"]
 S.panel_directory(conf())
@@ -511,12 +531,16 @@ check("но по требованию перечитывается", PANEL["page
 PANEL["page_cap"] = 1000
 
 print("\n\033[1m21. Подпись пользователя\033[0m")
-check("имя и telegram",
-      S.panel_label("1", d["1"]) == "user_1 (850000001)", S.panel_label("1", d["1"]))
+check("имя, логин и telegram",
+      S.panel_label("1", d["1"]) == "Имя1 · user_1 (850000001)",
+      S.panel_label("1", d["1"]))
+check("без имени — логин",
+      S.panel_label("9", {"id": "9", "username": "user_9", "name": "",
+                          "telegram_id": ""}) == "user_9")
 check("без справочника — внутренний номер", S.panel_label("97") == "#97")
 check("без telegram — только имя",
       S.panel_label("9", {"id": "9", "name": "Елена", "telegram_id": ""}) == "Елена")
-check("без имени — решётка с номером",
+check("без имени и логина — решётка с номером",
       S.panel_label("9", {"id": "9", "name": "", "telegram_id": ""}) == "#9")
 
 print("\n\033[1m22. Про нарушителя спрашиваем поимённо, а не весь справочник\033[0m")
@@ -586,6 +610,7 @@ check("отчёт отправлен", okrep, err)
 text = docs[0]["body"] if docs else ""
 check("в отчёте есть все подключённые",
       all(("user_%d" % i) in text for i in (1, 2, 3)), text[:200])
+check("в отчёте есть и имена", "Имя1" in text, text[:200])
 check("не подключённых в отчёте нет", "user_4" not in text)
 check("нарушитель отмечен", "⚠" in text, text[:300])
 check("сортировка по числу адресов: нарушитель первым",
@@ -646,7 +671,8 @@ print("\n\033[1m30. Карточка нарушителя пригодна дл�
 fresh_cache()
 drop_state()
 sent.clear(); docs.clear()
-PANEL["directory"] = {"741": {"id": 741, "username": "Bashou",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+                             "description": "Bot user: Bashou @bashou7",
                              "telegramId": 637181482}}
 PANEL["users"] = [{"userId": 741,
                    "ips": [{"ip": "1.2.3.%d" % i,
@@ -661,11 +687,16 @@ card = sent[0] if sent else ""
 check("имя в карточке", "Bashou" in card, card[:200])
 check("Telegram ID в карточке", "637181482" in card, card[:200])
 check("номер в панели в карточке", "741" in card, card[:200])
-# Оба идентификатора должны копироваться одним касанием — в Telegram это <code>.
+check("ник в карточке", "@bashou7" in card, card[:300])
+# Касанием копируется то, по чему человека ищут: логин панели и Telegram ID.
+# Адрес — обычным текстом: искать по нему негде, а раньше именно он и
+# перехватывал касание на себя.
 check("Telegram ID копируется касанием",
       "<code>637181482</code>" in card, card[:300])
-check("номер в панели копируется касанием",
-      "<code>741</code>" in card, card[:300])
+check("логин панели копируется касанием",
+      "<code>user_637181482</code>" in card, card[:300])
+check("адрес касанием не копируется",
+      "<code>1.2.3.0</code>" not in card, card[:400])
 check("сказано, что ничего не предпринято",
       "уведомление" in card or "notification" in card, card[-200:])
 
@@ -733,7 +764,8 @@ print("\n\033[1m35. Кто стоит за адресом — для сообщ�
 fresh_cache()
 drop_state()
 S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
-PANEL["directory"] = {"741": {"id": 741, "username": "Bashou",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+                             "description": "Bot user: Bashou @bashou7",
                              "telegramId": 637181482}}
 PANEL["users"] = [{"userId": 741,
                    "ips": [{"ip": "1.2.3.4", "lastSeen": time.strftime(
@@ -749,11 +781,14 @@ check("на её сбор запросов не потрачено", PANEL["by_i
 who = S.panel_owner(cfg_own, "1.2.3.4")
 check("владелец найден", bool(who), who)
 check("имя подставлено", (who or {}).get("label") == "Bashou", who)
+check("логин подставлен",
+      (who or {}).get("username") == "user_637181482", who)
+check("ник подставлен", (who or {}).get("handle") == "@bashou7", who)
 check("telegram подставлен", (who or {}).get("telegram_id") == "637181482", who)
 check("номер в панели сохранён", (who or {}).get("user_id") == "741", who)
-check("подпись собирается без ошибок",
-      "Bashou" in S.subject_text(who, "1.2.3.4"),
-      S.subject_text(who, "1.2.3.4"))
+card_own = "\n".join(S.offender_card(
+    dict(S.TG_DEFAULT, node_name="Erebor"), who, "x"))
+check("карточка собирается без ошибок", "Bashou" in card_own, card_own)
 check("чужой адрес — никого", S.panel_owner(cfg_own, "9.9.9.9") is None)
 check("панель выключена — никого",
       S.panel_owner({"panel": dict(S.PANEL_DEFAULT)}, "1.2.3.4") is None)
@@ -763,14 +798,20 @@ S._PANEL_IP_OWNER["at"] = time.time() - S.PANEL_IP_OWNER_TTL - 1
 check("протухшая карта не используется",
       S.panel_owner(cfg_own, "1.2.3.4") is None)
 
-# Нечисловой telegram уронил бы отправку: subject_text прогоняет его через int.
+# Нечисловой telegram уронил бы отправку: карточка делает из него ссылку
+# tg://user?id=… и раньше прогоняла значение через int().
 S._PANEL_IP_OWNER.update({"at": time.time(), "map": {"1.2.3.4": "742"}})
-PANEL["directory"]["742"] = {"id": 742, "username": "Кто-то",
+PANEL["directory"]["742"] = {"id": 742, "username": "user_742",
+                             "description": "Bot user: Кто-то",
                              "telegramId": "не число"}
 who = S.panel_owner(cfg_own, "1.2.3.4")
 check("нечисловой telegram отброшен", "telegram_id" not in (who or {}), who)
 check("но имя всё равно есть", (who or {}).get("label") == "Кто-то", who)
-check("и подпись не падает", "Кто-то" in S.subject_text(who, "1.2.3.4"))
+card_own = "\n".join(S.offender_card(
+    dict(S.TG_DEFAULT, node_name="Erebor"), who, "x"))
+check("и карточка не падает", "Кто-то" in card_own, card_own)
+check("имя без telegram ссылкой не становится",
+      "tg://user" not in card_own, card_own)
 
 print("\n\033[1m36. UUID ноды проверяется по форме\033[0m")
 # Живой случай: в поле оказалось «5d8572233c3b934» — начало и хвост настоящего
@@ -844,7 +885,8 @@ print("\n\033[1m38. panel who: кто стоит за адресом\033[0m")
 # значит команда обязана спросить панель заново, а не отдавать пустоту.
 fresh_cache()
 S.save_config({"panel": conf(node_uuid="5d8bba03-0951-4503-a4d6-572233c3b934")})
-PANEL["directory"] = {"741": {"id": 741, "username": "Bashou",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+                             "description": "Bot user: Bashou @bashou7",
                              "telegramId": 637181482}}
 PANEL["users"] = [{"userId": 741,
                    "ips": [{"ip": "91.78.46.46", "lastSeen": time.strftime(
@@ -905,7 +947,8 @@ drop_state()
 fresh_cache()
 sent.clear(); docs.clear()
 PANEL["drops"] = []
-PANEL["directory"] = {"741": {"id": 741, "username": "Bashou",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+                             "description": "Bot user: Bashou @bashou7",
                              "telegramId": 637181482}}
 PANEL["users"] = make_users({741: 25}, age=60)
 S.read_users = lambda: {}
@@ -919,7 +962,9 @@ check("и номер в панели", any("741" in x for x in sent), sent)
 
 print("\n\033[1m40. Карточка одинакова для раздачи и для штрафа\033[0m")
 # Поводы разные, вопрос у читающего один: кто и за что. Значит и шапка одна.
-who = {"label": "Bashou", "telegram_id": "637181482", "user_id": "741"}
+who = {"label": "Bashou", "handle": "@bashou7",
+       "username": "user_637181482", "telegram_id": "637181482",
+       "user_id": "741"}
 tg_cfg = dict(S.TG_DEFAULT, enabled=True, events=True, node_name="Erebor")
 sent.clear()
 S.tg_penalty({"telegram": tg_cfg}, "91.78.46.46", 1, 60, ["ratio"], who)
@@ -931,7 +976,12 @@ check("в штрафе указан адрес", "91.78.46.46" in pen, pen)
 check("в штрафе указана скорость и срок", "1 Мбит" in pen or "1 Mbit" in pen, pen)
 check("в штрафе указана причина", S.t("why_ratio") in pen, pen)
 check("идентификаторы копируются касанием",
-      "<code>637181482</code>" in pen and "<code>741</code>" in pen, pen)
+      "<code>637181482</code>" in pen
+      and "<code>user_637181482</code>" in pen, pen)
+check("адрес касанием не копируется",
+      "<code>91.78.46.46</code>" not in pen, pen)
+check("имя ведёт в переписку",
+      '<a href="tg://user?id=637181482">Bashou</a>' in pen, pen)
 
 # Нода без панели: сообщение обязано сказать, что личность неизвестна, а не
 # выглядеть так, будто мы просто забыли имя.

@@ -524,11 +524,13 @@ S.penalties_update(lambda p: None)
 who = S.owner_of("203.0.113.10")
 check("владелец адреса известен ядру Shape",
       who is not None and who.get("label") == "Александр", who)
-check("подпись для Telegram содержит ссылку по telegram_id",
-      'tg://user?id=123456789' in S.subject_text(who, "203.0.113.10"),
-      S.subject_text(who, "203.0.113.10"))
-check("подпись экранирует HTML",
-      "&lt;" in S.subject_text({"label": "<b>x</b>"}, "1.2.3.4"))
+_who_card = "\n".join(S.offender_card(dict(S.TG_DEFAULT, node_name="Erebor"),
+                                      who, "x"))
+check("карточка для Telegram содержит ссылку по telegram_id",
+      'tg://user?id=123456789' in _who_card, _who_card)
+check("карточка экранирует HTML",
+      "&lt;" in "\n".join(S.offender_card(S.TG_DEFAULT,
+                                          {"label": "<b>x</b>"}, "x")))
 call("DELETE", "/api/v1/limits/203.0.113.10", token=WRITE)
 
 print("\n\033[1m19. Персональные скорости\033[0m")

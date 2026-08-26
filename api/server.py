@@ -188,7 +188,7 @@ def bad(code, message):
 
 REASON_RE = re.compile(r"^[\w \-.,:/()\[\]#@+*]{1,64}$", re.UNICODE)
 # Ярлык человека приходит из панели и попадает в сообщение с parse_mode=HTML.
-# Экранирование делает subject_text, но угловые скобки лучше не пускать вовсе.
+# Экранирует его offender_card, но угловые скобки лучше не пускать вовсе.
 LABEL_RE = re.compile(r"^[^\x00-\x1f<>&]{1,64}$", re.UNICODE)
 
 

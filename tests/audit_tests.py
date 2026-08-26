@@ -317,40 +317,49 @@ check("и причина в тексте человеческая",
       _sent and S.t("why_ratio") in _sent[0], _sent)
 S.tg_send = _real_send
 
-print("\n\033[1mПодпись нарушителя в сообщении\033[0m")
+print("\n\033[1mКарточка нарушителя в сообщении\033[0m")
 # Сообщение о штрафе должно давать хоть что-то, за что можно зацепиться в
 # панели. Номер там есть почти всегда — он приходит вместе со списком
 # соединений, до всякого запроса карточки. Раньше он молча терялся.
-_ip = "203.0.113.7"
+_tg = dict(S.TG_DEFAULT, node_name="Erebor")
+
+
+def _card(subject):
+    return "\n".join(S.offender_card(_tg, subject, "x"))
+
+
 check("имя и telegram — ссылка на человека",
-      "tg://user?id=637181482" in S.subject_text(
-          {"label": "Bashou", "telegram_id": "637181482"}, _ip))
-check("только имя", S.subject_text({"label": "Bashou"}, _ip)
-      == f"Bashou · <code>{_ip}</code>")
-check("только telegram", "id 637181482" in S.subject_text(
-      {"telegram_id": 637181482}, _ip))
+      "tg://user?id=637181482" in _card({"label": "Bashou",
+                                         "telegram_id": "637181482"}))
+check("только имя — имя на месте, ссылки нет",
+      "Bashou" in _card({"label": "Bashou"})
+      and "tg://user" not in _card({"label": "Bashou"}),
+      _card({"label": "Bashou"}))
+check("только telegram", "637181482" in _card({"telegram_id": 637181482}))
+check("логин панели копируется касанием",
+      "<code>user_741</code>" in _card({"username": "user_741"}),
+      _card({"username": "user_741"}))
 check("только номер в панели не теряется",
-      "#741" in S.subject_text({"user_id": "741"}, _ip),
-      S.subject_text({"user_id": "741"}, _ip))
-check("пусто — остаётся адрес",
-      S.subject_text({}, _ip) == f"<code>{_ip}</code>")
-check("нет владельца — тоже адрес",
-      S.subject_text(None, _ip) == f"<code>{_ip}</code>")
+      "741" in _card({"user_id": "741"}), _card({"user_id": "741"}))
+check("пусто — сказано, что личность неизвестна",
+      S.t("pn_card_unknown") in _card({}), _card({}))
+check("нет владельца — то же самое",
+      S.t("pn_card_unknown") in _card(None), _card(None))
 
 # owners.json правят руками, и туда попадает что угодно. Раньше нечисловой
 # идентификатор ронял int() и сообщение о штрафе не уходило вообще.
 for junk in ("не число", "", None, "12 34", "id42"):
     try:
-        _out = S.subject_text({"label": "Кто-то", "telegram_id": junk}, _ip)
-        _fine = "Кто-то" in _out
+        _out = _card({"label": "Кто-то", "telegram_id": junk})
+        _fine = "Кто-то" in _out and "tg://user" not in _out
     except Exception as exc:
         _fine = False
         _out = repr(exc)
     check(f"мусор в telegram_id не роняет отправку: {junk!r}", _fine, _out)
 check("отрицательный telegram_id принимается",
-      "tg://user?id=-100" in S.subject_text({"telegram_id": "-100"}, _ip))
-check("имя экранируется",
-      "&lt;b&gt;" in S.subject_text({"label": "<b>x</b>"}, _ip))
+      "tg://user?id=-100" in _card({"label": "Кто-то", "telegram_id": "-100"}))
+check("имя экранируется", "&lt;b&gt;" in _card({"label": "<b>x</b>"}))
+check("логин экранируется", "&lt;b&gt;" in _card({"username": "<b>x</b>"}))
 
 print("\n\033[1mРаспределение отношения отдачи\033[0m")
 # Порог между честным и раздающим не выводится из теории — он виден как разрыв

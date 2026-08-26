@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.32-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.33-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.32
+# Shape v3.33
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -631,10 +631,19 @@ the reason. Once a day — a digest for the day that just ended. That comes out 
 5–20 messages a day instead of a stream people stop reading after a week.
 
 ```
-🚦 RU Moscow
-Limited 185.12.34.56 → 1 Mbit/s for 4.0 h
-downloaded gigabytes within an hour
+🚦 Limited · RU Moscow
+
+👤 Ivan · @ivan_k
+🆔 Telegram: 637181482
+🔑 Panel login: user_637181482 · #741
+
+📍 Address: 185.12.34.56
+🐌 Speed reduced to 1 Mbit/s for 4 h
+Reason: downloaded gigabytes within an hour
 ```
+
+Who this is comes from the panel; without a link to it the card keeps a single
+line saying the identity is unknown. The address is there either way.
 
 ```
 📊 RU Moscow · digest for 2026-08-11
@@ -831,7 +840,7 @@ plainly — rather than passing zeros off as the truth.
       "limited": false,
       "personal": false,
       "limit_mbps": null,
-      "subject": {"label": "Alexandr", "user_id": "42"}
+      "subject": {"label": "Ivan", "user_id": "42"}
     }
   ],
   "count": 1,
@@ -997,9 +1006,9 @@ existing penalties are left alone.
 ```
 🔎 Looks like a shared subscription · FRONT-3
 
-👤 Bashou
+👤 Ivan · @ivan_k
 🆔 Telegram: 637181482
-🔑 Panel ID: 741
+🔑 Panel login: user_637181482 · #741
 
 Simultaneous addresses: 437 over the last 10 min
 🚫 Access to the node cut off for 60 min, addresses: 412
@@ -1017,10 +1026,21 @@ stretch the chat over a hundred lines, yet it opens with a tap — no need to
 download the file. As many addresses go into the quote as fit in the message;
 the rest follow as an attachment.
 
-The Telegram ID and the panel ID sit on their own lines and copy with a single
-tap — that is how you find the person in the panel in seconds. The name comes
-from there too. A Telegram handle like `@bashoyy` is not stored by the panel, so
-the card cannot show it.
+**A tap copies only what you search by:** the panel login and the Telegram ID.
+The address is plain text. It used to be copyable too and stole the tap for
+itself — and there is nowhere to search by an address, neither the panel nor the
+bot knows it.
+
+The name is tappable: behind it sits a `tg://user?id=…` link that opens the
+chat, and it works even for people without a username.
+
+**Where the name comes from.** The panel has no field for it: the login there
+looks like `user_637181482`, and the name, if it exists at all, is written into
+the account description by a bot — usually as a line like
+`Bot user: Ivan @ivan_k`. Shape parses that description into a name and a
+handle, and does so cautiously: every bot has its own format, and if the parse
+fails the card simply keeps the login, as before. A note like
+`Paid: until 3 October` is left alone and shown in full.
 
 ### About blocking
 
@@ -1222,11 +1242,11 @@ in a message though, so there is an owner map at
 `/var/lib/shape/owners.json`:
 
 ```json
-{"91.79.27.87": {"label": "Alexandr", "telegram_id": 123456789,
+{"91.79.27.87": {"label": "Ivan", "telegram_id": 123456789,
                  "user_id": "42", "shared": false}}
 ```
 
-Filled in by hand (`shaperctl.py owners set 91.79.27.87 --label Alexandr
+Filled in by hand (`shaperctl.py owners set 91.79.27.87 --label Ivan
 --telegram-id 123456789`) or in bulk through `PUT /api/v1/owners` — that is
 where a panel resolver will write once it exists. Shape itself never goes
 looking for this data, and it should not.
@@ -1236,9 +1256,14 @@ person disconnects and the link is lost. Notifications then carry a name with a
 `tg://user?id=…` link, which works even for people without a username:
 
 ```
-🚦 RU Manassas
-Limited Alexandr · 91.79.27.87 → 1 Mbit/s for 4.0 h
-downloaded gigabytes within an hour
+🚦 Limited · RU Manassas
+
+👤 Ivan
+🆔 Telegram: 123456789
+
+📍 Address: 91.79.27.87
+🐌 Speed reduced to 1 Mbit/s for 4 h
+Reason: downloaded gigabytes within an hour
 ```
 
 If an address is marked `"shared": true`, the message says so. Better a warning
