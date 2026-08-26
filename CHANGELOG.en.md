@@ -13,6 +13,83 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.35
+
+**A penalty no longer goes to an address nobody is behind. And the "panel link
+is not set up" message no longer lies.**
+
+### What was happening
+
+Home nodes were sending cards like this:
+
+```
+🚦 Limited · Netherlands-3
+
+identity unknown: the panel link is not set up on this node
+
+📍 Address: 109.120.19.228
+Reason: uploaded disproportionately much in 24h
+```
+
+Three in a row — and next to them, in the same minute, a fourth one with a full
+name. So the panel was set up and working, and the message claimed otherwise.
+
+### The cause: the ratio signal fired on addresses that had left
+
+The upload ratio is counted **from daily counters**, and it had no "the person
+is here now" condition. The kernel map is an LRU of 8192 entries: an address
+that downloaded in the morning and left at noon sits there until midnight along
+with its figures. In the evening the signal looked at them and penalised an
+address nobody was behind. The panel does not know such an address — it is not
+connected — hence "unknown".
+
+The penalty expired after an hour, the daily counters had not changed in that
+hour, the signal fired again. And so on until midnight: one offender, six
+messages in an evening.
+
+The signal now requires the address to be **uploading right now**. The floor is
+deliberately low, 0.05 Mbit/s: a real seeder uploads continuously (about a
+megabit while limited), one that left uploads nothing. As a bonus, the risk of
+punishing the new holder of a dynamic address is gone.
+
+### Four different causes were all reported as one
+
+The owner fails to resolve for four reasons, and the message named the first:
+
+| What is printed now | When |
+| --- | --- |
+| the panel link is not set up on this node | the panel is off on this node |
+| the panel has not answered for N min | set up but unreachable |
+| at the last poll (N min ago) this address was not among the connected ones | the person was not on the node |
+
+I wrote that line, and it sent you looking for a fault in the wrong place. Sorry
+about that.
+
+### Reminders once every six hours
+
+Telegram reports one address with the same reason at most once every six hours —
+the same as the cooldown on sharing detection.
+
+The limit is still applied **every time**, as before, and shows up in the limited
+list and in the event log. Only Telegram goes quiet.
+
+The reason is part of the key on purpose: the same address caught for something
+else is news, and it arrives immediately.
+
+### Also
+
+* Both conditions are visible on the auto-limit screen: a line under the ratio
+  signal and a line under the penalty. A setting that changes the outcome while
+  staying invisible on screen is now the fourth case this month, and it has its
+  own tests.
+* `notify_due()` and `panel_owner_reason()` were pulled out into functions —
+  their logic lived inside the watchdog loop and nothing tested it.
+* Tests: 24 new ones. An address that left is not penalised, the liveness floor,
+  the cooldown and its reset on a new reason, four cause codes and three
+  distinct texts.
+
+---
+
 ## 3.34
 
 **Buying a game on Steam stopped counting as a torrent. Applies to home nodes.**

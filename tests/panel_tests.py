@@ -813,6 +813,50 @@ check("и карточка не падает", "Кто-то" in card_own, card_o
 check("имя без telegram ссылкой не становится",
       "tg://user" not in card_own, card_own)
 
+print("\n\033[1m35b. Почему владелец не нашёлся — четыре разных ответа\033[0m")
+# Живой случай: на домашних нодах приходили карточки «связь с панелью не
+# настроена на этой ноде», хотя панель была настроена и рядом, в ту же минуту,
+# приходили опознанные нарушители. Сообщение называло одну причину из четырёх
+# и отправляло искать поломку не туда.
+S.fresh = None
+S._PANEL_IP_OWNER.update({"at": time.time(), "map": {"1.2.3.4": "741"}})
+cfg_why = {"panel": conf(action="notify"),
+           "telegram": dict(S.TG_DEFAULT, enabled=True, token="x", chat_id="1")}
+
+check("панель выключена — так и сказано",
+      S.panel_owner_reason({"panel": dict(S.PANEL_DEFAULT)}, "1.2.3.4")[0]
+      == "off")
+check("адрес в карте — причины нет",
+      S.panel_owner_reason(cfg_why, "1.2.3.4")[0] == "")
+check("адреса в карте нет — это не «не настроена»",
+      S.panel_owner_reason(cfg_why, "9.9.9.9")[0] == "absent",
+      S.panel_owner_reason(cfg_why, "9.9.9.9"))
+
+S._PANEL_IP_OWNER["at"] = time.time() - S.PANEL_IP_OWNER_TTL - 60
+code, age = S.panel_owner_reason(cfg_why, "1.2.3.4")
+check("карта протухла — панель не отвечает", code == "stale", (code, age))
+check("и возраст карты посчитан", age > S.PANEL_IP_OWNER_TTL, age)
+
+# Текст в сообщении обязан отличаться: ради этого всё и делалось.
+tg_why = dict(S.TG_DEFAULT, node_name="Netherlands-3")
+cards = {c: "\n".join(S.offender_card(tg_why, None, "x", (c, 300)))
+         for c in ("off", "stale", "absent")}
+check("три причины — три разных текста",
+      len(set(cards.values())) == 3, cards)
+check("про «не настроена» говорим только когда выключена",
+      S.t("pn_card_unknown") in cards["off"]
+      and S.t("pn_card_unknown") not in cards["absent"], cards["absent"])
+check("в тексте про отсутствие адреса есть возраст опроса",
+      "5" in cards["absent"], cards["absent"])
+check("неизвестная причина не роняет карточку",
+      S.t("pn_card_unknown") in "\n".join(
+          S.offender_card(tg_why, None, "x", ("ерунда", 0))))
+check("без причины ведём себя как раньше",
+      S.t("pn_card_unknown") in "\n".join(
+          S.offender_card(tg_why, None, "x")))
+
+S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
+
 print("\n\033[1m36. UUID ноды проверяется по форме\033[0m")
 # Живой случай: в поле оказалось «5d8572233c3b934» — начало и хвост настоящего
 # UUID, середина потерялась при вводе. Панель такой запрос принимает и отвечает

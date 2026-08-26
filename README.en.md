@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.34-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.35-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.34
+# Shape v3.35
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -320,6 +320,15 @@ Uploaded more than a third of what was downloaded in a day, with at least
 300 MB of upload — penalty. The path is independent: the two-way condition is not
 checked, otherwise a quiet seeder would never reach it.
 
+**But the person has to be there.** The signal is counted from daily
+counters, while the kernel map is an LRU of 8192 entries: an address that
+downloaded in the morning and left at noon sits there until midnight along with
+its figures. Without an "is uploading right now" condition the penalty went to
+an address nobody was behind — the panel does not know such an address, there is
+no point to it, and if the address has been reassigned an innocent person
+suffers. The liveness floor is low, 0.05 Mbit/s: a real seeder uploads
+continuously, one that left uploads nothing.
+
 **Why the ratio and not gigabytes.** For an ordinary client, upload is TCP
 acknowledgements, and their share is set by packet size rather than by human
 behaviour: 5–15% of the download, at ten megabits or at a gigabit. It never
@@ -410,7 +419,7 @@ differs, and what sits behind it.
 | Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
 | Torrents | two-way traffic with large upload packets | same |
-| Quiet seeders | uploaded over 35% of the download in a day | same |
+| Quiet seeders | over 35% in a day and uploading right now | same |
 | Penalty for a torrent | 1 Mbit/s for 60 min | same |
 | Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
 | Sharing | connections dropped | same |
@@ -663,8 +672,23 @@ the reason. Once a day — a digest for the day that just ended. That comes out 
 Reason: downloaded gigabytes within an hour
 ```
 
-Who this is comes from the panel; without a link to it the card keeps a single
-line saying the identity is unknown. The address is there either way.
+Who this is comes from the panel. When it does not, the card says **why**
+instead of blaming the configuration:
+
+| What the message says | What it means |
+| --- | --- |
+| the panel link is not set up on this node | the panel is off on this node |
+| the panel has not answered for N min | set up but unreachable — check `panel show` |
+| at the last poll (N min ago) this address was not among the connected ones | the person was not on the node then |
+
+All three used to print the first line, which sent you looking for a fault in
+the wrong place. The address and the reason are there either way.
+
+**One address with the same reason is reported at most once every six hours.**
+The limit is still applied every time and shows up in the limited list — only
+Telegram goes quiet. Without this the penalty expired after an hour, the daily
+counters had not changed in that hour, the signal fired again, and one offender
+produced six messages in an evening.
 
 ```
 📊 RU Moscow · digest for 2026-08-11

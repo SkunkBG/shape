@@ -415,6 +415,7 @@ screen_guard() {
             echo -e "  ${Y}${T[g_need_limit]}${N}"
         fi
         echo -e "  ${T[g_pen]} : ${B}${pen} Mbit/s${N} ${T[g_for]} ${B}${dur}${N} ${T[min]}"
+        echo -e "  ${D}${T[g_notify_cd]}${N}"
         hr
         echo -e "  ${D}${T[g_signals]}  ${T[g_score_now]} ${score}${N}"
         echo -e "  ${D}  +2  ${T[why_packet]}${N}"
@@ -424,6 +425,9 @@ screen_guard() {
         [[ "$dgb" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_download]} (>${dgb} GB)${N}"
         [[ "$dgbh" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_hourly]} (>${dgbh} GB)${N}"
         [[ "$urp" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_ratio_menu]} (>${urp}%, >${urm} MB)${N}"
+        # Условие «отдаёт прямо сейчас» решает, кому прилетит штраф, а из
+        # строки выше его не видно. Такое уже терялось трижды.
+        [[ "$urp" != "0" ]] && echo -e "  ${D}      └ ${T[g_ratio_live]}${N}"
         # Обе настройки меняют исход, и обеих не видно из строк выше. Ровно
         # так уже терялись признак отношения и действие панели.
         [[ "$dgbh" != "0" && "$vnu" == "1" ]] && \

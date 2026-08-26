@@ -191,6 +191,8 @@ MSG = {
         "tg_pen_speed": "🐌 Скорость снижена до {mbps} Мбит/с на {d}",
         "tg_pen_why": "Причина: <i>{why}</i>",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
+        "pn_card_stale": "<i>кто это — неизвестно: панель не отвечает уже {m} мин</i>",
+        "pn_card_absent": "<i>кто это — неизвестно: при последнем опросе панели ({m} мин назад) этого адреса не было среди подключённых</i>",
         "tg_ev": "События  ",
         "tg_dg": "Сводка   ",
         "tg_ev_off_hint": "— сообщения о штрафах не приходят",
@@ -336,6 +338,8 @@ MSG = {
         "h_volume_mbps": "скорость штрафа, когда сработал только объём, 0 = обычная",
         "guard_vol_needs": "часовой объём — только с пакетами вверх от {n} Б: закачка из магазина проходит мимо",
         "guard_vol_soft": "за один объём режем до {mbps} Мбит/с, а не до штрафной",
+        "guard_ratio_live": "и только пока адрес отдаёт: за отвалившегося штраф не выдаём",
+        "guard_notify_cd": "повторное уведомление об одном адресе — не чаще раза в {h} ч",
         "why_hourly": "выкачал гигабайты за час",
         "h_watch_iv": "период опроса карт, сек (больше = легче процессору)",
         "why_download": "выкачал десятки гигабайт за сутки",
@@ -543,6 +547,8 @@ MSG = {
         "tg_pen_speed": "🐌 Speed cut to {mbps} Mbit/s for {d}",
         "tg_pen_why": "Reason: <i>{why}</i>",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
+        "pn_card_stale": "<i>identity unknown: the panel has not answered for {m} min</i>",
+        "pn_card_absent": "<i>identity unknown: at the last panel poll ({m} min ago) this address was not among the connected ones</i>",
         "tg_ev": "Events   ",
         "tg_dg": "Digest   ",
         "tg_ev_off_hint": "— penalty messages are not sent",
@@ -688,6 +694,8 @@ MSG = {
         "h_volume_mbps": "penalty speed when volume alone fired, 0 = the usual one",
         "guard_vol_needs": "hourly volume needs upload packets from {n} B: a store download goes free",
         "guard_vol_soft": "volume alone is cut to {mbps} Mbit/s, not to the penalty speed",
+        "guard_ratio_live": "and only while the address is uploading: no penalty for one that left",
+        "guard_notify_cd": "a repeat notification about one address — at most once every {h} h",
         "why_hourly": "downloaded gigabytes within an hour",
         "h_watch_iv": "map polling period, sec (higher = lighter on CPU)",
         "why_download": "downloaded tens of gigabytes in 24h",
@@ -1061,6 +1069,26 @@ GUARD_DEFAULT = {
 
 # Веса признаков. Размер пакета — самый надёжный: он не зависит от скорости
 # канала, а у мобильных операторов отдача гуляет от 3 до 20 Мбит.
+# Отдача, ниже которой считаем, что за адресом никого нет.
+#
+# Признак отношения считается по суточным счётчикам, и до 3.35 у него не было
+# условия «человек сейчас здесь». Карта ядра — LRU на 8192 записи: адрес,
+# который качал утром и отвалился в обед, лежит в ней до полуночи вместе со
+# своими цифрами. Вечером признак смотрел на них и выдавал штраф адресу, за
+# которым уже никого нет: панель такого не знает, толку ноль, а если адрес
+# успели переназначить — страдает посторонний.
+#
+# Настоящий сидер отдаёт непрерывно, отвалившийся не отдаёт ничего. Порог
+# низкий нарочно: тихий сидер держит полмегабита, а под ограничением — один.
+RATIO_LIVE_MBPS = 0.05
+
+# Как часто напоминать об одном и том же адресе с той же причиной.
+#
+# Штраф снимается через час, суточные счётчики за этот час не меняются — и
+# признак срабатывает снова, и так до полуночи. Ограничение выдаётся каждый
+# раз, как и раньше; молчит только Telegram.
+GUARD_NOTIFY_COOLDOWN = 6 * 3600
+
 SIGNAL_WEIGHTS = {"packet": 2, "peak": 1, "hours": 2, "upload": 1,
                   "download": 3, "hourly": 3, "ratio": 3}
 
@@ -2203,6 +2231,7 @@ def cmd_guard_show(speed, g):
         line = t("guard_ratio", p=g["upload_ratio_percent"],
                  mb=g.get("upload_ratio_min_mb", 300))
         print(f"  {C['gry']}{line}{C['r']}")
+        print(f"  {C['gry']}{t('guard_ratio_live')}{C['r']}")
     if g.get("download_gb_per_hour") and g.get("volume_needs_upload"):
         print(f"  {C['gry']}{t('guard_vol_needs', n=g['packet_bytes'])}{C['r']}")
     print(f"  {t('guard_penalty')}: {g['penalty_mbps']:g} Mbit/s "
@@ -2212,6 +2241,8 @@ def cmd_guard_show(speed, g):
     if g.get("volume_penalty_mbps"):
         soft = t("guard_vol_soft", mbps=f"{g['volume_penalty_mbps']:g}")
         print(f"  {C['gry']}{soft}{C['r']}")
+    print(f"  {C['gry']}"
+          f"{t('guard_notify_cd', h=GUARD_NOTIFY_COOLDOWN // 3600)}{C['r']}")
     print()
 
 
@@ -2308,9 +2339,12 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
     # выдаёт именно перекос: 916 МБ вверх против 379 МБ вниз. В абсолютных
     # гигабайтах это мелочь, а по отношению — 242% там, где у обычного
     # клиента 5-15%.
+    #
+    # Условие «отдаёт прямо сейчас» обязательно: см. RATIO_LIVE_MBPS.
     ratio = g.get("upload_ratio_percent", 0)
     floor_bytes = float(g.get("upload_ratio_min_mb", 300)) * 1e6
-    if ratio and day.get("up", 0) >= floor_bytes:
+    if ratio and day.get("up", 0) >= floor_bytes \
+            and s["ul"] >= RATIO_LIVE_MBPS:
         # Нулевое скачивание при заметной отдаче — это тем более перекос,
         # делить на ноль ради такого вывода незачем.
         down = day.get("down", 0)
@@ -2338,6 +2372,35 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
     return sum(SIGNAL_WEIGHTS[r] for r in reasons), reasons
 
 
+NOTIFY_MAX = 4096
+
+
+def notify_due(notified, ip, reasons, now=None):
+    """
+    Пора ли рассказывать про этот адрес. Побочно отмечает, что рассказали.
+
+    Штраф снимается через час, суточные счётчики за этот час не меняются — и
+    признак срабатывает снова, и так до полуночи. Ограничение при этом
+    выдаётся каждый раз, как и раньше: молчит только Telegram.
+
+    Причина входит в ключ намеренно. Тот же адрес, попавшийся уже за другое,
+    — это новость, и её надо рассказать сразу.
+    """
+    now = now if now is not None else time.time()
+    key = ",".join(sorted(reasons))
+    seen_at, seen_key = notified.get(ip, (0.0, ""))
+    if key == seen_key and now - seen_at < GUARD_NOTIFY_COOLDOWN:
+        return False
+    notified[ip] = (now, key)
+    # Чистим по возрасту, а не по «адрес пропал из карты ядра»: смысл записи
+    # ровно в том, что адрес из этой карты не пропадает.
+    if len(notified) > NOTIFY_MAX:
+        cut = now - GUARD_NOTIFY_COOLDOWN
+        for k in [i for i, (ts, _) in notified.items() if ts < cut]:
+            notified.pop(k, None)
+    return True
+
+
 VOLUME_ONLY = {"download", "hourly"}
 
 
@@ -2362,6 +2425,10 @@ def cmd_watch(a):
     restore_penalties()
 
     both_streak, peak_streak, hourly = {}, {}, {}
+    # Когда в последний раз рассказывали про адрес и по какому поводу.
+    # Живёт в памяти: перезапуск сторожа стоит одного лишнего сообщения на
+    # нарушителя, а отдельный файл на диске — своего кода и своих поломок.
+    notified = {}
     daily = load_daily()
     today = time.strftime("%Y-%m-%d")
     prev, prev_t = read_users(), time.monotonic()
@@ -2489,6 +2556,9 @@ def cmd_watch(a):
                     who = owner_of(ip) or panel_owner(cfg, ip)
                     if who:
                         entry["subject"] = who
+                        unknown = None
+                    else:
+                        unknown = panel_owner_reason(cfg, ip)
                     # Под замком: файл теперь правит ещё и API.
                     penalties_update(lambda p, i=ip, e=entry: p.__setitem__(i, e))
                     pens[ip] = entry
@@ -2504,8 +2574,12 @@ def cmd_watch(a):
                     print(t("watch_hit", ip=ip, mbps=mbps,
                             m=g["penalty_min"]) +
                           f" [{score}: {','.join(reasons)}]", flush=True)
-                    tg_penalty(cfg, ip, mbps, g["penalty_min"],
-                               reasons, subject=entry.get("subject"))
+                    # Ограничение выдаётся каждый раз, а рассказываем о нём
+                    # не чаще раза в шесть часов.
+                    if notify_due(notified, ip, reasons):
+                        tg_penalty(cfg, ip, mbps, g["penalty_min"],
+                                   reasons, subject=entry.get("subject"),
+                                   unknown=unknown)
 
             if time.time() - last_daily_save > 60:
                 # чистим тех, кто за сутки не набрал ничего заметного
@@ -2672,7 +2746,11 @@ def tg_send(text, cfg=None, force=False):
         return False, scrub(f"{e}{hint}", {"telegram": tg})
 
 
-def offender_card(tg, subject, head):
+PANEL_WHY_KEY = {"off": "pn_card_unknown", "stale": "pn_card_stale",
+                 "absent": "pn_card_absent"}
+
+
+def offender_card(tg, subject, head, why=None):
     """
     Шапка сообщения о нарушителе: кто это, одинаково для всех поводов.
 
@@ -2712,18 +2790,21 @@ def offender_card(tg, subject, head):
     elif uid:
         out.append(t("pn_card_panel", id=uid))
     if len(out) == 2:          # ничего, кроме заголовка, не нашлось
-        out.append(t("pn_card_unknown"))
+        code, age = why if why else ("off", 0.0)
+        key = PANEL_WHY_KEY.get(code, "pn_card_unknown")
+        out.append(t(key, m=int(age // 60)) if key != "pn_card_unknown"
+                   else t(key))
     out.append("")
     return out
 
 
-def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None):
+def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None, unknown=None):
     """Событие: адрес получил ограничение."""
     tg = cfg["telegram"]
     if not tg.get("enabled") or not tg.get("events"):
         return
     why = ", ".join(t("why_" + r) for r in reasons) or "—"
-    lines = offender_card(tg, subject, t("tg_pen_head"))
+    lines = offender_card(tg, subject, t("tg_pen_head"), unknown)
     lines.append(t("tg_pen_addr", ip=html.escape(ip)))
     lines.append(t("tg_pen_speed", mbps=f"{mbps:g}", d=fmt_hold(minutes * 60)))
     lines.append(t("tg_pen_why", why=why))
@@ -3362,6 +3443,30 @@ def panel_user(p, uid):
         return None
 
 
+def panel_owner_reason(cfg, ip, now=None):
+    """
+    Почему владелец не нашёлся: ("", 0) — нашёлся, иначе код и возраст карты.
+
+    Причин четыре, и раньше сообщение называло одну — «связь с панелью не
+    настроена». Это верно только для первой; в остальных трёх текст врал и
+    отправлял искать поломку не туда.
+
+      off    — панель на этой ноде выключена
+      stale  — карта адресов устарела: панель давно не отвечает
+      absent — карта свежая, но этого адреса в ней нет
+    """
+    p = cfg.get("panel") or {}
+    if not p.get("enabled"):
+        return "off", 0.0
+    now = now if now is not None else time.time()
+    age = now - float(_PANEL_IP_OWNER.get("at") or 0)
+    if age > PANEL_IP_OWNER_TTL:
+        return "stale", age
+    if not (_PANEL_IP_OWNER.get("map") or {}).get(ip):
+        return "absent", age
+    return "", age
+
+
 def panel_owner(cfg, ip, now=None):
     """
     Кто стоит за адресом, по данным панели. Формат тот же, что у owners.json.
@@ -3373,15 +3478,11 @@ def panel_owner(cfg, ip, now=None):
 
     Ничего не нашлось — None, и сообщение уйдёт как раньше, с адресом.
     """
-    p = cfg.get("panel") or {}
-    if not p.get("enabled"):
+    why, _ = panel_owner_reason(cfg, ip, now)
+    if why:
         return None
-    now = now if now is not None else time.time()
-    if now - float(_PANEL_IP_OWNER.get("at") or 0) > PANEL_IP_OWNER_TTL:
-        return None
-    uid = (_PANEL_IP_OWNER.get("map") or {}).get(ip)
-    if not uid:
-        return None
+    p = cfg["panel"]
+    uid = _PANEL_IP_OWNER["map"][ip]
 
     out = {"user_id": str(uid)}
     person = panel_user(p, uid)
