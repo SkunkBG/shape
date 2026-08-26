@@ -197,6 +197,7 @@ MSG = {
         "tg_pen_pkt_max": "макс {n}",
         "pn_card_unknown": "<i>кто это — неизвестно: связь с панелью не настроена на этой ноде</i>",
         "pn_card_never": "<i>кто это — неизвестно: панель ещё ни разу не ответила — проверьте её командой <code>shaperctl panel show</code></i>",
+        "pn_card_seen": "<i>панель его сейчас не видит — имя из опроса в {at}</i>",
         "pn_card_stale": "<i>кто это — неизвестно: панель не отвечает уже {m} мин</i>",
         "pn_card_absent": "<i>кто это — неизвестно: при последнем опросе панели ({m} мин назад) этого адреса не было среди подключённых</i>",
         "tg_ev": "События  ",
@@ -562,6 +563,7 @@ MSG = {
         "tg_pen_pkt_max": "max {n}",
         "pn_card_unknown": "<i>identity unknown: the panel link is not set up on this node</i>",
         "pn_card_never": "<i>identity unknown: the panel has never answered yet — check it with <code>shaperctl panel show</code></i>",
+        "pn_card_seen": "<i>the panel does not see it now — name from the {at} poll</i>",
         "pn_card_stale": "<i>identity unknown: the panel has not answered for {m} min</i>",
         "pn_card_absent": "<i>identity unknown: at the last panel poll ({m} min ago) this address was not among the connected ones</i>",
         "tg_ev": "Events   ",
@@ -2508,6 +2510,82 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
 
 NOTIFY_MAX = 4096
 
+# Состояние сторожа, которое обязано пережить перезапуск.
+#
+# Обе карты жили в памяти, и это было сознательным решением: «перезапуск стоит
+# одного лишнего сообщения, а файл на диске — своего кода и своих поломок».
+# Решение оказалось неверным. Владелец ноды обновляется по нескольку раз за
+# вечер, и при такой частоте кулдаун не работал вовсе.
+GUARD_STATE = os.path.join(VAR_DIR, "guard.state")
+
+# Сколько помним, кто стоял за адресом.
+#
+# Панель знает человека, только пока он на ноде. Через шестнадцать минут после
+# опознания карточка про того же нарушителя приходила уже безымянной — хотя
+# ответ был получен и выброшен. Двенадцати часов хватает на сутки работы и
+# мало для того, чтобы за адресом успел оказаться другой человек; на всякий
+# случай в сообщении честно пишется, когда именно его видели.
+OWNER_CACHE_TTL = 12 * 3600
+OWNER_CACHE_MAX = 2048
+
+
+def guard_state():
+    try:
+        with open(GUARD_STATE) as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else {}
+    except Exception:
+        return {}
+
+
+def guard_state_save(state):
+    try:
+        os.makedirs(VAR_DIR, exist_ok=True)
+        tmp = GUARD_STATE + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, GUARD_STATE)
+    except OSError:
+        pass
+
+
+def owner_remember(cache, ip, who, now=None):
+    """Запомнить владельца адреса: панель знает его только пока он на ноде."""
+    if not isinstance(who, dict) or not who:
+        return
+    now = now if now is not None else time.time()
+    cache[ip] = [now, who]
+    if len(cache) <= OWNER_CACHE_MAX:
+        return
+    # Сначала выбрасываем протухшее. Если и после этого карта велика — самое
+    # старое: иначе на ноде с тысячами адресов она росла бы без предела,
+    # потому что чистка по сроку такую карту не уменьшает.
+    cut = now - OWNER_CACHE_TTL
+    for k in [i for i, v in cache.items()
+              if not (isinstance(v, list) and len(v) == 2)
+              or float(v[0] or 0) < cut]:
+        cache.pop(k, None)
+    if len(cache) > OWNER_CACHE_MAX:
+        for k, _ in sorted(cache.items(), key=lambda kv: float(kv[1][0] or 0)
+                           )[:len(cache) - OWNER_CACHE_MAX]:
+            cache.pop(k, None)
+
+
+def owner_recall(cache, ip, now=None):
+    """Последний известный владелец: (кто, когда). Не помним — (None, 0)."""
+    rec = cache.get(ip)
+    if not (isinstance(rec, list) and len(rec) == 2):
+        return None, 0.0
+    try:
+        at, who = float(rec[0] or 0), rec[1]
+    except (TypeError, ValueError):
+        return None, 0.0
+    now = now if now is not None else time.time()
+    if not isinstance(who, dict) or not who or now - at > OWNER_CACHE_TTL:
+        return None, 0.0
+    return who, at
+
 
 def notify_due(notified, ip, reasons, now=None):
     """
@@ -2559,10 +2637,15 @@ def cmd_watch(a):
     restore_penalties()
 
     both_streak, peak_streak, hourly = {}, {}, {}
-    # Когда в последний раз рассказывали про адрес и по какому поводу.
-    # Живёт в памяти: перезапуск сторожа стоит одного лишнего сообщения на
-    # нарушителя, а отдельный файл на диске — своего кода и своих поломок.
-    notified = {}
+    # Когда в последний раз рассказывали про адрес, и кто за адресом стоял.
+    # Обе карты переживают перезапуск: обновление посреди вечера не должно ни
+    # сбрасывать кулдаун, ни терять уже полученное от панели имя.
+    _gs = guard_state()
+    notified = {k: (float(v[0]), str(v[1]))
+                for k, v in (_gs.get("notified") or {}).items()
+                if isinstance(v, list) and len(v) == 2}
+    owners_seen = {k: v for k, v in (_gs.get("owners") or {}).items()
+                   if isinstance(v, list) and len(v) == 2}
     daily = load_daily()
     today = time.strftime("%Y-%m-%d")
     prev, prev_t = read_users(), time.monotonic()
@@ -2708,11 +2791,19 @@ def cmd_watch(a):
                     # потому точнее. Не нашлось — спрашиваем панель: она знает
                     # всех, но только пока адрес активен.
                     who = owner_of(ip) or panel_owner(cfg, ip)
+                    unknown = None
                     if who:
+                        owner_remember(owners_seen, ip, who)
                         entry["subject"] = who
-                        unknown = None
                     else:
-                        unknown = panel_owner_reason(cfg, ip)
+                        # Панель знает человека, только пока он на ноде. Тот
+                        # же нарушитель через двадцать минут приходил уже
+                        # безымянным, хотя ответ был получен и выброшен.
+                        old, at = owner_recall(owners_seen, ip)
+                        if old:
+                            entry["subject"] = dict(old, seen_at=at)
+                        else:
+                            unknown = panel_owner_reason(cfg, ip)
                     # Под замком: файл теперь правит ещё и API.
                     penalties_update(lambda p, i=ip, e=entry: p.__setitem__(i, e))
                     pens[ip] = entry
@@ -2730,6 +2821,9 @@ def cmd_watch(a):
                           f" [{score}: {','.join(reasons)}]", flush=True)
                     # Ограничение выдаётся каждый раз, а рассказываем о нём
                     # не чаще раза в шесть часов.
+                    guard_state_save({"notified": {k: list(v) for k, v
+                                                   in notified.items()},
+                                      "owners": owners_seen})
                     if notify_due(notified, ip, reasons):
                         tg_penalty(cfg, ip, mbps, g["penalty_min"],
                                    reasons, subject=entry.get("subject"),
@@ -2943,6 +3037,18 @@ def offender_card(tg, subject, head, why=None):
                    + (f" · #{uid}" if uid else ""))
     elif uid:
         out.append(t("pn_card_panel", id=uid))
+    # Сведения не свежие: панель сейчас этого адреса не показывает, имя взято
+    # из прошлого опроса. Выдавать это за текущее нельзя — за адресом мог
+    # оказаться уже другой человек. Строка идёт последней в блоке личности,
+    # чтобы относиться ко всему блоку, а не к одному Telegram ID.
+    seen_at = subject.get("seen_at")
+    if seen_at and len(out) > 2:
+        try:
+            when = time.strftime("%H:%M", time.localtime(float(seen_at)))
+            out.append(t("pn_card_seen", at=when))
+        except (TypeError, ValueError, OSError):
+            pass
+
     if len(out) == 2:          # ничего, кроме заголовка, не нашлось
         code, age = why if why else ("off", 0.0)
         key = PANEL_WHY_KEY.get(code, "pn_card_unknown")

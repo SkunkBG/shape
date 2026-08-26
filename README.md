@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.42-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.43-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--2.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v3.42
+# Shape v3.43
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -773,6 +773,12 @@ shaperctl status --live          # реальные скорости по IP
 Раньше во всех трёх случаях писалось первое, и это отправляло искать поломку
 не туда. Адрес и причина на месте в любом случае.
 
+**Имя не теряется, даже если панель уже не видит адрес.** Панель знает
+человека, только пока он на ноде: через двадцать минут после опознания та же
+карточка приходила безымянной, хотя ответ был получен и выброшен. Теперь
+владелец адреса помнится двенадцать часов, и в карточке честно написано, из
+какого опроса взято имя — за адресом мог оказаться уже другой человек.
+
 **Об одном адресе с той же причиной напоминаем не чаще раза в шесть часов.**
 Ограничение при этом выдаётся каждый раз, как и раньше, и видно в списке
 ограниченных — молчит только Telegram. Без этого штраф снимался через час,
@@ -899,6 +905,7 @@ systemd/shaper-watch.service   сторож нарушителей
 /etc/shaper/api.json       настройки и токены API (600)
 /var/lib/shape/node_id     постоянный идентификатор ноды
 /var/lib/shape/panel.state кулдауны и последняя ошибка опроса панели
+/var/lib/shape/guard.state память сторожа: кому уже сообщали и кто за адресом
 /var/lib/shape/events.jsonl журнал событий
 /var/lib/shape/owners.json  кто стоит за адресом
 /var/lib/shape/history.jsonl трафик по суткам

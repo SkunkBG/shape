@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.42-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.43-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.42
+# Shape v3.43
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -768,6 +768,13 @@ instead of blaming the configuration:
 All three used to print the first line, which sent you looking for a fault in
 the wrong place. The address and the reason are there either way.
 
+**The name is not lost even once the panel no longer sees the address.** The
+panel knows a person only while they are on the node: twenty minutes after an
+identification the same card would arrive nameless, though the answer had been
+received and thrown away. The owner of an address is now remembered for twelve
+hours, and the card states plainly which poll the name came from — a different
+person may have taken the address since.
+
 **One address with the same reason is reported at most once every six hours.**
 The limit is still applied every time and shows up in the limited list — only
 Telegram goes quiet. Without this the penalty expired after an hour, the daily
@@ -1514,6 +1521,7 @@ So every node carries a permanent identifier:
 ```
 /var/lib/shape/node_id      16 hex characters, created once
 /var/lib/shape/panel.state  cooldowns and the last panel poll error
+/var/lib/shape/guard.state  watchdog memory: who was already reported, and who is behind an address
 ```
 
 It survives a Shape upgrade, a move to another server and a hostname change.

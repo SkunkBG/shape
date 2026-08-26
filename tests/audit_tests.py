@@ -710,6 +710,60 @@ check("замер отдаёт число пакетов, а не только �
           {"x": {"down": 0, "up": 0, "up_pkts": 0}},
           {"x": {"down": 100, "up": 1300, "up_pkts": 1}}, 1.0)["x"])
 
+print("\n\033[1mПамять сторожа переживает перезапуск\033[0m")
+# Живой случай: в 20:18 адрес был подписан именем из панели, в 20:34 тот же
+# адрес и та же причина пришли безымянными. Панель знает человека, только
+# пока он на ноде, а ответ мы получали и выбрасывали.
+#
+# Второй случай тем же вечером: кулдаун в шесть часов не сработал, потому что
+# жил в памяти, а владелец ноды обновлялся по пять раз за вечер.
+CACHE_T = 2_000_000.0
+WHO = {"label": "Елена", "username": "user_82560969",
+       "telegram_id": "82560969", "user_id": "2891"}
+cache = {}
+S.owner_remember(cache, "91.245.140.152", WHO, CACHE_T)
+recalled, at = S.owner_recall(cache, "91.245.140.152", CACHE_T + 16 * 60)
+check("через шестнадцать минут владелец ещё помнится",
+      (recalled or {}).get("label") == "Елена", recalled)
+check("и время опознания вернулось", at == CACHE_T, at)
+check("через двенадцать часов забываем",
+      S.owner_recall(cache, "91.245.140.152",
+                     CACHE_T + S.OWNER_CACHE_TTL + 1) == (None, 0.0))
+check("чужой адрес не помним",
+      S.owner_recall(cache, "9.9.9.9", CACHE_T) == (None, 0.0))
+check("мусор в карте не роняет",
+      S.owner_recall({"x": "ерунда"}, "x") == (None, 0.0)
+      and S.owner_recall({"x": [1]}, "x") == (None, 0.0)
+      and S.owner_recall({"x": [CACHE_T, "не словарь"]}, "x") == (None, 0.0))
+check("пустого владельца не запоминаем",
+      (S.owner_remember(cache, "8.8.8.8", {}, CACHE_T),
+       "8.8.8.8" not in cache)[1])
+
+# Карта не должна расти без предела: чистка по сроку на ноде с тысячами
+# адресов её не уменьшает, потому что там всё свежее.
+big = {}
+for i in range(S.OWNER_CACHE_MAX + 50):
+    S.owner_remember(big, "10.0.%d.%d" % (i // 256, i % 256), WHO, CACHE_T - i)
+check("карта обрезается по размеру", len(big) <= S.OWNER_CACHE_MAX, len(big))
+check("и выбрасывает самое старое",
+      "10.0.%d.%d" % ((S.OWNER_CACHE_MAX + 49) // 256,
+                      (S.OWNER_CACHE_MAX + 49) % 256) not in big)
+
+# В карточке несвежие сведения обязаны быть помечены: за адресом мог
+# оказаться уже другой человек.
+TGC = dict(S.TG_DEFAULT, node_name="Akenia")
+fresh_card = "\n".join(S.offender_card(TGC, WHO, "x"))
+stale_card = "\n".join(S.offender_card(TGC, dict(WHO, seen_at=CACHE_T), "x"))
+check("свежая карточка без оговорки", "20:" not in fresh_card, fresh_card)
+check("несвежая — с оговоркой", stale_card != fresh_card
+      and "Елена" in stale_card, stale_card)
+check("метка без личности ничего не печатает",
+      S.t("pn_card_unknown") in "\n".join(
+          S.offender_card(TGC, {"seen_at": CACHE_T}, "x")))
+check("битая метка не роняет карточку",
+      "Елена" in "\n".join(S.offender_card(TGC, dict(WHO, seen_at="вчера"),
+                                           "x")))
+
 print("\n\033[1mПовторные уведомления об одном адресе\033[0m")
 # Живой случай: шесть сообщений про один и тот же перекос отдачи за вечер.
 # Штраф снимается через час, суточные счётчики за этот час не меняются — и

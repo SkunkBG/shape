@@ -13,6 +13,64 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.43
+
+**The watchdog's memory moved to disk. Both maps I had left in memory were being
+wiped by every update.**
+
+### The name is lost after twenty minutes
+
+At 20:18 the address carried a name from the panel. At 20:34 the same address
+with the same reason arrived nameless: "the panel does not see it".
+
+The panel knows a person only while they are on the node. We received the answer,
+showed it and threw it away — and when the person dropped off, everything about
+them vanished too, though it had been in our hands twenty minutes earlier.
+
+The owner of an address is now remembered for **twelve hours**. The card states
+plainly which poll the name came from:
+
+```
+👤 Elena Podshibiakina · @elena_podshibiakina
+🆔 Telegram: 82560969
+🔑 Panel login: user_82560969 · #2891
+the panel does not see it now — name from the 20:18 poll
+```
+
+The caveat is mandatory: a different person may have taken the address since.
+Twelve hours were chosen for exactly that reason — enough for an evening's work,
+too little for the address to change hands.
+
+### The six-hour cooldown never worked at all
+
+A message about the same address arrived twice, sixteen minutes apart.
+
+The "already reported" map lived in the watchdog's memory. I chose that
+deliberately and wrote so in a comment: "a restart costs one extra message, while
+a file on disk costs its own code and its own failures."
+
+The choice was wrong. The node owner updates several times an evening, the
+watchdog restarts with the update, and at that rate a six-hour cooldown never
+fires once.
+
+Both maps now live in `/var/lib/shape/guard.state` and survive a restart.
+
+### The maps do not grow without bound
+
+Pruning by age achieves nothing on a node with thousands of addresses: everything
+there is fresh. So after the age prune the owner map is trimmed by size, oldest
+first. The ceiling is 2048 addresses.
+
+### Also
+
+* The file was added to the README list; uninstalling removes it along with
+  `/var/lib/shape`.
+* Tests: 15 new ones. An owner is remembered and forgotten on schedule, junk in
+  the map does not break it, the map is trimmed oldest-first, stale details are
+  marked, a corrupted timestamp does not break the card.
+
+---
+
 ## 3.42
 
 **The share threshold went from 30% to 70%. Thirty did not work — it missed in

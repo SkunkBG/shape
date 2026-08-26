@@ -162,6 +162,15 @@ check "и правится руками" \
       'grep -q "g_set_rnp" "$SRC/menu.sh"'
 check "оба пресета включают его явно" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--ratio-needs-packet on") -eq 2 ]]'
+
+# Кулдаун и карта владельцев обязаны переживать перезапуск: владелец ноды
+# обновляется по нескольку раз за вечер, и в памяти они не жили.
+check "состояние сторожа пишется на диск" \
+      'grep -q "guard_state_save" "$SRC/shaperctl.py"'
+check "и читается при старте" \
+      'grep -q "_gs = guard_state()" "$SRC/shaperctl.py"'
+check "файл лежит рядом с остальным состоянием" \
+      'grep -q "GUARD_STATE = os.path.join(VAR_DIR" "$SRC/shaperctl.py"'
 check "числа показываются до применения" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 2 ]]'
 check "после применения сказано, что настроено всё" \
