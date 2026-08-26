@@ -13,6 +13,197 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.28
+
+**`panel who` — whose address is this, in one command.**
+
+A penalty message arrives with an address. What follows is exactly one question:
+who is that. Until now it meant going to the panel and searching by hand — and
+if the name had not made it into the message, guessing why.
+
+```bash
+shaperctl.py panel who 91.78.46.46
+```
+
+```
+✓ address 91.78.46.46 belongs to:
+    Panel ID: 741
+    Name: Bashou
+    Telegram: 637181482
+    the panel last saw it at 2026-08-26 14:41
+```
+
+The panel is queried afresh rather than reading the in-memory map: that map
+lives in the watchdog process, and the command runs separately, where it is
+empty.
+
+### It doubles as diagnostics
+
+When a name is missing from a message there are only a few possible causes, and
+the command names them outright:
+
+* **address not found** — the panel does not know it. Either it dropped between
+  the poll and the penalty, or the configured node is not the one this person
+  connects through;
+* **address found, no name** — the token lacks the `users:read` scope;
+* **panel refused** — the code and the response text are shown.
+
+Each case gets its own line instead of silence.
+
+### Tests
+
+10 new: the address is found, the panel is queried afresh, an unknown address
+gives a clear answer with a hint, junk instead of an address is rejected, and
+without the users scope the address is still found. 1047 in total.
+
+---
+
+## 3.27
+
+**Any node UUID was accepted, and with a wrong one everything looked healthy.**
+
+On a live node the settings held:
+
+```
+Node UUID : 5d8572233c3b934
+```
+
+Fifteen characters instead of thirty-six — the head and tail of a real UUID with
+the middle lost during entry. And meanwhile:
+
+```
+Panel link : enabled
+Last successful poll : 2026-08-26 14:32
+```
+
+All green. The panel accepts a request with any UUID and answers with an empty
+result: the poll counts as successful, the address-to-user map stays empty, and
+names quietly stop being filled in. The only symptom was penalty messages
+without a name, and nothing tied the two together.
+
+### What changed
+
+**The UUID is checked by shape when saved.** Not 36 characters with dashes —
+refused, with an example of a correct value. Whether the UUID exists is the
+panel's business; its shape was ours to check.
+
+**The state now shows "Users on the last poll".** Zero on a successful poll is
+highlighted in red with an explanation: it almost always means we are asking
+about a different node. An already-saved malformed UUID gets a warning — a check
+at save time does not repair old settings.
+
+```
+Last successful poll : 2026-08-26 14:41
+Users on the last poll : 0
+  zero on a successful poll almost always means the UUID points at a different node
+⚠ the node UUID must look like 5d8bba03-0951-4503-a4d6-572233c3b934
+```
+
+### Tests
+
+17 new: the UUID shape in every variant, refusal to save a malformed one, the
+user count stored in the state and updated. 1037 in total.
+
+---
+
+## 3.26
+
+**The ratio signal worked, but there was nowhere on screen to see it.**
+
+The main screen on v3.24:
+
+```
+🚦 Auto-limit on   both ways ↓1 ↑0.3 Mbit/s 10 min + 3 points → 1 Mbit/s
+   or 2.2 GB per hour · 100 GB per day
+```
+
+Preset [5] applied, the upload ratio enabled at 35% — and the line does not
+mention it. Neither does the auto-limit screen, nor `shaperctl show`. The signal
+was issuing penalties while there was no way to tell whether it was on: the
+"uploaded disproportionately much in 24h" message arrived out of nowhere.
+
+The cause is plain: I wrote the status line for the volume thresholds before the
+ratio existed, and forgot to add it there.
+
+### How it looks now
+
+```
+🚦 Auto-limit on   both ways ↓1 ↑0.3 Mbit/s 10 min + 3 points → 1 Mbit/s
+   or 2.2 GB per hour · 100 GB per day · upload over 35%
+```
+
+On the auto-limit screen it gets its own line next to the other independent
+paths, plus item **[12]** to change the threshold without leaving for the command
+line. `shaperctl show` prints it too.
+
+### A check so it does not happen again
+
+The status line is assembled from pipe-separated values: one function prints
+them, another parses them into names. Add a field to the first and forget the
+second, and every value silently shifts by a column.
+
+The suite now runs both functions for real and compares: as many fields on the
+output as there are names in the parse.
+
+### Tests
+
+7 new. 1020 in total.
+
+---
+
+## 3.25
+
+**The panel user number no longer disappears from the penalty message.**
+
+A message arrived:
+
+```
+🚦 Erebor
+Limited 91.78.46.46 → 1 Mbit/s for 1.0 h
+uploaded disproportionately much in 24h
+```
+
+The signal worked, but who is it?
+
+### What was wrong
+
+The offender's label was built from three fields: name, Telegram ID and panel
+number. The first two were shown, the third was not — even though it is almost
+always available: the number arrives with the connections list, before Shape
+asks for the user's card at all.
+
+So with names disabled, or without the `users:read` scope, we knew `#741` and
+printed a bare address.
+
+Now such a case reads `#741 · 91.78.46.46` — the number finds the person in the
+panel just as well as a name does.
+
+### Also fixed
+
+A non-numeric Telegram ID broke sending outright. `owners.json` is edited by
+hand, and any "no data" in that field meant the penalty message never went out
+at all. Such a value is now simply dropped.
+
+### If the name is still missing
+
+Check on the node:
+
+```bash
+shaperctl.py panel show
+```
+
+The name is filled in only when the panel link is enabled **on that very node**:
+the address-to-user map is built by its own poll. On a node without the panel
+there is nowhere to take a name from — only the address will show.
+
+### Tests
+
+13 new: the label in every combination of fields, the panel number is not lost,
+junk in the Telegram ID does not break sending, the name is escaped. 1013 in
+total.
+
+---
+
 ## 3.24
 
 **The threshold drops to 35% on data from two nodes, and there is now a tool to

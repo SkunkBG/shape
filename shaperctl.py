@@ -186,6 +186,17 @@ MSG = {
         "tg_need_proxy": "похоже на блокировку — задай прокси",
         "tg_sent": "сообщение отправлено",
         "tg_test_text": "Проверка связи прошла успешно.",
+        "pn_who_found": "адрес {ip} принадлежит:",
+        "pn_who_name": "Имя",
+        "pn_who_seen": "последний раз панель видела его",
+        "pn_who_noname": "имя не получено — проверьте право users:read у токена",
+        "pn_who_none": "панель не знает адрес {ip}; всего на ноде адресов у {n} пользователей",
+        "pn_who_hint": "адрес мог отвалиться, либо нода в панели не та, через которую он ходит",
+        "h_pn_who_ip": "адрес для команды who",
+        "pn_bad_uuid": "UUID ноды должен выглядеть как 5d8bba03-0951-4503-a4d6-572233c3b934 — 36 знаков с дефисами",
+        "pn_seen": "Пользователей на опросе",
+        "pn_seen_none": "ноль при успешном опросе почти всегда значит, что UUID указывает не на ту ноду",
+        "guard_ratio": "отдельно: отдал за сутки больше {p} процентов от скачанного, начиная с {mb} МБ",
         "ratio_title": "Отношение отдачи к скачиванию",
         "ratio_sub": "адресов с отдачей от {mb} МБ: {n}",
         "ratio_top": "Верхние по отношению:",
@@ -513,6 +524,17 @@ MSG = {
         "tg_need_proxy": "looks like blocking — set a proxy",
         "tg_sent": "message sent",
         "tg_test_text": "Connection test passed.",
+        "pn_who_found": "address {ip} belongs to:",
+        "pn_who_name": "Name",
+        "pn_who_seen": "the panel last saw it at",
+        "pn_who_noname": "no name returned — check the users:read scope on the token",
+        "pn_who_none": "the panel does not know {ip}; the node has addresses for {n} users",
+        "pn_who_hint": "the address may have dropped, or this is not the node it connects through",
+        "h_pn_who_ip": "address for the who command",
+        "pn_bad_uuid": "the node UUID must look like 5d8bba03-0951-4503-a4d6-572233c3b934 — 36 characters with dashes",
+        "pn_seen": "Users on the last poll",
+        "pn_seen_none": "zero on a successful poll almost always means the UUID points at a different node",
+        "guard_ratio": "separately: uploaded over {p} percent of the download in a day, from {mb} MB",
         "ratio_title": "Upload-to-download ratio",
         "ratio_sub": "addresses with at least {mb} MB uploaded: {n}",
         "ratio_top": "Highest by ratio:",
@@ -1886,13 +1908,27 @@ def subject_text(subject, ip):
     if not subject:
         return f"<code>{ip}</code>"
     label = html.escape(str(subject.get("label") or "")).strip()
-    tg_id = subject.get("telegram_id")
+
+    # Идентификатор Telegram приходит и из панели, и из owners.json, который
+    # правят руками. Нечисловое значение раньше роняло отправку целиком:
+    # int() на «нет данных» — исключение, и сообщение о штрафе не уходило.
+    tg_id = str(subject.get("telegram_id") or "").strip()
+    tg_id = int(tg_id) if tg_id.lstrip("-").isdigit() else None
+
     if label and tg_id:
-        return f'<a href="tg://user?id={int(tg_id)}">{label}</a> · <code>{ip}</code>'
+        return f'<a href="tg://user?id={tg_id}">{label}</a> · <code>{ip}</code>'
     if label:
         return f"{label} · <code>{ip}</code>"
     if tg_id:
-        return f'<a href="tg://user?id={int(tg_id)}">id {int(tg_id)}</a> · <code>{ip}</code>'
+        return f'<a href="tg://user?id={tg_id}">id {tg_id}</a> · <code>{ip}</code>'
+
+    # Имени нет, Telegram нет — но номер в панели есть почти всегда: он
+    # приходит вместе со списком соединений, ещё до того, как мы спросим
+    # карточку. Показать «#741» куда полезнее, чем не показать ничего:
+    # по нему человек ищется в панели так же, как по имени.
+    uid = html.escape(str(subject.get("user_id") or "")).strip()
+    if uid:
+        return f"<code>#{uid}</code> · <code>{ip}</code>"
     return f"<code>{ip}</code>"
 
 
@@ -2140,6 +2176,13 @@ def cmd_guard_show(speed, g):
         if g.get("require_packet"):
             print(f"  {C['gry']}{t('guard_req_packet', n=g['packet_bytes'])}{C['r']}")
         print(f"  {t('guard_score')}: {g['score_needed']}")
+    # Признаки в обход обязательного условия. Их не видно из строки про
+    # «обе стороны», а работают они независимо — и человек, глядя на экран,
+    # должен понимать, за что ещё может прилететь штраф.
+    if g.get("upload_ratio_percent"):
+        line = t("guard_ratio", p=g["upload_ratio_percent"],
+                 mb=g.get("upload_ratio_min_mb", 300))
+        print(f"  {C['gry']}{line}{C['r']}")
     print(f"  {t('guard_penalty')}: {g['penalty_mbps']:g} Mbit/s "
           f"{t('guard_for')} {g['penalty_min']} {t('min')}")
     print()
@@ -2918,6 +2961,15 @@ class PanelError(Exception):
         self.code = code
 
 
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def valid_uuid(s):
+    """Похоже ли это на UUID. Проверяем форму, существование — дело панели."""
+    return bool(UUID_RE.match(str(s or "").strip()))
+
+
 def panel_actions(p):
     """
     Разбирает поле action в набор.
@@ -3619,6 +3671,7 @@ def panel_scan(cfg, now=None, act=True):
     state["seen"] = {k: v for k, v in seen.items()
                      if now - float(v or 0) < keep}
     state["last_ok"] = now
+    state["last_users"] = len(users)
     state["last_error"] = ""
     state.pop("retry_at", None)
     state.pop("denied_warned", None)
@@ -3698,6 +3751,14 @@ def cmd_panel(a):
             print(f"  {t('pn_exempt')} : {', '.join(p['exempt'])}")
         print(f"  {t('pn_last')} : " + (time.strftime("%Y-%m-%d %H:%M",
               time.localtime(last)) if last else t("pn_never")))
+        if last:
+            seen_n = int(st.get("last_users") or 0)
+            col = C["red"] if not seen_n else ""
+            print(f"  {t('pn_seen')} : {col}{seen_n}{C['r']}")
+            if not seen_n:
+                print(f"    {C['gry']}{t('pn_seen_none')}{C['r']}")
+        if p.get("node_uuid") and not valid_uuid(p["node_uuid"]):
+            print(f"  {C['red']}⚠ {t('pn_bad_uuid')}{C['r']}")
         if st.get("last_error"):
             print(f"  {t('pn_last_err')} : {C['red']}{st['last_error']}{C['r']}")
         print()
@@ -3712,7 +3773,14 @@ def cmd_panel(a):
         if a.token is not None:
             p["token"] = a.token.strip()
         if a.node_uuid is not None:
-            p["node_uuid"] = a.node_uuid.strip()
+            v = a.node_uuid.strip()
+            # UUID проверяем по форме. Панель на неправильный принимает запрос
+            # и отвечает пустым результатом — опрос считается успешным, карта
+            # адресов остаётся пустой, и имена молча перестают подставляться.
+            # Поймать это потом можно только вручную, поэтому ловим здесь.
+            if v and not valid_uuid(v):
+                die(t("pn_bad_uuid"))
+            p["node_uuid"] = v
         if a.proxy is not None:
             p["proxy"] = a.proxy.strip()
         if a.interval is not None:
@@ -3753,6 +3821,48 @@ def cmd_panel(a):
         save_config({"panel": p})
         log_event("config_changed", source="cli", section="panel")
         return cmd_panel(argparse.Namespace(**{**vars(a), "action": "show"}))
+
+    if a.action == "who":
+        # Спрашиваем панель заново, а не берём карту из памяти: она живёт в
+        # процессе сторожа, а здесь отдельный запуск, и там пусто.
+        ip = valid_ip(a.ip or "")
+        if not ip:
+            die(t("bad_ip", ip=a.ip or ""))
+        print(f"\n  {t('pn_scanning')}", flush=True)
+        try:
+            users = panel_fetch(p)
+        except PanelError as e:
+            die(str(e))
+
+        hit = None
+        for u in users:
+            for addr, ts in u["ips"]:
+                if addr == ip:
+                    hit = (u["user_id"], ts)
+                    break
+            if hit:
+                break
+
+        if not hit:
+            print(f"  {C['yel']}{t('pn_who_none', ip=ip, n=len(users))}{C['r']}")
+            print(f"    {C['gry']}{t('pn_who_hint')}{C['r']}\n")
+            return 1
+
+        uid, ts = hit
+        person = panel_user(p, uid)
+        print(f"  {C['grn']}✓{C['r']} {t('pn_who_found', ip=ip)}")
+        print(f"      {t('pn_card_panel_plain', id=uid)}")
+        if person and person.get("name"):
+            print(f"      {t('pn_who_name')}: {C['b']}{person['name']}{C['r']}")
+        if person and person.get("telegram_id"):
+            print(f"      Telegram: {C['b']}{person['telegram_id']}{C['r']}")
+        if not person:
+            print(f"      {C['yel']}{t('pn_who_noname')}{C['r']}")
+        if ts:
+            print(f"      {C['gry']}{t('pn_who_seen')}: "
+                  f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))}{C['r']}")
+        print()
+        return
 
     if a.action == "report":
         # force: кнопка «отправить сейчас» работает и при выключенном
@@ -5033,8 +5143,10 @@ def build_parser():
     tg.set_defaults(func=cmd_telegram)
 
     pn = sub.add_parser("panel", help=t("h_panel"))
-    pn.add_argument("action", choices=["show", "set", "test", "scan", "report"],
+    pn.add_argument("action",
+                    choices=["show", "set", "test", "scan", "report", "who"],
                     nargs="?", default="show")
+    pn.add_argument("ip", nargs="?", default="", help=t("h_pn_who_ip"))
     pn.add_argument("--report", choices=["on", "off"], default=None,
                     help=t("h_pn_report"))
     pn.add_argument("--report-at", dest="report_at", default=None,

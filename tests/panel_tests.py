@@ -770,6 +770,122 @@ check("нечисловой telegram отброшен", "telegram_id" not in (wh
 check("но имя всё равно есть", (who or {}).get("label") == "Кто-то", who)
 check("и подпись не падает", "Кто-то" in S.subject_text(who, "1.2.3.4"))
 
+print("\n\033[1m36. UUID ноды проверяется по форме\033[0m")
+# Живой случай: в поле оказалось «5d8572233c3b934» — начало и хвост настоящего
+# UUID, середина потерялась при вводе. Панель такой запрос принимает и отвечает
+# пустым результатом: опрос числится успешным, карта адресов пустая, имена
+# молча перестают подставляться. Заметить это можно было только вручную.
+check("настоящий UUID принят",
+      S.valid_uuid("5d8bba03-0951-4503-a4d6-572233c3b934"))
+check("верхний регистр тоже",
+      S.valid_uuid("5D8BBA03-0951-4503-A4D6-572233C3B934"))
+for bad in ("5d8572233c3b934", "", "не uuid", "5d8bba03-0951-4503-a4d6",
+            "5d8bba0309514503a4d6572233c3b934",
+            "5d8bba03-0951-4503-a4d6-572233c3b93z"):
+    check(f"отвергнут {bad[:24]!r}", not S.valid_uuid(bad))
+check("пробел на конце обрезается, а не ломает",
+      S.valid_uuid(" 5d8bba03-0951-4503-a4d6-572233c3b934 "))
+
+import argparse as _ap
+
+
+def _set(**kw):
+    d = dict(action="set", url=None, token=None, node_uuid=None, proxy=None,
+             enable=False, disable=False, interval=None, window=None,
+             threshold=None, action_set=None, mbps=None, minutes=None,
+             cooldown=None, exempt=None, report=None, report_at=None,
+             report_thread=None, resolve=None, dry_run=False, json=False)
+    d.update(kw)
+    return _ap.Namespace(**d)
+
+
+def _dies(fn, *a):
+    """Проверяем отказ, а не вывод: показ настроек на экране здесь только шум."""
+    import contextlib as _cx
+    with _cx.redirect_stdout(io.StringIO()):
+        try:
+            fn(*a)
+            return False
+        except SystemExit:
+            return True
+
+
+S.save_config({"panel": dict(S.PANEL_DEFAULT)})
+check("кривой UUID не сохраняется",
+      _dies(S.cmd_panel, _set(node_uuid="5d8572233c3b934")))
+check("и в конфиг ничего не попало",
+      not S.load_config()["panel"]["node_uuid"],
+      S.load_config()["panel"]["node_uuid"])
+check("правильный сохраняется",
+      not _dies(S.cmd_panel, _set(node_uuid="5d8bba03-0951-4503-a4d6-572233c3b934")))
+check("именно он и лежит в конфиге",
+      S.load_config()["panel"]["node_uuid"] == "5d8bba03-0951-4503-a4d6-572233c3b934")
+
+print("\n\033[1m37. Пустой опрос виден в состоянии\033[0m")
+drop_state()
+fresh_cache()
+PANEL["users"] = []
+cfg_empty = {"panel": conf(action="notify"), "telegram": dict(S.TG_DEFAULT)}
+res = S.panel_scan(cfg_empty)
+check("опрос успешен", res["ok"] is True)
+check("но пользователей ноль", res["users"] == 0)
+check("число сохранено в состоянии",
+      S.panel_state().get("last_users") == 0, S.panel_state())
+PANEL["users"] = make_users({97: 1, 346: 1})
+S.panel_scan(cfg_empty)
+check("а после нормального опроса — двое",
+      S.panel_state().get("last_users") == 2, S.panel_state())
+
+print("\n\033[1m38. panel who: кто стоит за адресом\033[0m")
+# Сообщение о штрафе приходит с адресом. Дальше нужен ответ на один вопрос:
+# чей он. В памяти сторожа карта есть, но отдельный запуск CLI её не видит —
+# значит команда обязана спросить панель заново, а не отдавать пустоту.
+fresh_cache()
+S.save_config({"panel": conf(node_uuid="5d8bba03-0951-4503-a4d6-572233c3b934")})
+PANEL["directory"] = {"741": {"id": 741, "username": "Bashou",
+                             "telegramId": 637181482}}
+PANEL["users"] = [{"userId": 741,
+                   "ips": [{"ip": "91.78.46.46", "lastSeen": time.strftime(
+                       "%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 30))}]}]
+
+def _who(ip):
+    """Ловим и stderr: отказ печатается туда, и без него проверка слепа."""
+    import contextlib as _cx
+    buf = io.StringIO()
+    with _cx.redirect_stdout(buf), _cx.redirect_stderr(buf):
+        try:
+            S.cmd_panel(_set(action="who", ip=ip))
+        except SystemExit:
+            pass
+    return buf.getvalue()
+
+S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
+PANEL["starts"] = 0
+out = _who("91.78.46.46")
+check("панель спрошена заново, а не взята из памяти", PANEL["starts"] == 1,
+      PANEL["starts"])
+check("адрес найден", "91.78.46.46" in out and "741" in out, out)
+check("имя показано", "Bashou" in out, out)
+check("telegram показан", "637181482" in out, out)
+check("время последнего появления показано", "последний раз" in out or "last saw" in out)
+
+out = _who("9.9.9.9")
+check("чужой адрес — понятный ответ, а не молчание",
+      "9.9.9.9" in out and ("не знает" in out or "does not know" in out), out)
+check("и подсказка, где искать причину",
+      "отвалиться" in out or "dropped" in out, out)
+
+out = _who("не адрес")
+check("мусор вместо адреса отбит", "IP" in out or "адрес" in out, out)
+
+PANEL["users_code"] = 403
+out = _who("91.78.46.46")
+PANEL["users_code"] = 0
+check("без права на пользователей адрес всё равно находится",
+      "741" in out, out)
+check("и сказано, чего не хватает",
+      "users:read" in out, out)
+
 srv.shutdown()
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

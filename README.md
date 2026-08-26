@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.24-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.28-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--2.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v3.24
+# Shape v3.28
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -591,6 +591,7 @@ shaperctl.py panel set --threshold 20 --window 10 --exempt 97,346
 shaperctl.py panel report                   # отчёт по ноде прямо сейчас
 shaperctl.py panel set --report on --report-at 09:00 --report-thread 777
 shaperctl.py panel set --resolve off        # не подставлять имена из панели
+shaperctl.py panel who 91.78.46.46            # чей это адрес по данным панели
 ```
 
 Формат `status --json`:

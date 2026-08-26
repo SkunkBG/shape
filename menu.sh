@@ -90,7 +90,7 @@ screen_lang() {
 # Все значения читаются одним вызовом python: экран перерисовывается часто,
 # плодить по семь процессов на кадр незачем. Разделитель — вертикальная черта.
 read_state() {
-    python3 - <<'PY' 2>/dev/null || echo "0|?|0|50|15|10|1|60|3|50|0"
+    python3 - <<'PY' 2>/dev/null || echo "0|?|0|50|15|10|1|60|3|50|0|0"
 import json
 try:
     c = json.load(open("/etc/shaper/config.json"))
@@ -99,7 +99,7 @@ except Exception:
 g = {"enabled": False, "both_dl_percent": 50, "both_ul_percent": 15,
      "both_ways_min": 10, "penalty_mbps": 1, "penalty_min": 60,
      "score_needed": 3, "download_gb_per_day": 50,
-     "download_gb_per_hour": 0}
+     "download_gb_per_hour": 0, "upload_ratio_percent": 0}
 g.update(c.get("guard", {}))
 ports = c.get("ports", [])
 print("|".join([
@@ -110,12 +110,14 @@ print("|".join([
     f"{g['both_ways_min']:g}",
     f"{g['penalty_mbps']:g}", f"{g['penalty_min']:g}", f"{g['score_needed']:g}",
     f"{g['download_gb_per_day']:g}", f"{g['download_gb_per_hour']:g}",
+    f"{g['upload_ratio_percent']:g}",
 ]))
 PY
 }
 
 status_line() {
-    local ifc speed ports g_on bdl bul bmin pen dur score dgb dgbh dlv ulv vol
+    local ifc speed ports g_on bdl bul bmin pen dur score dgb dgbh urp
+    local dlv ulv vol
     local auto_on=0 run_on=0
 
     "$ENGINE" state >/dev/null 2>&1 && run_on=1
@@ -125,7 +127,7 @@ status_line() {
     [[ -z "$ifc" ]] && ifc="$(ip route get 1.1.1.1 2>/dev/null |
                               sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)"
 
-    IFS='|' read -r speed ports g_on bdl bul bmin pen dur score dgb dgbh \
+    IFS='|' read -r speed ports g_on bdl bul bmin pen dur score dgb dgbh urp \
         <<< "$(read_state)"
     [[ "$ports" == "*" ]] && ports="${T[st_all]}"
 
@@ -160,6 +162,7 @@ status_line() {
             vol=""
             [[ "$dgbh" != "0" ]] && vol="${dgbh} ${T[st_g_gbh]}"
             [[ "$dgb"  != "0" ]] && vol="${vol:+$vol · }${dgb} ${T[st_g_gbd]}"
+            [[ "$urp"  != "0" ]] && vol="${vol:+$vol · }${T[st_g_ratio]} ${urp}%"
             [[ -n "$vol" ]] && echo -e "      ${D}${T[st_g_or]} ${vol}${N}"
         fi
     else
@@ -240,7 +243,7 @@ print(','.join(map(str, p)))" 2>/dev/null || echo 443)"
 # Все настройки читаются одним вызовом: запуск python3 стоит десятки
 # миллисекунд, а раньше их было десять на каждую отрисовку экрана.
 guard_read() {
-    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600"
+    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300"
 import json
 try:
     g = json.load(open("/etc/shaper/config.json")).get("guard", {})
@@ -249,7 +252,8 @@ except Exception:
 d = {"enabled": False, "score_needed": 3, "both_dl_percent": 50,
      "both_ul_percent": 15, "both_ways_min": 10, "penalty_mbps": 1,
      "penalty_min": 60, "hours_per_day": 4, "upload_gb_per_day": 2,
-     "download_gb_per_day": 50, "download_gb_per_hour": 0, "packet_bytes": 600}
+     "download_gb_per_day": 50, "download_gb_per_hour": 0, "packet_bytes": 600,
+     "upload_ratio_percent": 0, "upload_ratio_min_mb": 300}
 d.update(g)
 print("|".join([
     "1" if d["enabled"] else "0",
@@ -258,6 +262,7 @@ print("|".join([
     f"{d['hours_per_day']:g}", f"{d['upload_gb_per_day']:g}",
     f"{d['download_gb_per_day']:g}", f"{d['download_gb_per_hour']:g}",
     f"{d['packet_bytes']:g}",
+    f"{d['upload_ratio_percent']:g}", f"{d['upload_ratio_min_mb']:g}",
 ]))
 PY
 }
@@ -393,11 +398,11 @@ guard_preset() {
 }
 
 screen_guard() {
-    local on score both_min bdl bul pen dur hours gb dgb dgbh pkt speed v
+    local on score both_min bdl bul pen dur hours gb dgb dgbh pkt urp urm speed v
     while :; do
         speed="$(cfg speed_mbps 0)"
         IFS='|' read -r on score bdl bul both_min pen dur hours gb dgb dgbh pkt \
-            <<< "$(guard_read)"
+            urp urm <<< "$(guard_read)"
 
         title "${T[g_title]}"
         echo -e "  ${D}${T[g_h1]}${N}"
@@ -425,6 +430,7 @@ screen_guard() {
         echo -e "  ${D}  +1  ${T[why_upload]} (>${gb} GB)${N}"
         [[ "$dgb" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_download]} (>${dgb} GB)${N}"
         [[ "$dgbh" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_hourly]} (>${dgbh} GB)${N}"
+        [[ "$urp" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_ratio_menu]} (>${urp}%, >${urm} MB)${N}"
         hr
         echo "  [1] ${T[g_toggle]}"
         echo "  [2] ${T[g_set_score]}"
@@ -437,8 +443,9 @@ screen_guard() {
         echo -e "  [9] ${T[g_set_ul]} ${D}(${bul}%)${N}"
         echo -e " [10] ${T[g_set_dgb]} ${D}(${dgb} GB)${N}"
         echo -e " [11] ${T[g_set_dgbh]} ${D}(${dgbh} GB)${N}"
+        echo -e " [12] ${T[g_set_ratio]} ${D}(${urp}%)${N}"
         hr
-        echo -e " ${B}[12]${N} ⚡ ${T[gp_menu]}"
+        echo -e " ${B}[13]${N} ⚡ ${T[gp_menu]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -470,7 +477,10 @@ screen_guard() {
                     "$(awk "BEGIN{printf \"%.1f\", $speed*3600/8/1000}") GB${N}"
                 v="$(ask "${T[g_set_dgbh]}" "$dgbh")"
                 [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --download-gbh "$v" --quiet ;;
-            12) guard_preset ;;
+            12) echo -e "  ${D}${T[g_hint_ratio]}${N}"
+                v="$(ask "${T[g_set_ratio]}" "$urp")"
+                [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" guard --upload-ratio "$v" --quiet ;;
+            13) guard_preset ;;
             0|"") return ;;
         esac
     done

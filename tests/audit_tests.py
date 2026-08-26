@@ -275,6 +275,41 @@ except SystemExit:
 except Exception as exc:
     check("guard --help отрабатывает", False, repr(exc))
 
+print("\n\033[1mПодпись нарушителя в сообщении\033[0m")
+# Сообщение о штрафе должно давать хоть что-то, за что можно зацепиться в
+# панели. Номер там есть почти всегда — он приходит вместе со списком
+# соединений, до всякого запроса карточки. Раньше он молча терялся.
+_ip = "203.0.113.7"
+check("имя и telegram — ссылка на человека",
+      "tg://user?id=637181482" in S.subject_text(
+          {"label": "Bashou", "telegram_id": "637181482"}, _ip))
+check("только имя", S.subject_text({"label": "Bashou"}, _ip)
+      == f"Bashou · <code>{_ip}</code>")
+check("только telegram", "id 637181482" in S.subject_text(
+      {"telegram_id": 637181482}, _ip))
+check("только номер в панели не теряется",
+      "#741" in S.subject_text({"user_id": "741"}, _ip),
+      S.subject_text({"user_id": "741"}, _ip))
+check("пусто — остаётся адрес",
+      S.subject_text({}, _ip) == f"<code>{_ip}</code>")
+check("нет владельца — тоже адрес",
+      S.subject_text(None, _ip) == f"<code>{_ip}</code>")
+
+# owners.json правят руками, и туда попадает что угодно. Раньше нечисловой
+# идентификатор ронял int() и сообщение о штрафе не уходило вообще.
+for junk in ("не число", "", None, "12 34", "id42"):
+    try:
+        _out = S.subject_text({"label": "Кто-то", "telegram_id": junk}, _ip)
+        _fine = "Кто-то" in _out
+    except Exception as exc:
+        _fine = False
+        _out = repr(exc)
+    check(f"мусор в telegram_id не роняет отправку: {junk!r}", _fine, _out)
+check("отрицательный telegram_id принимается",
+      "tg://user?id=-100" in S.subject_text({"telegram_id": "-100"}, _ip))
+check("имя экранируется",
+      "&lt;b&gt;" in S.subject_text({"label": "<b>x</b>"}, _ip))
+
 print("\n\033[1mРаспределение отношения отдачи\033[0m")
 # Порог между честным и раздающим не выводится из теории — он виден как разрыв
 # в распределении. Данные ниже сняты с двух живых нод: на первой честные
