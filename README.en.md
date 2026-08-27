@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.47-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.48-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.47
+# Shape v3.48
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -361,6 +361,30 @@ Uploaded more than a third of what was downloaded in a day, with at least
 300 MB of upload — penalty. The path is independent: the two-way condition is not
 checked, otherwise a quiet seeder would never reach it.
 
+**The threshold differs between home and mobile nodes: 50% against 35%.**
+
+Thirty-five was chosen from a distribution over 6143 addresses: honest clients
+ended at 25%, seeders started at 45%, and in between it was empty. Thirty-five is
+the middle of that emptiness.
+
+The first confirmed false positive landed inside it: a marketer uploading work
+files reached 38% and got penalised.
+
+Once statistics from two nodes accumulated, the picture sharpened. The 300 MB
+lower bound on upload volume cuts off more than half the list, and only a few
+addresses actually reach the ratio check:
+
+```
+392%  seeding
+229%  seeding
+ 75%  seeding
+  ·   ← empty
+ 38%  the marketer, a false positive
+```
+
+Fifty is the middle of that gap. On mobile nodes the threshold is left as it
+was: there is neither statistics nor work uploads there.
+
 **But the person has to be there.** The signal is counted from daily
 counters, while the kernel map is an LRU of 8192 entries: an address that
 downloaded in the morning and left at noon sits there until midnight along with
@@ -485,7 +509,7 @@ differs, and what sits behind it.
 | Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
 | Torrents | two-way traffic with large upload packets | same |
-| Quiet seeders | 35% a day, uploading now, 55%+ as data | same |
+| Quiet seeders | **35%** a day | **50%** a day |
 | Penalty for a torrent | 1 Mbit/s for 60 min | same |
 | Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
 | Sharing | connections dropped | same |

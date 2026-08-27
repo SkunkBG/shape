@@ -110,7 +110,7 @@ check "и их строки не остались в переводах" \
 check "оба ловят торренты" \
       '[[ $(grep -c -- "--require-packet on" "$SRC/menu.sh") -eq 2 ]]'
 check "оба ловят тихого сидера" \
-      '[[ $(grep -c -- "--upload-ratio 35" "$SRC/menu.sh") -eq 2 ]]'
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--upload-ratio ") -eq 2 ]]'
 check "оба настраивают раздачу" \
       '[[ $(grep -cE -- "panel set --threshold [0-9]+ --window" "$SRC/menu.sh") -eq 2 ]]'
 check "раздача рвёт соединения" \
@@ -196,6 +196,16 @@ check "оба уровня видны на экране автоограниче
       'grep -q "why_upload_day_menu" "$SRC/menu.sh" && grep -q "g_up_warn" "$SRC/menu.sh"'
 check "и правятся руками" \
       'grep -q "g_set_upday" "$SRC/menu.sh" && grep -q "g_set_upwarn" "$SRC/menu.sh"'
+
+# Порог пропорции разный: на домашних 50, на мобильных 35. Причина в живом
+# случае — маркетолог с 38% попал под штраф, а самый низкий из настоящих
+# сидеров на двух нодах был 64%.
+check "домашний пресет ставит пропорцию 50" \
+      'grep -qE -- "--upload-ratio 50 --upload-ratio-mb 300" "$SRC/menu.sh"'
+check "мобильный остаётся на 35" \
+      'grep -qE -- "--upload-ratio 35 --upload-ratio-mb 300" "$SRC/menu.sh"'
+check "у каждого пресета своя строка про пропорцию" \
+      'grep -q "gp_w_ratio50" "$SRC/menu.sh" && grep -q "gp_w_ratio\]" "$SRC/lang.sh"'
 check "числа показываются до применения" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 2 ]]'
 check "после применения сказано, что настроено всё" \

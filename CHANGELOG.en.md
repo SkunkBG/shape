@@ -13,6 +13,69 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.48
+
+**The ratio threshold on home nodes went from 35% to 50%. The first confirmed
+false positive.**
+
+### What happened
+
+A penalty went to someone whose panel description reads "marketing and art". Over
+ten hours he uploaded 621 MB — that is 0.14 Mbit/s, a thin trickle, and 85% of it
+went in large packets. The ratio came out at 38% against a threshold of 35.
+
+The portrait of a quiet seeder and the portrait of a specialist sending mockups
+to clients coincide completely at the network layer. They cannot be separated —
+one can only avoid drawing the line where one does not know what lies beyond it.
+
+### Where the line was
+
+Thirty-five was chosen from your statistics over 6143 addresses: honest clients
+ended at 25%, seeders started at 45%, and in between it was empty. Thirty-five is
+the middle of that emptiness — that is, a line drawn through the unknown.
+
+The first person to land in it turned out to be innocent.
+
+### What the accumulated statistics showed
+
+An important correction to what I said earlier. The 300 MB lower bound on upload
+volume cuts off more than half the list: out of thirteen addresses on each node,
+only a few reach the ratio check at all.
+
+The real picture across two nodes:
+
+```
+392%  seeding
+229%  seeding
+ 75%  seeding
+  ·
+  ·   ← empty
+  ·
+ 38%  the marketer, a false positive
+```
+
+The gap is between 38 and 75, the middle is 56. Fifty was chosen, erring towards
+caution.
+
+### Mobile nodes are untouched
+
+They stay at 35: neither accumulated statistics nor work uploads from a phone. If
+the same thing shows up there, it will be raised too.
+
+### The rules are independent, and that is worth remembering
+
+The 30 GB threshold added yesterday had no bearing on this case: the person had
+621 MB, sixteen times less than the notice level. Volume is the **fourth** rule,
+not a replacement for the others. If any one of them fires, a penalty follows.
+
+### Also
+
+* Tests: 6 new ones. The marketer passes at 50 and is caught at 35, a seeder at
+  75% stays caught, an address with less than 300 MB of upload never reaches the
+  check at all.
+
+---
+
 ## 3.47
 
 **Daily upload in gigabytes: 10 GB is a notice, 30 GB is a limit. On home nodes

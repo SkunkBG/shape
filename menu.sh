@@ -375,7 +375,7 @@ guard_preset() {
                fi
                echo -e "\n  ${T[gp_will]}:"
                echo -e "  ${D}  · ${T[gp_w_torrent]}${N}"
-               echo -e "  ${D}  · ${T[gp_w_ratio]}${N}"
+               echo -e "  ${D}  · ${T[gp_w_ratio50]}${N}"
                echo -e "  ${D}    ${T[gp_h_ratio]}${N}"
                echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}${D} — ${T[gp_h_vol]}${N}"
                echo -e "  ${D}  · ${T[gp_p_day]} ${gbd} GB${N}"
@@ -390,7 +390,7 @@ guard_preset() {
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb "$gbd" --download-gbh "$gbh" \
-                   --upload-ratio 35 --upload-ratio-mb 300 \
+                   --upload-ratio 50 --upload-ratio-mb 300 \
                    --volume-needs-upload on --volume-mbps "$soft" \
                    --ratio-needs-packet on \
                    --upload-warn 10 --upload-day 30 \
