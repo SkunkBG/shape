@@ -187,7 +187,7 @@ MSG = {
         "tg_sent": "сообщение отправлено",
         "tg_test_text": "Проверка связи прошла успешно.",
         "tg_pen_head": "🚦 <b>Ограничение</b>",
-        "tg_pen_addr": "📍 Адрес: {ip}",
+        "tg_pen_addr": "📍 Адрес: <a href=\"https://ipinfo.io/{ip}\">{ip}</a>",
         "tg_pen_speed": "🐌 Скорость снижена до {mbps} Мбит/с на {d}",
         "tg_pen_why": "Причина: <i>{why}</i>",
         "tg_upd_head": "⬆️ <b>Доступно обновление</b>",
@@ -324,6 +324,8 @@ MSG = {
         "h_pn_minutes": "на сколько минут резать",
         "h_pn_cooldown": "пауза между сигналами по одному человеку, в минутах",
         "h_pn_exempt": "кого не трогать вовсе: userId через запятую, действует и на автоограничение",
+        "h_pn_exempt_tags": "то же самое по тегу из панели: BUSINESS,OFFICE",
+        "pn_exempt_tags": "Теги-исключения",
         "h_pn_proxy": "http-прокси до панели",
         "h_pn_dry": "только показать найденное, ничего не делать",
         "pn_bad_action": "действие — это notify, limit, block, drop или их сочетание",
@@ -574,7 +576,7 @@ MSG = {
         "tg_sent": "message sent",
         "tg_test_text": "Connection test passed.",
         "tg_pen_head": "🚦 <b>Limited</b>",
-        "tg_pen_addr": "📍 Address: {ip}",
+        "tg_pen_addr": "📍 Address: <a href=\"https://ipinfo.io/{ip}\">{ip}</a>",
         "tg_pen_speed": "🐌 Speed cut to {mbps} Mbit/s for {d}",
         "tg_pen_why": "Reason: <i>{why}</i>",
         "tg_upd_head": "⬆️ <b>An update is available</b>",
@@ -711,6 +713,8 @@ MSG = {
         "h_pn_minutes": "for how many minutes to throttle",
         "h_pn_cooldown": "pause between alerts about one person, in minutes",
         "h_pn_exempt": "who is left alone entirely: comma-separated userIds, applies to the auto-limiter too",
+        "h_pn_exempt_tags": "the same by panel tag: BUSINESS,OFFICE",
+        "pn_exempt_tags": "Tag exceptions",
         "h_pn_proxy": "http proxy to reach the panel",
         "h_pn_dry": "only show what was found, change nothing",
         "pn_bad_action": "action is notify, limit, block, drop, or a combination",
@@ -1182,6 +1186,14 @@ GUARD_DEFAULT = {
 #
 # Настоящий сидер отдаёт непрерывно, отвалившийся не отдаёт ничего. Порог
 # низкий нарочно: тихий сидер держит полмегабита, а под ограничением — один.
+# Куда ведёт адрес в сообщении. Без явной ссылки Telegram делает её сам — и
+# ведёт на http://<адрес>, то есть в браузере открывается попытка зайти на
+# машину клиента. Так же, как в Remnawave, ведём на ipinfo.
+#
+# Это внешний сервис: переход по ссылке сообщает ему адрес. Само по себе
+# ничего никуда не уходит — только когда вы нажимаете.
+IPINFO_URL = "https://ipinfo.io/{ip}"
+
 RATIO_LIVE_MBPS = 0.05
 
 # Границы правдоподобия для среднего размера пакета. Ниже сорока байт не
@@ -1321,6 +1333,11 @@ PANEL_DEFAULT = {
     # выглядят нарушением по обеим проверкам, и порогом это не лечится.
     "exempt": [],
 
+    # То же самое, но по тегу из панели. Список номеров приходится держать на
+    # каждой из двадцати восьми нод и править везде при каждом новом клиенте;
+    # тег ставится в панели один раз и виден отовсюду.
+    "exempt_tags": [],
+
     # Имя и Telegram ID вместо внутреннего номера пользователя. Требует у
     # токена права users:read. Выключишь — в сообщениях останутся номера,
     # всё остальное продолжит работать.
@@ -1351,6 +1368,8 @@ def load_config():
     # число или строку.
     panel["exempt"] = [str(x).strip() for x in (panel.get("exempt") or [])
                        if str(x).strip()]
+    panel["exempt_tags"] = [str(x).strip() for x in
+                            (panel.get("exempt_tags") or []) if str(x).strip()]
     return {"ports": cfg.get("ports", [443]),
             "speed_mbps": float(cfg.get("speed_mbps", 0)),
             "guard": guard, "telegram": tg, "panel": panel}
@@ -2464,8 +2483,9 @@ def cmd_guard(a):
     cfg["guard"] = g
     save_config(cfg)
     if not a.quiet:
+        _p = cfg.get("panel") or {}
         cmd_guard_show(cfg["speed_mbps"], g,
-                       len((cfg.get("panel") or {}).get("exempt") or []))
+                       len(_p.get("exempt") or []) + len(_p.get("exempt_tags") or []))
 
 
 def cmd_guard_show(speed, g, exempt=0):
@@ -2809,11 +2829,16 @@ def guard_exempt(cfg, who):
 
     Без панели не работает: узнать, чей это адрес, больше неоткуда.
     """
-    uid = str((who or {}).get("user_id") or "").strip()
+    p = cfg.get("panel") or {}
+    who = who or {}
+    tag = str(who.get("tag") or "").strip().upper()
+    if tag and tag in {str(x).strip().upper()
+                       for x in (p.get("exempt_tags") or [])}:
+        return True
+    uid = str(who.get("user_id") or "").strip()
     if not uid:
         return False
-    return uid in {str(x).strip()
-                   for x in ((cfg.get("panel") or {}).get("exempt") or [])}
+    return uid in {str(x).strip() for x in (p.get("exempt") or [])}
 
 
 VOLUME_ONLY = {"download", "hourly"}
@@ -4124,7 +4149,7 @@ def person_name(desc):
 
 
 def panel_person(u):
-    """Из карточки панели оставляем пять полей. Остальные два десятка — мимо."""
+    """Из карточки панели оставляем шесть полей. Остальные два десятка — мимо."""
     if not isinstance(u, dict) or u.get("id") is None:
         return None
     name, handle = person_name(u.get("description"))
@@ -4132,6 +4157,9 @@ def panel_person(u):
             "username": str(u.get("username") or ""),
             "name": name,
             "handle": handle,
+            # Тег ставится в панели один раз и виден со всех нод. Список
+            # номеров пришлось бы держать на каждой из них отдельно.
+            "tag": str(u.get("tag") or "").strip(),
             "telegram_id": str(u.get("telegramId") or "")}
 
 
@@ -4223,7 +4251,7 @@ def panel_owner(cfg, ip, now=None):
     person = panel_user(p, uid)
     if person:
         for src, dst in (("name", "label"), ("username", "username"),
-                         ("handle", "handle")):
+                         ("handle", "handle"), ("tag", "tag")):
             if person.get(src):
                 out[dst] = person[src]
         # Карточка делает из идентификатора ссылку tg://user?id=… — нечисловое
@@ -4640,6 +4668,17 @@ def panel_scan(cfg, now=None, act=True):
         # весь справочник в шесть тысяч записей каждые пять минут незачем.
         rec["person"] = panel_user(p, rec["user_id"])
 
+        # Тег проверяем здесь, а не в panel_offenders: там карточка ещё не
+        # запрошена, а тянуть её ради каждого пользователя панели — шесть
+        # тысяч запросов вместо одного на нарушителя.
+        if guard_exempt(cfg, {"user_id": rec["user_id"],
+                              "tag": (rec["person"] or {}).get("tag")}):
+            rec["skipped"] = True
+            log_event("panel_exempt", user_id=rec["user_id"],
+                      ips=len(rec.get("ips") or []),
+                      subject=(rec["person"] or {}).get("name"))
+            continue
+
         # Блокировка старше обычного ограничения: если задано и то и другое,
         # выигрывает более строгое. Обрыв к ней прилагается сам — без него
         # уже установленные соединения просто стали бы медленными, а человек
@@ -4744,6 +4783,8 @@ def cmd_panel(a):
               + (t("guard_on") if p.get("resolve") else t("guard_off")))
         if p.get("exempt"):
             print(f"  {t('pn_exempt')} : {', '.join(p['exempt'])}")
+        if p.get("exempt_tags"):
+            print(f"  {t('pn_exempt_tags')} : {', '.join(p['exempt_tags'])}")
         print(f"  {t('pn_last')} : " + (time.strftime("%Y-%m-%d %H:%M",
               time.localtime(last)) if last else t("pn_never")))
         if last:
@@ -4798,6 +4839,9 @@ def cmd_panel(a):
             p["cooldown_min"] = max(0, a.cooldown)
         if a.exempt is not None:
             p["exempt"] = [w.strip() for w in a.exempt.split(",") if w.strip()]
+        if a.exempt_tags is not None:
+            p["exempt_tags"] = [w.strip() for w in a.exempt_tags.split(",")
+                                if w.strip()]
         if a.report is not None:
             p["report"] = a.report == "on"
         if a.report_at is not None:
@@ -6199,6 +6243,8 @@ def build_parser():
     pn.add_argument("--minutes", type=int, default=None, help=t("h_pn_minutes"))
     pn.add_argument("--cooldown", type=int, default=None, help=t("h_pn_cooldown"))
     pn.add_argument("--exempt", default=None, help=t("h_pn_exempt"))
+    pn.add_argument("--exempt-tags", dest="exempt_tags", default=None,
+                    help=t("h_pn_exempt_tags"))
     pn.add_argument("--dry-run", dest="dry_run", action="store_true",
                     help=t("h_pn_dry"))
     pn.add_argument("--json", action="store_true")

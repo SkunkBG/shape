@@ -504,7 +504,8 @@ check("имя разобрано из описания", d["1"]["name"] == "Им
 check("ник разобран из описания", d["1"]["handle"] == "@nick_1", d["1"])
 check("telegram разобран", d["1"]["telegram_id"] == "850000001", d["1"])
 check("лишние поля выброшены",
-      set(d["1"]) == {"id", "username", "name", "handle", "telegram_id"},
+      set(d["1"]) == {"id", "username", "name", "handle", "tag",
+                      "telegram_id"},
       sorted(d["1"]))
 
 # Отдельного поля под имя в панели нет: логин там «user_637181482», а имя,
@@ -813,6 +814,63 @@ check("и карточка не падает", "Кто-то" in card_own, card_o
 check("имя без telegram ссылкой не становится",
       "tg://user" not in card_own, card_own)
 
+print("\n\033[1m34b. Исключение по тегу из панели\033[0m")
+# Список номеров приходится держать на каждой из двадцати восьми нод и править
+# везде при каждом новом клиенте. Тег ставится в панели один раз и виден
+# отовсюду — а карточку пользователя мы и так запрашиваем ради имени.
+TAGC = {"panel": dict(S.PANEL_DEFAULT, enabled=True, exempt=["2442"],
+                      exempt_tags=["BUSINESS", "office"])}
+check("тег совпал — не трогаем",
+      S.guard_exempt(TAGC, {"user_id": "999", "tag": "BUSINESS"}) is True)
+check("регистр не важен",
+      S.guard_exempt(TAGC, {"user_id": "999", "tag": "business"}) is True
+      and S.guard_exempt(TAGC, {"user_id": "999", "tag": "OFFICE"}) is True)
+check("пробелы не мешают",
+      S.guard_exempt({"panel": {"exempt_tags": [" BUSINESS "]}},
+                     {"tag": "business"}) is True)
+check("чужой тег не исключает",
+      S.guard_exempt(TAGC, {"user_id": "999", "tag": "HOME"}) is False)
+check("пустой тег не исключает",
+      S.guard_exempt(TAGC, {"user_id": "999", "tag": ""}) is False
+      and S.guard_exempt(TAGC, {"user_id": "999", "tag": None}) is False)
+check("список номеров продолжает работать",
+      S.guard_exempt(TAGC, {"user_id": "2442"}) is True)
+check("тег без номера тоже достаточен",
+      S.guard_exempt(TAGC, {"tag": "BUSINESS"}) is True)
+check("по умолчанию тегов нет", S.PANEL_DEFAULT["exempt_tags"] == [])
+
+check("тег читается из карточки панели",
+      S.panel_person({"id": 1, "username": "u", "tag": "BUSINESS"})["tag"]
+      == "BUSINESS")
+check("отсутствие тега — пустая строка, а не None",
+      S.panel_person({"id": 1, "username": "u"})["tag"] == "")
+
+# Поиск раздачи обязан уважать тег так же, как автоограничение: офис на одной
+# подписке — это не перепродажа, и рвать ему соединения нельзя.
+fresh_cache()
+drop_state()
+sent.clear(); docs.clear()
+PANEL["drops"] = []
+PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
+                              "tag": "BUSINESS", "telegramId": 637181482}}
+PANEL["users"] = make_users({741: 25}, age=60)
+S.read_users = lambda: {}
+cfg_tag = {"panel": conf(action="drop", exempt_tags=["BUSINESS"]),
+           "telegram": dict(S.TG_DEFAULT, enabled=True, token="x", chat_id="1")}
+res_tag = S.panel_scan(cfg_tag)
+check("нарушитель найден, но пропущен по тегу",
+      res_tag["offenders"] and res_tag["offenders"][0].get("skipped") is True,
+      res_tag["offenders"])
+check("соединения не оборваны", PANEL["drops"] == [], PANEL["drops"])
+check("и в Telegram ничего не ушло", sent == [] and docs == [], sent)
+
+PANEL["directory"]["741"].pop("tag")
+fresh_cache(); drop_state(); sent.clear(); PANEL["drops"] = []
+res_untag = S.panel_scan(cfg_tag)
+check("без тега тот же человек ловится",
+      res_untag["offenders"] and not res_untag["offenders"][0].get("skipped"),
+      res_untag["offenders"])
+
 print("\n\033[1m35a. Причина отказа панели не теряется\033[0m")
 # Живой случай: панель молчала три часа, `panel show` показывал последний
 # успешный опрос и ни слова об ошибке. panel_scan ловил только PanelError,
@@ -923,7 +981,7 @@ def _set(**kw):
     d = dict(action="set", url=None, token=None, node_uuid=None, proxy=None,
              enable=False, disable=False, interval=None, window=None,
              threshold=None, action_set=None, mbps=None, minutes=None,
-             cooldown=None, exempt=None, report=None, report_at=None,
+             cooldown=None, exempt=None, exempt_tags=None, report=None, report_at=None,
              report_thread=None, resolve=None, dry_run=False, json=False)
     d.update(kw)
     return _ap.Namespace(**d)

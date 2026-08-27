@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.50-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.51-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.50
+# Shape v3.51
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -761,7 +761,7 @@ the reason. Once a day — a digest for the day that just ended. That comes out 
 🆔 Telegram: 637181482
 🔑 Panel login: user_637181482 · #741
 
-📍 Address: 185.12.34.56
+📍 Address: 185.12.34.56        ← a link to ipinfo.io
 🐌 Speed reduced to 1 Mbit/s for 4 h
 Reason: downloaded gigabytes within an hour
 📈 For the day: ↓ 40.0 GB · ↑ 409.6 MB (1%)
@@ -1201,21 +1201,40 @@ Default: **20 addresses within a 10-minute window**.
 
 ### Business accounts
 
-An office on a single subscription looks like resale: twenty employees of a law
-firm are twenty addresses under one panel user, and the rule counts addresses,
-not who they are.
+An office on a single subscription is dangerous in a different way than it
+looks. On home internet ten computers sit behind **one** address, so sharing
+detection never touches them — there is a single address in the window. But that
+address carries the combined traffic of ten people, and the volume rules see one
+very heavy user.
+
+The opposite case is resale: **one device and two hundred addresses**. The
+seller fetched the subscription through the app once and mailed the config to
+buyers, who never appear in the device list at all.
 
 Uploading work files looks like seeding: a real-estate agency uploading property
 videos produces the same proportion, the same packets filled to the brim and the
 same data share as a seeder. **At the network layer they are the same thing, and
 no threshold separates them.** Only knowing who it is does.
 
+**A tag is the simplest way.** Every user in the panel has a `Tag` field. Mark
+the business accounts, say `BUSINESS`, and tell Shape once:
+
+```bash
+shaperctl panel set --exempt-tags BUSINESS,OFFICE
+```
+
+The tag is set in the panel — in one place — and applies on every node. A new
+client appears: put the tag on them, change nothing on the nodes. Shape requests
+the user card anyway, for the name, so the tag costs zero extra requests.
+
+If you would rather not use tags, a list of IDs works too:
+
 ```bash
 shaperctl panel set --exempt 2442,6672,152
 ```
 
-Numeric IDs from the panel. The list is set whole, not appended to. To check:
-`panel show`, the "Exceptions" line.
+Both lists are set whole, not appended to. To check: `panel show`, the
+"Exceptions" and "Tag exceptions" lines.
 
 These users fall under **neither sharing detection nor the auto-limiter** — no
 penalty, no drop, no notification. The trigger is still written to the event log

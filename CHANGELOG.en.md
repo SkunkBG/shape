@@ -13,6 +13,68 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.51
+
+**Exceptions by panel tag. And the address in a message links to ipinfo rather
+than to the client's own machine.**
+
+### A tag instead of a list of IDs on every node
+
+Every user in the panel has a `Tag` field. Shape requests the user card anyway —
+for the name and the Telegram ID — so the tag costs zero extra requests.
+
+```bash
+shaperctl panel set --exempt-tags BUSINESS,OFFICE
+```
+
+Mark the business accounts in the panel — **in one place** — and every node stops
+touching them. A new client: put the tag on them, change nothing on the nodes.
+
+The list of IDs (`--exempt`) remains and works as before; there are two lists now
+and a match in either is enough. Tag case does not matter.
+
+The tag applies to **both** checks: the auto-limiter and sharing detection. In
+sharing detection it is checked after the offender's card is fetched — there is
+no sense in pulling cards for all six thousand users just to read a tag.
+
+The event is written to the log as `panel_exempt`.
+
+### The address links to ipinfo
+
+The address used to be plain text, and Telegram linked it itself — to
+`http://<address>`, so tapping opened an attempt to reach the client's own
+machine.
+
+The link is now explicit and points to `ipinfo.io`, as in the Remnawave
+interface.
+
+That is an external service: the address goes to it the moment you tap. Nothing
+is sent on its own.
+
+### A correction about offices
+
+In earlier notes I wrote that an office on one subscription looks like resale —
+many addresses under one user. That is wrong.
+
+On home internet ten computers sit behind **one** address. Sharing detection
+never touches them. What is dangerous to them is the volume rules: that one
+address carries the combined traffic of ten people.
+
+Resale looks the opposite way — **one device and two hundred addresses**: the
+seller fetched the subscription through the app once and mailed the config to
+buyers, who never appear in the device list.
+
+The same device count, two opposite conclusions. What matters is its ratio to the
+address count, and that is the subject of the next version.
+
+### Also
+
+* Tests: 17 new ones. A tag match and case-insensitivity, a foreign and an empty
+  tag, a tag without an ID, the tag in sharing detection (connections not
+  dropped, Telegram silent), and the same user without the tag — caught.
+
+---
+
 ## 3.50
 
 **A gigabyte became a billion bytes. The thresholds and what the message showed
