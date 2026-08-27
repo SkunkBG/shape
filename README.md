@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.49-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.50-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--2.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v3.49
+# Shape v3.50
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -841,6 +841,12 @@ shaperctl status --live          # реальные скорости по IP
 
 Ручной переключатель — пункт `[15]` на экране автоограничения,
 `--ratio-needs-packet on|off` в командной строке.
+
+**Гигабайт здесь ровно миллиард байт**, а не 2^30. Так считает провайдер, так
+написано в тарифе, и так же заданы все пороги. Пока вывод делил на 1024, а
+пороги на 1000, они расходились на семь процентов, и это выглядело как ошибка
+правила: в карточке «отдано 286.2 МБ» при пороге в 300 МБ, хотя порог был
+перейдён.
 
 **Строк две, и сроки у них разные.** Объёмы считаются за сутки, а поле с
 пакетами обнуляется при смене формата, то есть сразу после обновления

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.49-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.50-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.49
+# Shape v3.50
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -835,6 +835,13 @@ first try only because it was chosen from 6143 addresses.
 
 The manual toggle is entry `[15]` on the auto-limit screen, or
 `--ratio-needs-packet on|off` on the command line.
+
+**A gigabyte here is exactly one billion bytes**, not 2^30. That is how an ISP
+counts, that is what the tariff says, and that is how every threshold is set.
+While the display divided by 1024 and the thresholds by 1000, the two diverged by
+seven percent, and it looked like a broken rule: a card saying "286.2 MB
+uploaded" against a 300 MB threshold, when the threshold had in fact been
+crossed.
 
 **There are two lines, and their periods differ.** Volumes are counted over the
 day, while the packet field is reset on a format change, so right after an update

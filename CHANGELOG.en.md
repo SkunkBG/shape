@@ -13,6 +13,51 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.50
+
+**A gigabyte became a billion bytes. The thresholds and what the message showed
+were in different units.**
+
+### How it looked
+
+```
+Reason: uploaded disproportionately much in 24h
+📈 For the day: ↓ 472.6 MB · ↑ 286.2 MB (61%)
+```
+
+The signal's threshold is 300 MB of upload. The card says 286.2. It looks as
+though the rule fired for nothing.
+
+It fired correctly. The display divided by 1024 while the threshold is set via
+`1e6`: 286.2 × 1024² is 300.1 million bytes. The threshold was crossed, it was
+simply shown in different units.
+
+A discrepancy of seven percent on megabytes and seven and a half on gigabytes is
+enough to make a decision look unfounded exactly in the borderline cases — that
+is, exactly where it gets checked.
+
+### What changed
+
+`fmt_bytes` now divides by 1000. A gigabyte is a billion bytes, as in an ISP
+tariff and as in every threshold in this project: `download_gb_per_day * 1e9`,
+`upload_day_gb * 1e9`, `upload_ratio_min_mb * 1e6`.
+
+Numbers in all messages, in the monitor, in the statistics and in the digest will
+grow by about seven percent. No traffic was added — it is simply named the same
+way the thresholds are.
+
+### The rule
+
+The number by which a person checks a decision must be in the same units as the
+decision. Otherwise it cannot be checked, only believed.
+
+### Also
+
+* Tests: 7 new ones, including a direct check that the display of the lower
+  upload bound matches the bound itself.
+
+---
+
 ## 3.49
 
 **A Telegram notification when a newer version appears in the repository.**
