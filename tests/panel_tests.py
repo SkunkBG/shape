@@ -814,6 +814,192 @@ check("и карточка не падает", "Кто-то" in card_own, card_o
 check("имя без telegram ссылкой не становится",
       "tg://user" not in card_own, card_own)
 
+print("\n\033[1m33a. Отсрочка на отключение подписки\033[0m")
+# Ночью владельца нет. Перекрытие адресов ночь не закрывает: длинное задевает
+# честных (у мобильного оператора адрес переходит от абонента к абоненту за
+# минуты), короткое оставляет дыру до следующей проверки. Отключение бьёт по
+# аккаунту — а раздаёт подписку именно аккаунт.
+NOW0 = 1_000_000.0
+_off = [{"user_id": "741"}, {"user_id": "999"}]
+
+due, pend = S.panel_pending({}, _off, NOW0, 1800)
+check("в первый проход никого не отключаем", due == [], due)
+check("но отсчёт пошёл для обоих", set(pend) == {"741", "999"}, pend)
+
+due, _ = S.panel_pending({"pending": pend}, _off, NOW0 + 1799, 1800)
+check("за секунду до срока — ещё нет", due == [], due)
+
+due, pend2 = S.panel_pending({"pending": pend}, _off, NOW0 + 1800, 1800)
+check("ровно в срок — оба", due == ["741", "999"], due)
+
+# Главное свойство: отсчёт отменяется сам. Владелец отключил подписку руками
+# — покупатели пропали из списка соединений, человек больше не нарушитель.
+due, pend3 = S.panel_pending({"pending": pend}, [{"user_id": "999"}],
+                             NOW0 + 1800, 1800)
+check("обработанный вручную выпадает из ожидания", due == ["999"], due)
+check("и из списка тоже", set(pend3) == {"999"}, pend3)
+
+# Тот, кто перестал нарушать сам, тоже выпадает — и при возвращении отсчёт
+# начинается заново, а не продолжается с прошлого раза.
+due, pend4 = S.panel_pending({"pending": pend3}, [], NOW0 + 1800, 1800)
+check("никого нет — ожидание пустое", due == [] and pend4 == {}, (due, pend4))
+due, pend5 = S.panel_pending({"pending": pend4}, [{"user_id": "999"}],
+                             NOW0 + 1801, 1800)
+check("вернулся — отсчёт с нуля", due == [], due)
+
+check("мусор в состоянии не роняет",
+      S.panel_pending({"pending": {"1": "ерунда"}}, [{"user_id": "1"}],
+                      NOW0, 1800)[0] == [])
+check("потолок на проход задан и невелик",
+      1 <= S.PANEL_DISABLE_MAX <= 5, S.PANEL_DISABLE_MAX)
+check("по умолчанию отсрочка выключена",
+      S.PANEL_DEFAULT["disable_after_min"] == 0)
+
+# Полный проход: отключение действительно уходит в панель, и только после
+# срока. Плюс потолок на число отключений за раз.
+fresh_cache()
+drop_state()
+sent.clear(); docs.clear(); PANEL["drops"] = []
+PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
+                              "description": "Bot user: Илья",
+                              "telegramId": 637181482}}
+PANEL["users"] = make_users({741: 25}, age=60)
+S.read_users = lambda: {}
+_disabled = []
+_real_dis = S.panel_user_disable
+S.panel_user_disable = lambda p, uid: _disabled.append(str(uid))
+
+cfg_dis = {"panel": conf(action="notify", disable_after_min=30),
+           "telegram": dict(S.TG_DEFAULT, enabled=True, token="x", chat_id="1")}
+S.panel_scan(cfg_dis)
+check("сразу не отключаем", _disabled == [], _disabled)
+st = S.panel_state()
+check("но ожидание записано на диск", "741" in (st.get("pending") or {}), st)
+
+st["pending"]["741"] = time.time() - 31 * 60
+S.panel_state_save(st)
+sent.clear()
+S.panel_scan(cfg_dis)
+check("через тридцать минут отключено", _disabled == ["741"], _disabled)
+check("и об этом сказано в Telegram",
+      any(S.t("pn_off_head").replace("<b>", "").replace("</b>", "")
+          .strip("⛔ ") in m for m in sent), sent[:1])
+check("с подсказкой, как вернуть",
+      any("panel enable" in m for m in sent), sent[:1])
+check("из ожидания вычеркнут",
+      "741" not in (S.panel_state().get("pending") or {}),
+      S.panel_state().get("pending"))
+
+# Исключённых не трогаем вовсе.
+drop_state()
+_disabled.clear()
+cfg_ex = {"panel": conf(action="notify", disable_after_min=30,
+                        exempt=["741"]),
+          "telegram": dict(S.TG_DEFAULT)}
+S.panel_scan(cfg_ex)
+st = S.panel_state()
+check("исключённый в ожидание не попадает",
+      "741" not in (st.get("pending") or {}), st.get("pending"))
+
+S.panel_user_disable = _real_dis
+drop_state()
+
+print("\n\033[1m33b. Снять ограничение со всех адресов пользователя\033[0m")
+# Перепродавцу перекрывают доступ на двенадцать часов: ночью уведомление
+# приходит, а человек видит его утром. Но когда владелец разберётся, снимать
+# полторы сотни адресов по одному через меню невозможно физически.
+import argparse as _a4
+import contextlib as _cx4
+
+# Здесь нужен настоящий склад штрафов: выше он подменён заглушкой, которая
+# ничего не хранит, — остальным проверкам достаточно факта вызова.
+_store, _stub_pu, _stub_lp = {}, S.penalties_update, S.load_penalties
+S.penalties_update = lambda fn: fn(_store)
+S.load_penalties = lambda: dict(_store)
+S.penalty_clear = lambda ip: None
+
+fresh_cache()
+drop_state()
+sent.clear(); docs.clear(); PANEL["drops"] = []
+applied.clear()
+PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
+                              "description": "Bot user: Илья",
+                              "telegramId": 637181482}}
+PANEL["users"] = make_users({741: 25}, age=60)
+S.read_users = lambda: {"10.241.0.%d" % i: {} for i in range(25)}
+S.whitelist_ips = lambda: set()
+S.panel_scan({"panel": conf(action="block"),
+              "telegram": dict(S.TG_DEFAULT)})
+check("адреса ограничены", len(_store) == 25, len(_store))
+check("и в записи есть номер пользователя",
+      all(str(e.get("user_id")) == "741" for e in _store.values()),
+      list(_store.values())[:1])
+check("а также имя, чтобы понять, кого отпускаешь",
+      (list(_store.values())[0].get("subject") or {}).get("label") == "Илья",
+      list(_store.values())[0])
+
+
+def _release(**kw):
+    a = _a4.Namespace(ip=kw.get("ip", ""), all=kw.get("all", False),
+                      user=kw.get("user", ""))
+    buf = io.StringIO()
+    with _cx4.redirect_stdout(buf), _cx4.redirect_stderr(buf):
+        try:
+            S.cmd_release(a)
+        except SystemExit:
+            pass
+    return buf.getvalue()
+
+
+out = _release(user="741")
+check("сняты все разом", "25" in out, out)
+check("и в складе их не осталось", _store == {}, _store)
+check("нечисловой номер отвергается",
+      S.t("rel_bad_user") in _release(user="abc"))
+check("решётку прощаем", S.t("rel_bad_user") not in _release(user="#741"))
+check("чужой номер ничего не ломает", "0" in _release(user="999"))
+
+S.penalties_update, S.load_penalties = _stub_pu, _stub_lp
+
+print("\n\033[1m34a. Насколько далеко назад видит нода\033[0m")
+# Срока жизни записи в списке соединений нет ни в документации панели, ни в
+# переменных окружения: список — живой снимок из Xray. Зато он измеряется, и
+# разница между «окно 10 минут» и тем, что нода помнит три, решает всё.
+fresh_cache()
+drop_state()
+PANEL["directory"] = {}
+PANEL["users"] = [{"userId": 1, "ips": [
+    {"ip": "1.1.1.1", "lastSeen": time.strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 100))},
+    {"ip": "1.1.1.2", "lastSeen": time.strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 900))}]}]
+S.panel_scan({"panel": conf(action="notify"),
+              "telegram": dict(S.TG_DEFAULT)}, act=False)
+st = S.panel_state()
+check("возраст самого старого адреса записан", "seen_oldest" in st, st)
+check("и он именно самый старый, а не средний",
+      880 < st.get("seen_oldest", 0) < 920, st.get("seen_oldest"))
+
+import argparse as _a3, contextlib as _c
+buf = io.StringIO()
+a = _a3.Namespace(action="show", json=False)
+with _c.redirect_stdout(buf):
+    S.cmd_panel(a)
+check("в panel show это видно", S.t("pn_oldest") in buf.getvalue(),
+      buf.getvalue()[:400])
+
+# Если нода помнит меньше окна, окно упирается в неё, а не в настройку — и об
+# этом надо предупредить, иначе владелец крутит число, которое ни на что не
+# влияет.
+st["seen_oldest"] = 120
+S.panel_state_save(st)
+buf = io.StringIO()
+with _c.redirect_stdout(buf):
+    S.cmd_panel(a)
+check("короткая память ноды помечена",
+      S.t("pn_oldest_short", w=10) in buf.getvalue(), buf.getvalue()[:400])
+drop_state()
+
 print("\n\033[1m34b. Исключение по тегу из панели\033[0m")
 # Список номеров приходится держать на каждой из двадцати восьми нод и править
 # везде при каждом новом клиенте. Тег ставится в панели один раз и виден
@@ -870,6 +1056,52 @@ res_untag = S.panel_scan(cfg_tag)
 check("без тега тот же человек ловится",
       res_untag["offenders"] and not res_untag["offenders"][0].get("skipped"),
       res_untag["offenders"])
+
+print("\n\033[1m34c. panel user: от номера к адресам\033[0m")
+# Обратный ход к `who`. Нужен для сверки с отчётами бота: бот берёт числа у
+# панели, а панель не хранит «вверх» и «вниз» отдельно — «123 ГБ за сутки» это
+# сумма обоих направлений, и отличить по ней закачку от раздачи нельзя.
+def _panel_user(uid):
+    """Ветке `user` из всей строки аргументов нужны только action и ip."""
+    import contextlib as _c
+    import argparse as _a2
+    a = _a2.Namespace(action="user", ip=uid)
+    buf = io.StringIO()
+    with _c.redirect_stdout(buf), _c.redirect_stderr(buf):
+        try:
+            S.cmd_panel(a)
+        except SystemExit:
+            pass
+    return buf.getvalue()
+
+
+check("нечисловой номер отвергается",
+      S.t("pn_user_need_id") in _panel_user("abc"), _panel_user("abc"))
+check("решётку перед номером прощаем",
+      S.t("pn_user_need_id") not in _panel_user("#741"))
+
+fresh_cache()
+PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
+                              "description": "Bot user: Илья",
+                              "telegramId": 637181482}}
+PANEL["users"] = make_users({741: 3}, age=60)
+S.save_config({"ports": [443], "speed_mbps": 50,
+               "guard": dict(S.GUARD_DEFAULT),
+               "telegram": dict(S.TG_DEFAULT), "panel": conf()})
+S.save_daily({"10.241.0.0": {"active": 3600, "down": 58.2e9, "up": 61.4e9,
+                             "up_sec": 9 * 3600,
+                             "upkt": [61.4e9, 47000000, 1400, 59e9, 0]}})
+out = _panel_user("741")
+check("имя показано", "Илья" in out, out)
+check("число адресов показано", "3" in out, out)
+check("объёмы вниз и вверх разделены", "58.2" in out and "61.4" in out, out)
+check("пропорция посчитана", "105%" in out, out)
+check("часы отдачи показаны", "9.0" in out, out)
+check("в выводе нет разметки HTML", "<" not in out and ">" not in out, out)
+
+check("нет на ноде — так и сказано",
+      S.t("pn_user_none", n=1) in _panel_user("999"), _panel_user("999"))
+S.save_daily({})
 
 print("\n\033[1m35a. Причина отказа панели не теряется\033[0m")
 # Живой случай: панель молчала три часа, `panel show` показывал последний
@@ -981,7 +1213,8 @@ def _set(**kw):
     d = dict(action="set", url=None, token=None, node_uuid=None, proxy=None,
              enable=False, disable=False, interval=None, window=None,
              threshold=None, action_set=None, mbps=None, minutes=None,
-             cooldown=None, exempt=None, exempt_tags=None, report=None, report_at=None,
+             cooldown=None, exempt=None, exempt_tags=None, disable_after=None,
+             report=None, report_at=None,
              report_thread=None, resolve=None, dry_run=False, json=False)
     d.update(kw)
     return _ap.Namespace(**d)

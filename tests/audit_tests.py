@@ -49,6 +49,7 @@ def guard(**kw):
              upload_ratio=None, upload_ratio_mb=None,
              volume_needs_upload=None, volume_mbps=None,
              ratio_needs_packet=None, upload_warn=None, upload_day=None,
+             upload_hours=None, upload_hours_mbps=None, upload_gbh=None,
              quiet=True)
     d.update(kw); return argparse.Namespace(**d)
 
@@ -861,6 +862,82 @@ check("в сообщении обе версии", "3.48" in _ups[0] and "3.49" 
 check("и сказано, чем обновлять", "shaper" in _ups[0], _ups[0])
 check("по умолчанию включено", S.TG_DEFAULT["updates"] is True)
 S.update_fetch, S.shape_version, S.tg_send = _real_fetch, _real_ver, _real_send
+
+print("\n\033[1mЧасы отдачи: уведомление, а не штраф\033[0m")
+# Первичный бэкап телефона неотличим от раздачи по всем признакам сразу:
+# человек, впервые включивший выгрузку плёнки за десять лет, отдаёт сотню
+# гигабайт сутки напролёт, и у него сходится и пропорция, и доля данных, и
+# часы. Различает их только то, что бэкап кончается, — а этого мы не считаем.
+UPH_G = dict(S.GUARD_DEFAULT, upload_hours=6)
+
+
+def uph(hours, g=UPH_G):
+    daily = {"x": {"active": 0, "down": 1e9, "up": 5e9, "up_sec": hours * 3600}}
+    return S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 0}, g, 100, 0, 0,
+                      daily)[1]
+
+
+check("двадцать часов отдачи штрафа не дают", uph(20) == [], uph(20))
+check("порог сам по себе не путь к ограничению", uph(6) == [])
+check("веса у этого признака нет вовсе",
+      "up_hours" not in S.SIGNAL_WEIGHTS, sorted(S.SIGNAL_WEIGHTS))
+
+_sent = []
+_real = S.tg_send
+S.tg_send = lambda m, c=None: (_sent.append(m), (True, ""))[1]
+S.tg_upload_hours(
+    {"telegram": dict(S.TG_DEFAULT, enabled=True, events=True, node_name="N"),
+     "guard": UPH_G}, "1.2.3.4", subject={"label": "Чопикс", "user_id": "6085"},
+    day={"active": 0, "down": 4.2e9, "up": 11.3e9, "up_sec": 9.4 * 3600})
+S.tg_send = _real
+check("в уведомлении есть часы", "9.4" in _sent[-1], _sent[-1])
+check("и порог", "6" in _sent[-1])
+check("и сказано, что ограничения нет",
+      S.t("tg_uph_note") in _sent[-1], _sent[-1])
+
+# Испорченная отметка времени не должна давать «за 496620 ч».
+_line, _win = S.penalty_packets({"up": 1e9, "upkt": [1e9, 8e5, 1400, 9e8, 0]})
+check("окно длиннее суток — строки нет", _line == "", _line)
+_ok, _w = S.penalty_packets({"up": 1e9,
+                             "upkt": [1e9, 8e5, 1400, 9e8, T0 - 600]}, T0)
+check("нормальное окно печатается", _ok != "" and 590 < _w < 610, (_ok, _w))
+
+
+print("\n\033[1mОтдача за час: зеркало скачивания\033[0m")
+# Нодам, где трафик оплачивается, счёт приходит за оба направления, а
+# ограничение стояло только на одно. Там вопрос «торрент или бэкап» не имеет
+# значения вовсе: гигабайт стоит одинаково.
+UGH_G = dict(S.GUARD_DEFAULT, upload_gb_per_hour=3)
+
+
+def ugh(gb, g=UGH_G):
+    return S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 0}, g, 10, 0, 0,
+                      {"x": {"active": 0, "down": 1e9, "up": 9e9}},
+                      None, {"x": {0: gb * 1e9}})[1]
+
+
+check("ниже порога — не он", ugh(2.9) == [])
+check("ровно на пороге — он", ugh(3) == ["up_hourly"])
+check("выше — тем более", ugh(9) == ["up_hourly"])
+check("по умолчанию выключено",
+      S.GUARD_DEFAULT["upload_gb_per_hour"] == 0)
+check("и с умолчаниями девять гигабайт проходят",
+      ugh(9, S.GUARD_DEFAULT) == [])
+check("пустое окно не роняет",
+      S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 0}, UGH_G, 10, 0, 0,
+                 {"x": {"active": 0, "down": 1e9, "up": 9e9}})[1] == [])
+check("вес хватает на штраф в одиночку",
+      S.SIGNAL_WEIGHTS["up_hourly"] >= S.GUARD_DEFAULT["score_needed"])
+check("у причины есть человекочитаемое название",
+      S.t("why_up_hourly") != "why_up_hourly")
+
+_b = _io.StringIO()
+with redirect_stdout(_b):
+    S.cmd_guard_show(10, dict(UGH_G, upload_hours=6))
+check("часовой порог отдачи виден",
+      S.t("guard_uphourly", d="3") in _b.getvalue(), _b.getvalue())
+check("и часы названы уведомлением, а не ограничением",
+      S.t("guard_uphours", h="6") in _b.getvalue(), _b.getvalue())
 
 print("\n\033[1mАбсолютный объём отдачи за сутки\033[0m")
 # Единственный признак, который не зависит ни от пропорции, ни от размера

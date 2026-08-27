@@ -243,7 +243,7 @@ print(','.join(map(str, p)))" 2>/dev/null || echo 443)"
 # Все настройки читаются одним вызовом: запуск python3 стоит десятки
 # миллисекунд, а раньше их было десять на каждую отрисовку экрана.
 guard_read() {
-    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300|0|0|0|0|0|0"
+    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300|0|0|0|0|0|0|0|0"
 import json
 try:
     _cfg = json.load(open("/etc/shaper/config.json"))
@@ -258,7 +258,8 @@ d = {"enabled": False, "score_needed": 3, "both_dl_percent": 50,
      "upload_ratio_percent": 0, "upload_ratio_min_mb": 300,
      "volume_needs_upload": False, "volume_penalty_mbps": 0,
      "ratio_needs_packet": False,
-     "upload_warn_gb": 0, "upload_day_gb": 0}
+     "upload_warn_gb": 0, "upload_day_gb": 0, "upload_hours": 0,
+     "upload_gb_per_hour": 0}
 d.update(g)
 print("|".join([
     "1" if d["enabled"] else "0",
@@ -273,6 +274,7 @@ print("|".join([
     "1" if d["ratio_needs_packet"] else "0",
     str(_ex),
     f"{d['upload_warn_gb']:g}", f"{d['upload_day_gb']:g}",
+    f"{d['upload_hours']:g}", f"{d['upload_gb_per_hour']:g}",
 ]))
 PY
 }
@@ -321,6 +323,7 @@ guard_preset() {
                echo -e "  ${D}    ${T[gp_h_ratio]}${N}"
                echo -e "  ${D}  · ${T[gp_p_hour]} ${B}3 GB${N}${D} — ${T[gp_m1]}${N}"
                echo -e "  ${D}  · ${T[gp_p_day]} 25 GB — ${T[gp_m2]}${N}"
+               echo -e "  ${D}  · ${T[gp_up_hour]} ${B}3 GB${N}${D} · ${T[gp_up_day]} ${B}25 GB${N}"
                echo -e "  ${D}  · ${T[gp_w_share]} 20${N}"
                echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
                if [[ "$speed" != "0" ]]; then
@@ -344,10 +347,11 @@ guard_preset() {
                    --upload-ratio 35 --upload-ratio-mb 300 \
                    --volume-needs-upload off --volume-mbps 0 \
                    --ratio-needs-packet on \
-                   --upload-warn 0 --upload-day 0 \
+                   --upload-gbh 3 --upload-day 25 \
+                   --upload-warn 0 --upload-hours 6 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 20 --window 10 \
-                   --action-set drop >/dev/null 2>&1 || true
+                   --limit-min 60 --action-set block >/dev/null 2>&1 || true
                echo -e "  ${G}✓ ${T[gp_done]}${N}"
                pause; return ;;
 
@@ -362,13 +366,18 @@ guard_preset() {
                # вверх, объём в одиночку режет мягко (треть канала), а сутки
                # подняты до шестнадцати часов — одна игра проходит, ферма нет.
                if [[ "$speed" == "0" ]]; then
-                   gbh=20; gbd=320; soft=25
+                   gbh=20; gbd=150; soft=25
                    echo -e "\n  ${Y}${T[gp_nolimit]}${N}"
                    echo -e "  ${D}${T[gp_nolimit_d]}${N}"
                else
                    full="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600}")"
                    gbh="$(awk "BEGIN{printf \"%.1f\", $speed/8/1000*3600*0.5}")"
-                   gbd="$(awk "BEGIN{printf \"%.0f\", $speed/8/1000*3600*0.5*16}")"
+                   # Суточный порог — число, а не производная от канала.
+                   # Выведенный арифметикой давал 180 ГБ на пятидесяти
+                   # мегабитах и 360 на ста; владелец ноды сказал, что и сто
+                   # уже перебор. Честное потребление таких цифр не набирает:
+                   # 4K это 7-16 ГБ в час, игра в Steam — 120 ГБ разово.
+                   gbd=150
                    soft="$(awk "BEGIN{printf \"%.0f\", $speed*0.3}")"
                    echo -e "\n  ${D}${T[gp_hint_full]} ${B}${full} GB${N}"
                    echo -e "  ${D}${T[gp_home_calc]} ${B}${gbh} GB${N}${D} ${T[gp_home_why]}${N}"
@@ -382,6 +391,7 @@ guard_preset() {
                echo -e "  ${D}  · ${T[gp_w_share]} 10${N}"
                echo -e "  ${D}  · ${T[gp_up_warn]} ${B}10 GB${N}${D} → ${T[gp_up_warn2]}${N}"
                echo -e "  ${D}  · ${T[gp_up_day]} ${B}30 GB${N}"
+               echo -e "  ${D}  · ${T[gp_up_hours]} ${B}6 ${T[hour]}${N}"
                echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
                echo -e "  ${D}  · ${T[gp_h_soft]} ${B}${soft} Mbit/s${N}"
                echo
@@ -393,10 +403,16 @@ guard_preset() {
                    --upload-ratio 50 --upload-ratio-mb 300 \
                    --volume-needs-upload on --volume-mbps "$soft" \
                    --ratio-needs-packet on \
-                   --upload-warn 10 --upload-day 30 \
+                   --upload-gbh 0 --upload-day 30 \
+                   --upload-warn 10 --upload-hours 6 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
-               "$CTL" panel set --threshold 10 --window 10 \
-                   --action-set drop >/dev/null 2>&1 || true
+               # Двадцать, а не десять: домашняя нода это не только вайфай,
+               # с мобильного заходят на любую. У оператора адрес меняется
+               # при переподключении, и семья из пяти телефонов за десять
+               # минут легко даёт полтора-два десятка адресов. Настоящие
+               # перепродавцы при этом дают 146 и 230 — запас десятикратный.
+               "$CTL" panel set --threshold 20 --window 10 \
+                   --limit-min 60 --action-set block >/dev/null 2>&1 || true
                echo -e "  ${G}✓ ${T[gp_done]}${N}"
                pause; return ;;
             0|"") return ;;
@@ -406,11 +422,11 @@ guard_preset() {
 
 screen_guard() {
     local on score both_min bdl bul pen dur hours gb dgb dgbh pkt urp urm speed v
-    local vnu vmb rnp gex uw ud
+    local vnu vmb rnp gex uw ud uh ugh
     while :; do
         speed="$(cfg speed_mbps 0)"
         IFS='|' read -r on score bdl bul both_min pen dur hours gb dgb dgbh pkt \
-            urp urm vnu vmb rnp gex uw ud <<< "$(guard_read)"
+            urp urm vnu vmb rnp gex uw ud uh ugh <<< "$(guard_read)"
 
         title "${T[g_title]}"
         echo -e "  ${D}${T[g_h1]}${N}"
@@ -441,6 +457,8 @@ screen_guard() {
         echo -e "  ${D}  +1  ${T[why_upload]} (>${gb} GB)${N}"
         [[ "$dgb" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_download]} (>${dgb} GB)${N}"
         [[ "$dgbh" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_hourly]} (>${dgbh} GB)${N}"
+        [[ "$ugh" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_up_hourly_menu]} (>${ugh} GB)${N}"
+        [[ "$uh" != "0" ]] && echo -e "  ${D}${T[g_note]} ${T[why_up_hours_menu]} (>${uh} ${T[hour]})${N}"
         [[ "$ud" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_upload_day_menu]} (>${ud} GB)${N}"
         [[ "$uw" != "0" ]] && echo -e "  ${D}      └ ${T[g_up_warn]} ${B}${uw} GB${N}"
         [[ "$urp" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_ratio_menu]} (>${urp}%, >${urm} MB)${N}"
@@ -475,6 +493,8 @@ screen_guard() {
         echo -e " [14] ${T[g_set_vmb]} ${D}(${vmb} Mbit/s)${N}"
         echo -e " [17] ${T[g_set_upday]} ${D}(${ud} GB)${N}"
         echo -e " [18] ${T[g_set_upwarn]} ${D}(${uw} GB)${N}"
+        echo -e " [19] ${T[g_set_uphours]} ${D}(${uh} ${T[hour]})${N}"
+        echo -e " [20] ${T[g_set_upgbh]} ${D}(${ugh} GB)${N}"
         if [[ "$rnp" == "1" ]]; then
             echo -e " [15] ${T[g_set_rnp]} ${D}(${T[g_on]})${N}"
         else
@@ -527,6 +547,12 @@ screen_guard() {
                     "$(awk "BEGIN{printf \"%.0f\", $speed*0.3}") Mbit/s${N}"
                 v="$(ask "${T[g_set_vmb]}" "$vmb")"
                 [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --volume-mbps "$v" --quiet ;;
+            20) echo -e "  ${D}${T[g_hint_upgbh]}${N}"
+                v="$(ask "${T[g_set_upgbh]}" "$ugh")"
+                [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --upload-gbh "$v" --quiet ;;
+            19) echo -e "  ${D}${T[g_hint_uphours]}${N}"
+                v="$(ask "${T[g_set_uphours]}" "$uh")"
+                [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --upload-hours "$v" --quiet ;;
             17) echo -e "  ${D}${T[g_hint_upday]}${N}"
                 v="$(ask "${T[g_set_upday]}" "$ud")"
                 [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --upload-day "$v" --quiet ;;
@@ -883,16 +909,18 @@ print("|".join([
     "1" if d.get("report") else "0",
     d.get("report_at") or "09:00",
     "0" if d.get("resolve") is False else "1",
+    str(d.get("disable_after_min") or 0),
+    ", ".join(str(x) for x in (d.get("exempt_tags") or [])) or "-",
 ]))
 PY
 }
 
 screen_panel() {
     local on url uuid tok texp every win thr act act_txt cool exempt mbps lmin
-    local rep rep_at names v
+    local rep rep_at names v dis etags
     while :; do
         IFS='|' read -r on url uuid tok texp every win thr act cool exempt \
-            mbps lmin rep rep_at names <<< "$(pn_read)"
+            mbps lmin rep rep_at names dis etags <<< "$(pn_read)"
         title "${T[pn_title]}"
         echo -e "  ${D}${T[pn_h1]}${N}"
         echo -e "  ${D}${T[pn_h2]}${N}"
@@ -965,6 +993,12 @@ screen_panel() {
         fi
         echo " [16] ${T[pn_test]}"
         echo " [17] ${T[pn_scan]}"
+        if [[ "$dis" == "0" ]]; then
+            echo -e " [18] ${T[pn_set_dis]}: ${D}${T[tg_off]}${N}"
+        else
+            echo -e " [18] ${T[pn_set_dis]}: ${R}${dis} ${T[pn_min]}${N}"
+        fi
+        echo " [19] ${T[pn_enable_user]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -1048,13 +1082,17 @@ screen_limited() {
         "$CTL" limited
         hr
         echo "  [1] ${T[lm_release]}"
-        echo "  [2] ${T[lm_release_all]}"
+        echo "  [2] ${T[lm_release_user]}"
+        echo "  [3] ${T[lm_release_all]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
             1) ip="$(ask "${T[lm_ask]}")"
                [[ -n "$ip" ]] && { "$CTL" release "$ip"; sleep 1; } ;;
-            2) read -rp "  ${T[lm_confirm]} [y/N]: " ans
+            2) echo -e "  ${D}${T[lm_hint_user]}${N}"
+               ip="$(ask "${T[lm_ask_user]}")"
+               [[ -n "$ip" ]] && { "$CTL" release --user "$ip"; sleep 1; } ;;
+            3) read -rp "  ${T[lm_confirm]} [y/N]: " ans
                [[ "$ans" =~ ^[YyДд] ]] && { "$CTL" release --all; sleep 1; } ;;
             0|"") return ;;
         esac
@@ -1106,6 +1144,11 @@ screen_whitelist() {
                [[ -n "$ip" ]] && { "$CTL" whitelist add "$ip"; sleep 1; } ;;
             2) ip="$(ask "${T[wl_ask]}")"
                [[ -n "$ip" ]] && { "$CTL" whitelist del "$ip"; sleep 1; } ;;
+           18) echo -e "  ${D}${T[pn_hint_dis]}${N}"
+               v="$(ask "${T[pn_set_dis]}" "$dis")"
+               [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" panel set --disable-after "$v" >/dev/null ;;
+           19) v="$(ask "${T[pn_ask_id]}")"
+               [[ -n "$v" ]] && { "$CTL" panel enable "$v"; pause; } ;;
             0|"") return ;;
         esac
     done

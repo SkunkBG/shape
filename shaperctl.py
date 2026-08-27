@@ -234,6 +234,15 @@ MSG = {
         "h_upload_ratio_mb": "не считать отношение, пока отдача меньше стольких мегабайт",
         "why_ratio": "за сутки отдал непропорционально много",
         "why_upload_day": "отдал десятки гигабайт за сутки",
+        "why_up_hourly": "отдал гигабайты за час",
+        "h_upload_gbh": "гигабайт отдачи за час, 0 = выкл",
+        "tg_uph_head": "🔔 <b>Долгая отдача</b>",
+        "tg_uph_warn": "Отдавал {h} ч за сутки — порог {n} ч",
+        "tg_uph_note": "<i>Ограничения нет. Так выглядит и раздача, и первый бэкап телефона: решайте сами.</i>",
+        "h_upload_hours": "часов отдачи за сутки для ограничения, 0 = выкл",
+        "h_upload_hours_mbps": "ниже какой отдачи замер не считается за отдачу",
+        "guard_uphours": "отдача дольше {h} ч за сутки — только уведомление, без штрафа",
+        "guard_uphourly": "отдача за час: ограничение на {d} ГБ",
         "tg_up_head": "🔔 <b>Много отдачи</b>",
         "tg_up_warn": "За сутки отдано {gb} — порог уведомления {n} ГБ",
         "tg_up_note": "<i>Ограничения нет, это предупреждение. При {n} ГБ скорость будет снижена.</i>",
@@ -269,6 +278,8 @@ MSG = {
         "pn_token_gone": "истёк",
         "pn_last": "Последний успешный опрос",
         "pn_never": "ещё не было",
+        "pn_oldest": "Самый старый адрес в списке",
+        "pn_oldest_short": "нода помнит меньше, чем окно в {w} мин — окно упирается в неё, а не в настройку",
         "pn_last_err": "Последняя ошибка",
         "pn_min": "мин",
         "pn_sec": "с",
@@ -279,10 +290,27 @@ MSG = {
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
         "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b>",
+        "pn_off_head": "⛔ <b>Подписка отключена</b>",
+        "pn_off_why": "🤖 Отключил Shape: адресов было {n}, реакции не было {m} мин.",
+        "pn_off_how": "<i>Включить обратно: <code>shaperctl panel enable {id}</code> или в панели.</i>",
+        "pn_off_refused": "нарушителей больше потолка ({n}) — ничего не отключено, только сообщено",
+        "h_pn_disable_after": "через сколько минут без реакции отключать подписку, 0 = никогда",
+        "pn_disable_after": "Отключать подписку через",
+        "pn_enabled_ok": "подписка #{id} включена",
+        "pn_disabled_ok": "подписка #{id} отключена",
+        "pn_need_id": "нужен числовой номер из панели: panel enable 741",
         "pn_card_name": "👤 {name}",
         "pn_card_tg": "🆔 Telegram: <code>{id}</code>",
         "pn_card_login": "🔑 В панели: <code>{login}</code>",
         "pn_card_login_plain": "Логин в панели: {login}",
+        "pn_user_need_id": "нужен числовой номер из панели: panel user 6085",
+        "pn_off": "связь с панелью выключена: panel set --enable",
+        "pn_user_none": "сейчас на этой ноде его нет (проверено пользователей: {n})",
+        "pn_user_ips": "Адресов на ноде",
+        "pn_user_noday": "за сутки на этой ноде ничего не прокачано",
+        "pn_user_uphours": "отдавал {h} ч",
+        "pn_user_tag": "Тег",
+        "h_pn_user": "номер пользователя из панели",
         "pn_card_panel": "🔑 ID в панели: <code>{id}</code>",
         "pn_card_panel_plain": "ID в панели: {id}",
         "pn_msg_blocked": "🚫 Доступ к ноде перекрыт на {m} мин, адресов: {n}",
@@ -402,6 +430,9 @@ MSG = {
         "rel_one": "ограничение с {ip} снято",
         "rel_all": "снято ограничений: {n}",
         "rel_need_ip": "укажи IP или --all",
+        "rel_bad_user": "нужен числовой номер из панели: release --user 741",
+        "rel_user": "снято ограничений: {n} (пользователь #{id})",
+        "h_rel_user": "снять со всех адресов пользователя панели",
         "restored_pen": "восстановлено штрафов: {n}",
         "watch_start": "сторож запущен",
         "watch_hit": "{ip} ограничен до {mbps:g} Мбит/с на {m} мин",
@@ -623,6 +654,15 @@ MSG = {
         "h_upload_ratio_mb": "ignore the ratio until upload reaches this many megabytes",
         "why_ratio": "uploaded disproportionately much in 24h",
         "why_upload_day": "uploaded tens of gigabytes in 24h",
+        "why_up_hourly": "uploaded gigabytes within an hour",
+        "h_upload_gbh": "gigabytes uploaded per hour, 0 = off",
+        "tg_uph_head": "🔔 <b>Long upload</b>",
+        "tg_uph_warn": "Uploaded for {h} h in 24h — the threshold is {n} h",
+        "tg_uph_note": "<i>No limit applied. Seeding and a phone's first backup look the same: it is your call.</i>",
+        "h_upload_hours": "hours of upload per day for a limit, 0 = off",
+        "h_upload_hours_mbps": "below this upload rate a sample does not count as uploading",
+        "guard_uphours": "uploading for more than {h} h a day — a notice only, no penalty",
+        "guard_uphourly": "hourly upload: limit at {d} GB",
         "tg_up_head": "🔔 <b>Heavy upload</b>",
         "tg_up_warn": "{gb} uploaded in 24h — the notice threshold is {n} GB",
         "tg_up_note": "<i>No limit applied, this is a warning. At {n} GB the speed will be reduced.</i>",
@@ -658,6 +698,8 @@ MSG = {
         "pn_token_gone": "expired",
         "pn_last": "Last successful poll",
         "pn_never": "never",
+        "pn_oldest": "Oldest address in the list",
+        "pn_oldest_short": "the node remembers less than the {w} min window — the window is capped by the node, not by the setting",
         "pn_last_err": "Last error",
         "pn_min": "min",
         "pn_sec": "s",
@@ -668,10 +710,27 @@ MSG = {
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
         "pn_msg_head": "🔎 <b>Looks like a shared subscription</b>",
+        "pn_off_head": "⛔ <b>Subscription disabled</b>",
+        "pn_off_why": "🤖 Disabled by Shape: there were {n} addresses and no reaction for {m} min.",
+        "pn_off_how": "<i>To turn it back on: <code>shaperctl panel enable {id}</code> or in the panel.</i>",
+        "pn_off_refused": "more offenders than the cap ({n}) — nothing disabled, only reported",
+        "h_pn_disable_after": "minutes without a reaction before the subscription is disabled, 0 = never",
+        "pn_disable_after": "Disable subscription after",
+        "pn_enabled_ok": "subscription #{id} enabled",
+        "pn_disabled_ok": "subscription #{id} disabled",
+        "pn_need_id": "a numeric panel id is required: panel enable 741",
         "pn_card_name": "👤 {name}",
         "pn_card_tg": "🆔 Telegram: <code>{id}</code>",
         "pn_card_login": "🔑 Panel login: <code>{login}</code>",
         "pn_card_login_plain": "Panel login: {login}",
+        "pn_user_need_id": "a numeric panel id is required: panel user 6085",
+        "pn_off": "the panel link is off: panel set --enable",
+        "pn_user_none": "not on this node right now (users checked: {n})",
+        "pn_user_ips": "Addresses on the node",
+        "pn_user_noday": "nothing transferred on this node today",
+        "pn_user_uphours": "uploaded for {h} h",
+        "pn_user_tag": "Tag",
+        "h_pn_user": "the user's numeric panel id",
         "pn_card_panel": "🔑 Panel ID: <code>{id}</code>",
         "pn_card_panel_plain": "Panel ID: {id}",
         "pn_msg_blocked": "🚫 Access to the node cut off for {m} min, addresses: {n}",
@@ -791,6 +850,9 @@ MSG = {
         "rel_one": "{ip} released",
         "rel_all": "released: {n}",
         "rel_need_ip": "specify an IP or --all",
+        "rel_bad_user": "a numeric panel id is required: release --user 741",
+        "rel_user": "limits lifted: {n} (user #{id})",
+        "h_rel_user": "lift limits from every address of a panel user",
         "restored_pen": "penalties restored: {n}",
         "watch_start": "watchdog started",
         "watch_hit": "{ip} limited to {mbps:g} Mbit/s for {m} min",
@@ -1144,8 +1206,44 @@ GUARD_DEFAULT = {
     #
     # 0 = уровень выключен. По умолчанию выключены оба: на мобильной ноде такие
     # числа бессмысленны, там канал сам по себе потолок.
+    # Часовой и суточный пороги на ОТДАЧУ — зеркало тех же порогов на
+    # скачивание.
+    #
+    # Нужны нодам, где трафик оплачивается: счёт там идёт за оба направления,
+    # а ограничение стояло только на одно, и бюджет тёк в другую сторону.
+    #
+    # На таких нодах вопрос «торрент это или бэкап» не имеет значения вовсе:
+    # гигабайт стоит одинаково, чем бы он ни был. Намерение важно только там,
+    # где трафик бесплатный.
+    "upload_gb_per_hour": 0,
+
     "upload_warn_gb": 0,
     "upload_day_gb": 0,
+
+    # Сколько часов за сутки адрес отдавал, прежде чем сообщить об этом.
+    #
+    # Только уведомление, штрафа нет. Причина в том, что первичный бэкап
+    # телефона неотличим от раздачи по всем признакам сразу: человек, впервые
+    # включивший выгрузку плёнки за десять лет, отдаёт сотню гигабайт сутки
+    # напролёт, и у него сходится всё — и пропорция, и доля данных, и часы.
+    #
+    # Различает их только то, что бэкап кончается, а раздача нет. Пока мы
+    # этого не считаем, решение остаётся за владельцем ноды.
+    #
+    # Меряет не «сколько», а «как долго»: выгрузка кончается — три гигабайта
+    # на пятидесяти мегабитах уходят за восемь минут, архив клиенту за
+    # двадцать, — а раздача идёт двенадцать часов и больше.
+    #
+    # От пропорции, размера пакета и протокола не зависит вовсе: ни GRO, ни
+    # QUIC, ни шифрование на него не влияют.
+    #
+    # 0 = признак выключен.
+    "upload_hours": 0,
+
+    # Ниже какой отдачи замер не считается «отдавал». Подтверждения обычной
+    # закачки дают заметные доли мегабита, и без нижней границы «часы отдачи»
+    # превратились бы в «часы онлайн».
+    "upload_hours_mbps": 0.3,
 
     # Четвёртый отдельный путь: за сутки отдал больше, чем скачал.
     #
@@ -1270,7 +1368,8 @@ RATIO_BULK_PERCENT = 55
 GUARD_NOTIFY_COOLDOWN = 6 * 3600
 
 SIGNAL_WEIGHTS = {"packet": 2, "peak": 1, "hours": 2, "upload": 1,
-                  "download": 3, "hourly": 3, "ratio": 3, "upload_day": 3}
+                  "download": 3, "hourly": 3, "ratio": 3, "upload_day": 3,
+                  "up_hourly": 3}
 
 # Веса признаков. Одной нагрузки (3) не хватает — нужен второй признак.
 # Так разовая большая закачка проходит мимо, а торрент набирает 7 из 7.
@@ -1337,6 +1436,11 @@ PANEL_DEFAULT = {
     # каждой из двадцати восьми нод и править везде при каждом новом клиенте;
     # тег ставится в панели один раз и виден отовсюду.
     "exempt_tags": [],
+
+    # Через сколько минут без реакции владельца отключить подписку целиком.
+    # 0 = никогда. По умолчанию выключено: это единственное действие Shape,
+    # которое меняет что-то в панели, а не у себя.
+    "disable_after_min": 0,
 
     # Имя и Telegram ID вместо внутреннего номера пользователя. Требует у
     # токена права users:read. Выключишь — в сообщениях останутся номера,
@@ -2421,6 +2525,26 @@ def cmd_release(a):
         n = penalties_update(drop_all)
         print(f"{C['grn']}✓ {t('rel_all', n=n)}{C['r']}")
         return
+    uid = str(getattr(a, "user", "") or "").strip().lstrip("#")
+    if uid:
+        if not uid.isdigit():
+            die(t("rel_bad_user"))
+
+        def drop_user(pens):
+            hit = [ip for ip, e in pens.items()
+                   if str(e.get("user_id")
+                          or (e.get("subject") or {}).get("user_id")
+                          or "") == uid]
+            for ip in hit:
+                penalty_clear(ip)
+                pens.pop(ip, None)
+                log_event("limit_released", ip=ip, source="cli", user_id=uid)
+            return len(hit)
+        n = penalties_update(drop_user)
+        col = C["grn"] if n else C["yel"]
+        print(f"{col}{'✓' if n else '·'} {t('rel_user', n=n, id=uid)}{C['r']}")
+        return
+
     if not a.ip:
         die(t("rel_need_ip"))
     ip = valid_ip(a.ip)
@@ -2457,6 +2581,9 @@ def cmd_guard(a):
         (a.upload_gb,  "upload_gb_per_day", 0.1, 1000),
         (a.upload_warn, "upload_warn_gb",    0, 10000),
         (a.upload_day,  "upload_day_gb",     0, 10000),
+        (a.upload_hours, "upload_hours",     0, 24),
+        (a.upload_gbh,  "upload_gb_per_hour", 0, 1000),
+        (a.upload_hours_mbps, "upload_hours_mbps", 0.01, 1000),
         (a.download_gb, "download_gb_per_day", 0, 10000),
         (a.download_gbh, "download_gb_per_hour", 0, 1000),
         (a.upload_ratio, "upload_ratio_percent", 0, 1000),
@@ -2518,6 +2645,12 @@ def cmd_guard_show(speed, g, exempt=0):
         print(f"  {C['gry']}{t('guard_upwarn', w=f'{w:g}')}{C['r']}")
     elif dgb:
         print(f"  {C['gry']}{t('guard_uplim', d=f'{dgb:g}')}{C['r']}")
+    if g.get("upload_gb_per_hour"):
+        line = t("guard_uphourly", d=f"{g['upload_gb_per_hour']:g}")
+        print(f"  {C['gry']}{line}{C['r']}")
+    if g.get("upload_hours"):
+        line = t("guard_uphours", h=f"{g['upload_hours']:g}")
+        print(f"  {C['gry']}{line}{C['r']}")
     if g.get("download_gb_per_hour") and g.get("volume_needs_upload"):
         print(f"  {C['gry']}{t('guard_vol_needs', n=g['packet_bytes'])}{C['r']}")
     print(f"  {t('guard_penalty')}: {g['penalty_mbps']:g} Mbit/s "
@@ -2627,7 +2760,8 @@ def bulk_share(day):
     return min(100.0, parsed[3] * 100.0 / parsed[0])
 
 
-def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
+def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None,
+             hourly_up=None):
     """
     Решает, нарушитель ли это. Возвращает (баллы, сработавшие признаки).
 
@@ -2643,6 +2777,13 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
     gb = g.get("download_gb_per_day", 0)
     if gb and day.get("down", 0) >= gb * 1e9:
         return max(g["score_needed"], SIGNAL_WEIGHTS["download"]), ["download"]
+
+    # Отдача за скользящий час. Зеркало часового порога на скачивание.
+    up_gbh = g.get("upload_gb_per_hour", 0)
+    if up_gbh and hourly_up and sum(hourly_up.get(ip, {}).values()) \
+            >= up_gbh * 1e9:
+        return (max(g["score_needed"], SIGNAL_WEIGHTS["up_hourly"]),
+                ["up_hourly"])
 
     # То же самое, но по скользящему часу: реагирует за час вместо суток.
     #
@@ -2864,7 +3005,7 @@ def cmd_watch(a):
     print(t("watch_start"), flush=True)
     restore_penalties()
 
-    both_streak, peak_streak, hourly = {}, {}, {}
+    both_streak, peak_streak, hourly, hourly_up = {}, {}, {}, {}
     # Когда в последний раз рассказывали про адрес, и кто за адресом стоял.
     # Обе карты переживают перезапуск: обновление посреди вечера не должно ни
     # сбрасывать кулдаун, ни терять уже полученное от панели имя.
@@ -2938,7 +3079,7 @@ def cmd_watch(a):
             prev, prev_t = cur, now_t
 
             # забываем тех, кто отвалился
-            for d in (both_streak, peak_streak, hourly):
+            for d in (both_streak, peak_streak, hourly, hourly_up):
                 for ip in [i for i in d if i not in cur]:
                     d.pop(ip, None)
 
@@ -2969,6 +3110,7 @@ def cmd_watch(a):
                 # суточные счётчики ведём для всех, даже для уже наказанных
                 d = daily.setdefault(ip, {"active": 0, "up": 0, "down": 0})
                 d.setdefault("down", 0)
+                d.setdefault("up_sec", 0)
                 # Средний размер пакета за сутки — то самое, что отличает
                 # отдачу данных от подтверждений. Мгновенный сюда не годится:
                 # в момент штрафа адрес мог как раз молчать вверх.
@@ -2982,6 +3124,11 @@ def cmd_watch(a):
                     upkt = d["upkt"] = [0, 0, 0, 0, time.time()]
                 if max(s["dl"], s["ul"]) >= active_floor:
                     d["active"] += interval
+                # Секунды, в которые адрес действительно что-то отдавал.
+                # Нижняя граница обязательна: подтверждения обычной закачки
+                # дают доли мегабита, и без неё это стало бы «часы онлайн».
+                if s["ul"] >= g.get("upload_hours_mbps", 0.3):
+                    d["up_sec"] = d.get("up_sec", 0) + interval
                 d["up"] += s["up_bytes"]
                 d["down"] += s["dl_bytes"]
                 upkt[0] += s["up_bytes"]
@@ -2995,6 +3142,8 @@ def cmd_watch(a):
                     upkt[3] += s["up_bytes"]
                 if s["dl_bytes"]:
                     hourly_add(hourly, ip, s["dl_bytes"], time.time())
+                if s["up_bytes"]:
+                    hourly_add(hourly_up, ip, s["up_bytes"], time.time())
 
                 # Адрес с персональной скоростью автоограничению не подлежит:
                 # решение по нему уже принято человеком.
@@ -3004,10 +3153,19 @@ def cmd_watch(a):
                 # Уровень уведомления по объёму отдачи. Один раз в сутки на
                 # адрес: смысл в том, чтобы заметить подходящего к границе, а
                 # не напоминать о нём каждые десять секунд.
+                # Два уведомления без штрафа: по объёму и по длительности.
+                # Ключ у каждого свой, чтобы одно не глушило другое.
                 warn_gb = g.get("upload_warn_gb", 0)
-                if warn_gb and d["up"] >= warn_gb * 1e9 \
-                        and noticed.get(ip) != today:
-                    noticed[ip] = today
+                warn_h = g.get("upload_hours", 0)
+                due_gb = bool(warn_gb) and d["up"] >= warn_gb * 1e9 \
+                    and noticed.get(ip) != today
+                due_h = bool(warn_h) and d.get("up_sec", 0) >= warn_h * 3600 \
+                    and noticed.get("h:" + ip) != today
+                if due_gb or due_h:
+                    if due_gb:
+                        noticed[ip] = today
+                    if due_h:
+                        noticed["h:" + ip] = today
                     nwho = owner_of(ip) or panel_owner(cfg, ip)
                     nunknown = None
                     nsubject = None
@@ -3021,11 +3179,19 @@ def cmd_watch(a):
                         else:
                             nunknown = panel_owner_reason(cfg, ip)
                     if not guard_exempt(cfg, nwho):
-                        log_event("guard_upload_notice", ip=ip,
-                                  source="watchdog", up=int(d["up"]),
-                                  subject=(nwho or {}).get("label"))
-                        tg_upload_notice(cfg, ip, subject=nsubject,
-                                         unknown=nunknown, day=d)
+                        if due_gb:
+                            log_event("guard_upload_notice", ip=ip,
+                                      source="watchdog", up=int(d["up"]),
+                                      subject=(nwho or {}).get("label"))
+                            tg_upload_notice(cfg, ip, subject=nsubject,
+                                             unknown=nunknown, day=d)
+                        if due_h:
+                            log_event("guard_hours_notice", ip=ip,
+                                      source="watchdog",
+                                      hours=round(d.get("up_sec", 0) / 3600, 1),
+                                      subject=(nwho or {}).get("label"))
+                            tg_upload_hours(cfg, ip, subject=nsubject,
+                                            unknown=nunknown, day=d)
                     guard_state_save({"notified": {k: list(v) for k, v
                                                    in notified.items()},
                                       "owners": owners_seen,
@@ -3045,7 +3211,8 @@ def cmd_watch(a):
                     else max(0, peak_streak.get(ip, 0) - 1)
 
                 score, reasons = evaluate(ip, s, g, cap, both_streak[ip],
-                                          peak_streak[ip], daily, hourly)
+                                          peak_streak[ip], daily, hourly,
+                                          hourly_up)
                 if score >= need_score:
                     # Владельца выясняем ДО штрафа, а не после: деловой
                     # аккаунт трогать нельзя вообще, а не «ограничить и потом
@@ -3102,6 +3269,7 @@ def cmd_watch(a):
                     # Окно очищаем: иначе после снятия штрафа те же гигабайты
                     # в скользящем часе тут же уронили бы человека повторно.
                     hourly.pop(ip, None)
+                    hourly_up.pop(ip, None)
                     print(t("watch_hit", ip=ip, mbps=mbps,
                             m=g["penalty_min"]) +
                           f" [{score}: {','.join(reasons)}]", flush=True)
@@ -3492,6 +3660,11 @@ def penalty_packets(day, now=None):
     if not b:
         return "", 0.0
     now = now if now is not None else time.time()
+    # Суточные счётчики обнуляются в полночь, поэтому окно длиннее суток
+    # означает испорченную отметку времени, а не долгую отдачу. Печатать
+    # «за 496620 ч» нельзя — это не срок, это мусор.
+    if not 0 <= now - since <= 25 * 3600:
+        return "", 0.0
 
     parts = [t("tg_pen_bulk", p=f"{bulk_share(day):.0f}")]
     if n:
@@ -3531,6 +3704,36 @@ def tg_upload_notice(cfg, ip, subject=None, unknown=None, day=None):
     if g.get("upload_day_gb"):
         lines.append("")
         lines.append(t("tg_up_note", n=f"{g['upload_day_gb']:g}"))
+    ok, err = tg_send("\n".join(lines), cfg)
+    if not ok:
+        print(f"telegram: {err}", flush=True)
+
+
+def tg_upload_hours(cfg, ip, subject=None, unknown=None, day=None):
+    """
+    Событие: адрес отдавал слишком долго. Ограничения нет и не будет.
+
+    Штрафа здесь нет намеренно: первичный бэкап телефона по всем признакам
+    совпадает с раздачей, и различает их только то, что бэкап кончается.
+    Пока мы этого не считаем, решение остаётся за владельцем ноды.
+    """
+    tg = cfg["telegram"]
+    if not tg.get("enabled") or not tg.get("events"):
+        return
+    g = cfg["guard"]
+    lines = offender_card(tg, subject, t("tg_uph_head"), unknown)
+    lines.append(t("tg_pen_addr", ip=html.escape(ip)))
+    lines.append(t("tg_uph_warn",
+                   h=f"{(day or {}).get('up_sec', 0) / 3600:.1f}",
+                   n=f"{g.get('upload_hours', 0):g}"))
+    figures = penalty_figures(day)
+    if figures:
+        lines.append(t("tg_pen_stat", s=figures))
+    pkts, window = penalty_packets(day)
+    if pkts:
+        lines.append(t("tg_pen_pkts", d=fmt_hold(window), s=pkts))
+    lines.append("")
+    lines.append(t("tg_uph_note"))
     ok, err = tg_send("\n".join(lines), cfg)
     if not ok:
         print(f"telegram: {err}", flush=True)
@@ -3862,6 +4065,22 @@ PANEL_JOB_DEADLINE = 20.0   # сколько всего ждём готовно�
 PANEL_JOB_POLL = 1.0        # пауза между опросами задачи
 PANEL_HTTP_TIMEOUT = 10     # на один запрос, секунд
 PANEL_ACTIONS = ("notify", "limit", "block", "drop")
+
+# Отключение подписки — не действие в одном ряду с остальными, а отсрочка.
+#
+# Владелец ноды видит уведомление и отключает нарушителя сам, за минуту. Но
+# ночью его нет, а перекрытие адресов ночь не закрывает: длинное задевает
+# честных (у мобильного оператора адрес переходит от абонента к абоненту за
+# минуты), короткое оставляет дыру до следующей проверки.
+#
+# Отключение бьёт по аккаунту, а не по адресу — а раздаёт подписку именно
+# аккаунт. Посторонние не задеты вовсе, и действует оно на всех нодах сразу.
+#
+# Отсчёт отменяется сам: если владелец успел отключить или переиздать
+# подписку, покупатели пропадают из списка соединений, и при следующей
+# проверке человек уже не нарушитель.
+PANEL_DISABLE_MAX = 3
+
 
 # «Перекрыть доступ» — это очень маленькая скорость, а не ноль.
 #
@@ -4446,6 +4665,37 @@ def panel_state_save(state):
         pass
 
 
+def panel_user_disable(p, uid):
+    """Отключить подписку. Ошибку не глушим: молчаливый отказ здесь опасен."""
+    panel_call(p, "POST", "/api/users/%s/actions/disable" % uid)
+
+
+def panel_user_enable(p, uid):
+    """Включить обратно."""
+    panel_call(p, "POST", "/api/users/%s/actions/enable" % uid)
+
+
+def panel_pending(state, offenders, now, grace_sec):
+    """
+    Кого пора отключать, и обновлённый список ожидающих.
+
+    Ожидание живёт в состоянии панели и проверяется на каждом проходе, минуя
+    паузу между срабатываниями: пауза управляет уведомлениями, а здесь речь о
+    сроке, который владелец сам себе отвёл.
+
+    Из ожидания выпадают те, кто нарушителем больше не числится. Это и есть
+    отмена: успел владелец — отсчёт прекращается сам.
+    """
+    live = {str(r["user_id"]) for r in offenders}
+    pend = {k: float(v) for k, v in (state.get("pending") or {}).items()
+            if isinstance(v, (int, float, str)) and str(v).replace(".", "", 1)
+            .replace("-", "", 1).isdigit() and k in live}
+    for uid in live:
+        pend.setdefault(uid, now)
+    due = sorted(uid for uid, at in pend.items() if now - at >= grace_sec)
+    return due, pend
+
+
 def panel_drop(p, ips):
     """
     Обрыв соединений — точечно: только эти адреса и только на этой ноде.
@@ -4463,7 +4713,7 @@ def panel_drop(p, ips):
                         "nodeUuids": [str(p.get("node_uuid") or "").strip()]}})
 
 
-def panel_limit(p, ips, mbps=None):
+def panel_limit(p, ips, mbps=None, uid=None, person=None):
     """
     Локальный штраф на адреса нарушителя. Возвращает те, что реально урезаны.
 
@@ -4491,11 +4741,46 @@ def panel_limit(p, ips, mbps=None):
             continue
         entry = {"until": until, "mbps": mbps, "since": time.time(),
                  "source": "panel", "kind": "auto", "reason": "sharing"}
+        # Номер пользователя в записи — чтобы потом снять ограничение со всех
+        # его адресов разом. У перепродавца их полторы сотни, и снимать по
+        # одному через меню невозможно физически.
+        if uid:
+            entry["user_id"] = str(uid)
+            entry["subject"] = {"user_id": str(uid),
+                                "label": (person or {}).get("name") or "",
+                                "username": (person or {}).get("username") or ""}
         penalties_update(lambda pp, i=ip, e=entry: pp.__setitem__(i, e))
         log_event("limit_applied", ip=ip, source="panel", mbps=mbps,
                   minutes=minutes, reason="sharing")
         done.append(ip)
     return done
+
+
+def tg_panel_disabled(cfg, uid, person, ips):
+    """
+    Подписка отключена автоматически. Сообщение обязано быть громким.
+
+    Это единственное место, где Shape меняет что-то в панели, а не у себя.
+    Человек, читающий его ночью или утром, должен сразу видеть, что
+    произошло и как это отменить.
+    """
+    tg = cfg["telegram"]
+    if not tg.get("enabled"):
+        return
+    who = {"label": (person or {}).get("name"),
+           "handle": (person or {}).get("handle"),
+           "username": (person or {}).get("username"),
+           "tag": (person or {}).get("tag"),
+           "telegram_id": (person or {}).get("telegram_id"),
+           "user_id": str(uid)}
+    lines = offender_card(tg, who, t("pn_off_head"))
+    lines.append(t("pn_off_why", n=ips,
+                   m=f"{cfg['panel'].get('disable_after_min', 0):g}"))
+    lines.append("")
+    lines.append(t("pn_off_how", id=html.escape(str(uid))))
+    ok, err = tg_send("\n".join(lines), cfg)
+    if not ok:
+        print(f"telegram: {err}", flush=True)
 
 
 def panel_notify(cfg, rec):
@@ -4643,6 +4928,17 @@ def panel_scan(cfg, now=None, act=True):
         {"at": now,
          "map": {ip: u["user_id"] for u in users for ip, _ in u["ips"]}})
 
+    # Насколько далеко назад видит нода. Ответа на это нет ни в документации
+    # панели, ни в переменных окружения: список соединений — живой снимок из
+    # Xray, и срок жизни записи определяет он. Зато он измеряется, и разница
+    # между «окно 10 минут» и тем, что нода помнит три, решает всё.
+    ages = [now - ts for u in users for _ip, ts in u["ips"] if ts]
+    if ages:
+        st = panel_state()
+        st["seen_oldest"] = int(max(ages))
+        st["seen_at"] = now
+        panel_state_save(st)
+
     found = panel_offenders(users, p, now)
     res = {"ok": True, "error": "", "code": 0,
            "users": len(users), "offenders": found}
@@ -4653,6 +4949,46 @@ def panel_scan(cfg, now=None, act=True):
     state = panel_state()
     seen = state.get("seen") or {}
     cooldown = max(0, int(p.get("cooldown_min") or 0)) * 60
+
+    # Отсрочка на отключение подписки. Считается до всего остального и минуя
+    # паузу между срабатываниями: пауза про уведомления, а здесь про срок,
+    # который владелец сам себе отвёл.
+    grace = max(0, float(p.get("disable_after_min") or 0)) * 60
+    if grace:
+        # Исключённых в ожидание не берём вовсе.
+        live = [r for r in found
+                if not guard_exempt(cfg, {"user_id": r["user_id"]})]
+        due, pend = panel_pending(state, live, now, grace)
+        state["pending"] = pend
+        panel_state_save(state)
+
+        # Потолок на проход. Если панель однажды отдаст мусор и в нарушители
+        # попадут сотни, автоматика их не отключит — только сообщит. Ошибка
+        # такого рода стоит слишком дорого, чтобы надеяться, что её не будет.
+        if len(due) > PANEL_DISABLE_MAX:
+            res["disable_refused"] = len(due)
+            log_event("panel_disable_refused", n=len(due))
+            due = []
+
+        for uid in due:
+            rec = next((r for r in live if str(r["user_id"]) == uid), None)
+            person = panel_user(p, uid)
+            try:
+                panel_user_disable(p, uid)
+            except PanelError as e:
+                log_event("panel_disable_failed", user_id=uid, error=str(e))
+                res.setdefault("disable_errors", []).append(str(e))
+                continue
+            pend.pop(uid, None)
+            state["pending"] = pend
+            panel_state_save(state)
+            if rec is not None:
+                rec["disabled"] = True
+            log_event("panel_disabled", user_id=uid,
+                      ips=len(rec.get("ips") or []) if rec else 0,
+                      subject=(person or {}).get("name"))
+            tg_panel_disabled(cfg, uid, person,
+                              len(rec.get("ips") or []) if rec else 0)
 
     for rec in found:
         rec.setdefault("limited", [])
@@ -4685,9 +5021,11 @@ def panel_scan(cfg, now=None, act=True):
         # остался бы «в сети» до того, как они отвалятся по таймауту.
         if "block" in actions:
             rec["blocked"] = True
-            rec["limited"] = panel_limit(p, rec["ips"], PANEL_BLOCK_MBPS)
+            rec["limited"] = panel_limit(p, rec["ips"], PANEL_BLOCK_MBPS,
+                                         rec["user_id"], rec.get("person"))
         elif "limit" in actions:
-            rec["limited"] = panel_limit(p, rec["ips"])
+            rec["limited"] = panel_limit(p, rec["ips"], None,
+                                         rec["user_id"], rec.get("person"))
         if "drop" in actions or "block" in actions:
             try:
                 panel_drop(p, rec["ips"])
@@ -4763,6 +5101,7 @@ def cmd_panel(a):
             when = time.strftime("%Y-%m-%d", time.localtime(exp))
         st = panel_state()
         last = float(st.get("last_ok") or 0)
+        oldest = st.get("seen_oldest")
         print()
         print(f"  {t('pn_state')}  : " + (f"{C['grn']}{t('guard_on')}{C['r']}"
               if p["enabled"] else f"{C['gry']}{t('guard_off')}{C['r']}"))
@@ -4785,6 +5124,9 @@ def cmd_panel(a):
             print(f"  {t('pn_exempt')} : {', '.join(p['exempt'])}")
         if p.get("exempt_tags"):
             print(f"  {t('pn_exempt_tags')} : {', '.join(p['exempt_tags'])}")
+        if p.get("disable_after_min"):
+            print(f"  {t('pn_disable_after')} : "
+                  f"{C['red']}{p['disable_after_min']:g} {t('pn_min')}{C['r']}")
         print(f"  {t('pn_last')} : " + (time.strftime("%Y-%m-%d %H:%M",
               time.localtime(last)) if last else t("pn_never")))
         if last:
@@ -4795,6 +5137,12 @@ def cmd_panel(a):
                 print(f"    {C['gry']}{t('pn_seen_none')}{C['r']}")
         if p.get("node_uuid") and not valid_uuid(p["node_uuid"]):
             print(f"  {C['red']}⚠ {t('pn_bad_uuid')}{C['r']}")
+        if oldest is not None:
+            print(f"  {t('pn_oldest')} : {fmt_hold(int(oldest))}")
+            if int(oldest) < 60 * max(1, int(p.get("window_min") or 10)):
+                print(f"    {C['yel']}"
+                      f"{t('pn_oldest_short', w=p.get('window_min', 10))}"
+                      f"{C['r']}")
         if st.get("last_error"):
             print(f"  {t('pn_last_err')} : {C['red']}{st['last_error']}{C['r']}")
         print()
@@ -4839,6 +5187,10 @@ def cmd_panel(a):
             p["cooldown_min"] = max(0, a.cooldown)
         if a.exempt is not None:
             p["exempt"] = [w.strip() for w in a.exempt.split(",") if w.strip()]
+        if a.disable_after is not None:
+            if not 0 <= a.disable_after <= 1440:
+                die(t("guard_range", k="disable_after_min", lo=0, hi=1440))
+            p["disable_after_min"] = a.disable_after
         if a.exempt_tags is not None:
             p["exempt_tags"] = [w.strip() for w in a.exempt_tags.split(",")
                                 if w.strip()]
@@ -4860,6 +5212,86 @@ def cmd_panel(a):
         save_config({"panel": p})
         log_event("config_changed", source="cli", section="panel")
         return cmd_panel(argparse.Namespace(**{**vars(a), "action": "show"}))
+
+    if a.action in ("enable", "disable"):
+        uid = str(a.ip or "").strip().lstrip("#")
+        if not uid.isdigit():
+            die(t("pn_need_id"))
+        if not p.get("enabled"):
+            die(t("pn_off"))
+        try:
+            if a.action == "enable":
+                panel_user_enable(p, uid)
+            else:
+                panel_user_disable(p, uid)
+        except PanelError as e:
+            die(str(e))
+        key = "pn_enabled_ok" if a.action == "enable" else "pn_disabled_ok"
+        # Из ожидания вычёркиваем: решение принято человеком.
+        st = panel_state()
+        (st.get("pending") or {}).pop(uid, None)
+        panel_state_save(st)
+        log_event("panel_user_" + a.action, user_id=uid, source="cli")
+        print(f"\n  {C['grn']}✓ {t(key, id=uid)}{C['r']}\n")
+        return
+
+    if a.action == "user":
+        # Обратный ход к `who`: там адрес → человек, здесь человек → адреса.
+        #
+        # Нужен для сверки с отчётами бота. Бот берёт числа у панели, а панель
+        # не хранит «вверх» и «вниз» отдельно — в её отчёте «123 ГБ за сутки»
+        # это сумма обоих направлений, и по ней нельзя отличить закачку от
+        # раздачи. Shape эти числа знает, не хватало только связи между
+        # номером пользователя и его адресами.
+        uid = str(a.ip or "").strip().lstrip("#")
+        if not uid.isdigit():
+            die(t("pn_user_need_id"))
+        if not p.get("enabled"):
+            die(t("pn_off"))
+        print(f"\n  {t('pn_scanning')}", flush=True)
+        try:
+            users = panel_fetch(p)
+        except PanelError as e:
+            die(str(e))
+
+        rec = next((u for u in users if str(u["user_id"]) == uid), None)
+        person = panel_user(p, uid)
+        print()
+        print(f"  {C['b']}{panel_label(uid, person)}{C['r']}")
+        if person and person.get("username"):
+            print(f"  {C['gry']}"
+                  f"{t('pn_card_login_plain', login=person['username'])}"
+                  f"{C['r']}")
+        if person and person.get("tag"):
+            print(f"  {C['gry']}{t('pn_user_tag')}: {person['tag']}{C['r']}")
+        if not rec:
+            print(f"\n  {C['yel']}{t('pn_user_none', n=len(users))}{C['r']}\n")
+            return
+
+        ips = sorted({ip for ip, _ in rec["ips"]})
+        print(f"  {t('pn_user_ips')}: {C['b']}{len(ips)}{C['r']}\n")
+
+        # Счётчики берём свои, суточные: у панели их нет ни в каком виде.
+        daily = load_daily()
+        for ip in ips:
+            d = daily.get(ip) or {}
+            down, up = d.get("down", 0), d.get("up", 0)
+            if not (down or up):
+                print(f"  {ip:<18}{C['gry']}{t('pn_user_noday')}{C['r']}")
+                continue
+            pct = f" ({up * 100 / down:.0f}%)" if down else ""
+            print(f"  {ip:<18}↓ {fmt_bytes(down)} · ↑ {fmt_bytes(up)}{pct}")
+            pk, _win = penalty_packets(d)
+            extra = []
+            if pk:
+                extra.append(re.sub(r"<[^>]+>", "", pk))
+            if d.get("up_sec"):
+                extra.append(t("pn_user_uphours",
+                               h=f"{d['up_sec'] / 3600:.1f}"))
+            if extra:
+                print(f"  {'':<18}{C['gry']}{' · '.join(extra)}{C['r']}")
+        print()
+        return
 
     if a.action == "who":
         # Спрашиваем панель заново, а не берём карту из памяти: она живёт в
@@ -6159,6 +6591,12 @@ def build_parser():
                    default=None, help=t("h_upload_warn"))
     g.add_argument("--upload-day", dest="upload_day", type=float,
                    default=None, help=t("h_upload_day"))
+    g.add_argument("--upload-hours", dest="upload_hours", type=float,
+                   default=None, help=t("h_upload_hours"))
+    g.add_argument("--upload-gbh", dest="upload_gbh", type=float,
+                   default=None, help=t("h_upload_gbh"))
+    g.add_argument("--upload-hours-mbps", dest="upload_hours_mbps", type=float,
+                   default=None, help=t("h_upload_hours_mbps"))
     g.add_argument("--download-gb", type=float, default=None, help=t("h_download_gb"))
     g.add_argument("--download-gbh", type=float, default=None, help=t("h_download_gbh"))
     g.add_argument("--upload-ratio", dest="upload_ratio", type=float, default=None,
@@ -6189,6 +6627,7 @@ def build_parser():
     rl = sub.add_parser("release", help=t("h_release"))
     rl.add_argument("ip", nargs="?", default="")
     rl.add_argument("--all", action="store_true")
+    rl.add_argument("--user", default="", help=t("h_rel_user"))
     rl.set_defaults(func=cmd_release)
 
     tg = sub.add_parser("telegram", help=t("h_telegram"))
@@ -6216,7 +6655,8 @@ def build_parser():
 
     pn = sub.add_parser("panel", help=t("h_panel"))
     pn.add_argument("action",
-                    choices=["show", "set", "test", "scan", "report", "who"],
+                    choices=["show", "set", "test", "scan", "report", "who",
+                             "user", "enable", "disable"],
                     nargs="?", default="show")
     pn.add_argument("ip", nargs="?", default="", help=t("h_pn_who_ip"))
     pn.add_argument("--report", choices=["on", "off"], default=None,
@@ -6245,6 +6685,8 @@ def build_parser():
     pn.add_argument("--exempt", default=None, help=t("h_pn_exempt"))
     pn.add_argument("--exempt-tags", dest="exempt_tags", default=None,
                     help=t("h_pn_exempt_tags"))
+    pn.add_argument("--disable-after", dest="disable_after", type=float,
+                    default=None, help=t("h_pn_disable_after"))
     pn.add_argument("--dry-run", dest="dry_run", action="store_true",
                     help=t("h_pn_dry"))
     pn.add_argument("--json", action="store_true")

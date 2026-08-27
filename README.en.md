@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.51-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.58-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.51
+# Shape v3.58
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -297,6 +297,52 @@ shaperctl guard --both-ul 3 --require-packet on
 
 Without it, lowering the upload floor below 10% is a bad idea.
 
+### Hours of upload
+
+The only signal that measures not "how much" but **"how long"** — and that is
+exactly where a torrent differs from work.
+
+```bash
+shaperctl guard --upload-hours 6
+```
+
+- Three gigabytes at 50 Mbit take **eight minutes**.
+- An archive for a client, twenty.
+- Seeding runs for twelve hours, sixteen, around the clock.
+
+What is counted is the number of samples where the upload exceeded 0.3 Mbit/s.
+The lower bound is mandatory: the acknowledgements of an ordinary download come
+to a noticeable fraction of a megabit, and without it "hours of upload" would
+become "hours online".
+
+The signal depends on neither proportion, nor packet size, nor protocol. That
+makes it the most robust of the lot: kernel packet merging, QUIC and encryption
+have no effect on it.
+
+**There is no penalty for this and there will not be one.** A phone's first
+backup is indistinguishable from seeding by every signal we have: someone who has
+just switched on the upload of ten years of photos pushes a hundred gigabytes for
+a whole day, and the proportion, the data share and the hours all line up.
+The only thing that tells them apart is that a backup ends and seeding does not —
+and we do not count that.
+
+So the signal arrives as a notice, and the decision stays with you.
+
+### Upload on nodes where traffic is paid for
+
+There the bill covers **both** directions, while the limit covered only the
+download — and the budget leaked the other way.
+
+```bash
+shaperctl guard --upload-gbh 3 --upload-day 25
+```
+
+A mirror of the download thresholds, with the same numbers. And the question that
+troubled us throughout this section — torrent or backup — **does not matter here
+at all**: a gigabyte costs the same, whatever it is.
+
+Intent matters only where the traffic is free.
+
 ### Daily upload: two levels
 
 The simplest signal, and the only one that depends on neither proportion, nor
@@ -505,14 +551,17 @@ differs, and what sits behind it.
 | Per-address limit | usually 10 Mbit | usually 50–100 Mbit |
 | Volume per hour | **3 GB** fixed | **half the channel** |
 | Daily upload | — | **10 GB notice, 30 GB limit** |
+| Hourly upload | **3 GB** | — |
+| Daily upload | **25 GB** | 30 GB |
+| Hours of upload per day | **notice from 6** | **notice from 6** |
 | Hourly volume is a reason on its own | yes | **only with upload packets** |
-| Volume per day | 25 GB | sixteen hourly thresholds |
-| Sharing: addresses | over 20 | over 10 |
+| Volume per day | 25 GB | 150 GB |
+| Sharing: addresses | over 20 | over 20 |
 | Torrents | two-way traffic with large upload packets | same |
 | Quiet seeders | **35%** a day | **50%** a day |
 | Penalty for a torrent | 1 Mbit/s for 60 min | same |
 | Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
-| Sharing | connections dropped | same |
+| Sharing | 1 h cut-off, then the subscription is disabled | same |
 
 **Why phones get a number and homes get a share.** Three gigabytes an hour is a
 figure computed for a phone: 1080p fits twice over, and a download hits the
@@ -525,10 +574,22 @@ The daily figure at home is sixteen such hours — eight hours at full speed.
 Any less will not do: one Steam game weighs some 120 GB, and on fifty megabits
 eight hourly thresholds simply were not enough for it.
 
-**The sharing threshold is looser for phones.** A mobile carrier changes the
-address several times an hour, and a dozen addresses within the window is
-possible for an honest person. At home there is one address for the whole
-family, and ten at once is already sharing.
+**The sharing threshold is the same on both nodes — twenty addresses.**
+
+It differed while home nodes were assumed to be opened from wifi only. That is
+wrong: mobile clients connect to any node, and a carrier changes the address on
+reconnect and on handover. A family of five phones easily produces fifteen to
+twenty addresses in ten minutes.
+
+So the threshold is about the client, and the client is unknown to us. We take
+the larger value. Real resellers meanwhile show 146 and 230 addresses, a tenfold
+margin.
+
+**How far back the node remembers can be measured.** There is no record lifetime
+either in the panel documentation or in its environment variables: the connection
+list is a live snapshot from Xray. So `panel show` prints the age of the oldest
+address from the last poll, and warns when it is shorter than the window: the
+window is then capped by the node, not by the setting.
 
 A preset configures **both the auto-limiter and sharing** at once. Leaving the
 other half of the policy to a different screen meant forgetting it — which is
@@ -1199,6 +1260,74 @@ addresses the panel saw within the last `window_min` minutes.
 
 Default: **20 addresses within a 10-minute window**.
 
+### `panel user` — from an ID to addresses
+
+The reverse of `panel who`. It exists so you can check your bot's reports
+against what Shape sees.
+
+The bot takes its numbers from the panel, and the panel **does not store "up"
+and "down" separately** — everywhere it is only `totalBytes`. So "123 GB in 24h"
+in its report is the sum of both directions, and a download cannot be told from
+seeding by it. Shape has those numbers.
+
+```bash
+shaperctl panel user 6085
+```
+
+```
+  Ilya · user_1063858404 (1063858404)
+  Panel login: user_1063858404
+  Addresses on the node: 2
+
+  109.161.37.64     ↓ 58.2 GB · ↑ 61.4 GB (105%)
+                    96% as data · packet 1310 B · uploaded for 9.0 h
+  87.253.24.130     ↓ 3.1 GB · ↑ 0.1 GB (3%)
+                    0% as data · packet 140 B
+```
+
+The first line is seeding, the second ordinary use. The question "what was he
+downloading" closes in a second.
+
+### The night: disabling the subscription after a grace period
+
+Cutting off addresses does not cover the night. A long cut-off hits the
+innocent: a mobile carrier passes an address from one subscriber to another
+within minutes, and someone can inherit another person's 0.05 Mbit/s for half a
+day. A short one leaves a gap until the next check.
+
+It is the **account** that shares the subscription, not the address. That is what
+to hit.
+
+```bash
+shaperctl panel set --disable-after 30
+```
+
+```
+3:00   146 addresses → cut-off + notice, the countdown starts
+3:30   no reaction from you → the subscription is disabled
+       ↳ none of his buyers have connectivity, on any node
+9:00   shaperctl panel enable 741 — once you have looked into it
+```
+
+**The countdown cancels itself.** If you disabled or revoked the subscription in
+time, the buyers vanish from the connection list, at the next check the person is
+no longer an offender, and Shape does nothing. There is nothing to wait for or
+cancel by hand.
+
+**A safety valve.** No more than three are disabled per pass. If the panel one
+day returns garbage and hundreds end up flagged, the automation will not disable
+them — it will only report. A mistake of that kind costs too much to rely on it
+not happening.
+
+**Off by default.** This is the only action Shape takes that changes something in
+the panel rather than in itself, and it must be switched on deliberately. The
+token will need permission to modify users.
+
+Exceptions by tag and by id apply: a marked user does not even enter the queue.
+
+Menu: **Panel → Disable subscription after**, and next to it — **Turn a
+subscription back on**.
+
 ### Business accounts
 
 An office on a single subscription is dangerous in a different way than it
@@ -1350,21 +1479,54 @@ handle, and does so cautiously: every bot has its own format, and if the parse
 fails the card simply keeps the login, as before. A note like
 `Paid: until 3 October` is left alone and shown in full.
 
-### About blocking
+### What `block` does
 
-`block` is not a firewall rule but a minimal speed: 0.05 Mbit/s on every address
-of the offender the node can see, plus a drop of the current connections.
+It is not a firewall rule and not a subscription shutdown in the panel. It does
+two things at once:
 
-Zero would not work: zero in the kernel map means "no limit", and the engine is
-written that way on purpose. At 0.05 Mbit a 1500-byte packet takes 240 ms, while
-the engine's queue horizon is two seconds. Eight packets fit in the queue, the
-rest are dropped, and a TLS handshake never completes. From the outside it looks
-like the internet is gone.
+1. **A minimal speed of 0.05 Mbit/s** on every address of the offender this node
+   can see, for 60 minutes.
+2. **A drop of the current connections** through the panel.
 
-Dropping connections is part of blocking: without it, established connections
-would merely become slow and the person would stay "online" until they timed out.
+Without the second the first would be useless: already established connections
+would merely become slow, and the person would stay "online" until they timed
+out.
 
-If both `limit` and `block` are set, `block` wins.
+**Why not just a drop.** The client reconnects within a second. As a signal
+saying "we see you" a drop works; as a measure it does not. A reseller loses the
+connections and immediately gets them back.
+
+With `block` his buyers reconnect and find that there is practically no
+connectivity — for an hour.
+
+**It holds for an hour, and that is enough.** Cutting off addresses is not the
+measure but a way to hold the door while the countdown to disabling the
+subscription runs. An hour covers a half-hour countdown with room to spare.
+
+The twelve hours that used to be set covered the night but hit bystanders: a
+mobile address moves to another subscriber within minutes, and they inherited
+someone else's 0.05 Mbit/s for half a day.
+
+**If disabling the subscription is off** and the night still needs covering,
+raise the cut-off by hand: `panel set --limit-min 720`. The old drawback comes
+back with it.
+
+**It can be lifted earlier, and not address by address.** A reseller has a
+hundred and fifty of them:
+
+```bash
+shaperctl release --user 741
+```
+
+Menu: **Limited addresses → Lift from every address of a user**. The id comes
+from the Telegram card, the "Panel" line.
+
+**What it does not do.** The limit is local, on this node. A buyer who reconnects
+to another node will be free there until that node also sees twenty addresses of
+his. Each node answers for itself.
+
+Zero cannot be used as the speed here: zero in the kernel map means "no limit",
+and the engine would let the traffic through unaccounted. Hence 0.05, not 0.
 
 ### Exceptions
 

@@ -113,21 +113,50 @@ check "оба ловят тихого сидера" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--upload-ratio ") -eq 2 ]]'
 check "оба настраивают раздачу" \
       '[[ $(grep -cE -- "panel set --threshold [0-9]+ --window" "$SRC/menu.sh") -eq 2 ]]'
-check "раздача рвёт соединения" \
-      '[[ $(grep -c -- "--action-set drop >/dev/null 2>&1" "$SRC/menu.sh") -eq 2 ]]'
-check "порог раздачи у телефонов мягче, чем у домашних" \
-      'grep -q -- "panel set --threshold 20" "$SRC/menu.sh" &&
-       grep -q -- "panel set --threshold 10" "$SRC/menu.sh"'
+# Обрыв сам по себе перепродажу не останавливает: клиент возвращается через
+# секунду. Останавливает block — минимальная скорость на все его адреса плюс
+# обрыв, то есть час подписка не работает ни у кого из покупателей.
+check "раздача перекрывает доступ, а не только рвёт" \
+      '[[ $(grep -c -- "--action-set block >/dev/null 2>&1" "$SRC/menu.sh") -eq 2 ]]'
+check "голого drop в пресетах не осталось" \
+      '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "--action-set drop"'
+
+# Перекрытие адресов держит дверь, пока идёт отсчёт до отключения подписки, —
+# час на это хватает с запасом. Двенадцать часов, которые стояли раньше, ночь
+# закрывали, но задевали посторонних: мобильный адрес переходит к другому
+# абоненту за минуты, и тот наследовал чужие 0.05 Мбит на полсуток.
+check "перекрытие держится час, а не полсуток" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--limit-min 60") -eq 2 ]]'
+check "и полсуток в пресетах не осталось" \
+      '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "--limit-min 720"'
+check "снять со всех адресов пользователя можно из меню" \
+      'grep -q "lm_release_user" "$SRC/menu.sh" && grep -q -- "release --user" "$SRC/menu.sh"'
+check "нумерация в ограниченных адресах не разъехалась" \
+      '[[ $(sed -n "/^screen_limited()/,/^}/p" "$SRC/menu.sh" | grep -cE "^ +echo \"  \[[0-9]\]") -eq 4 ]]'
+
+# Отключение подписки — единственное действие Shape, которое меняет что-то в
+# панели, а не у себя. Значит оно должно быть видно и выключаться.
+check "отсрочка отключения настраивается из меню" \
+      'grep -q "pn_set_dis" "$SRC/menu.sh" && grep -q -- "panel set --disable-after" "$SRC/menu.sh"'
+check "и есть обратная кнопка" \
+      'grep -q "pn_enable_user" "$SRC/menu.sh" && grep -q -- "panel enable" "$SRC/menu.sh"'
+check "пресеты её не включают" \
+      '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "--disable-after"'
+# Порог одинаковый на обеих нодах. Разный он был, пока считалось, что
+# домашнюю ноду открывают только с вайфая. С мобильного заходят на любую, а
+# значит порог должен быть про клиента, а клиента мы не знаем — берём больший.
+check "порог раздачи одинаковый на обоих пресетах" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "panel set --threshold 20") -eq 2 ]]'
+check "и десятки в пресетах не осталось" \
+      '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "panel set --threshold 10"'
 
 # Мобильный порог — число из расчёта под телефон, домашний — доля канала.
 check "у телефонов часовой порог фиксированный" \
       'grep -q -- "--download-gb 25 --download-gbh 3" "$SRC/menu.sh"'
 check "у домашних он вычисляется от канала" \
       'grep -q "speed/8/1000\*3600\*0.5" "$SRC/menu.sh"'
-check "и сутки — это шестнадцать таких часов" \
-      'grep -q "speed/8/1000\*3600\*0.5\*16" "$SRC/menu.sh"'
 check "без лимита есть запасные числа" \
-      'grep -q "gbh=20; gbd=320; soft=25" "$SRC/menu.sh"'
+      'grep -q "gbh=20; gbd=150; soft=25" "$SRC/menu.sh"'
 
 # Порог в половину канала срабатывает через полчаса на полной скорости — на
 # любом канале, потому что это и есть определение половины. Игра в Steam
@@ -188,14 +217,39 @@ check "и читается из раздела панели" \
       'grep -q "_cfg.get(\"panel\")" "$SRC/menu.sh"'
 
 # Абсолютный объём отдачи: домашний пресет ставит 10/30, мобильный явно ноль.
-check "домашний пресет ставит оба уровня" \
-      'grep -qE -- "--upload-warn 10 --upload-day 30" "$SRC/menu.sh"'
-check "мобильный выключает их явно" \
-      'grep -qE -- "--upload-warn 0 --upload-day 0" "$SRC/menu.sh"'
+check "обычный пресет ставит оба уровня по объёму отдачи" \
+      'grep -qE -- "--upload-gbh 0 --upload-day 30" "$SRC/menu.sh" && grep -qE -- "--upload-warn 10" "$SRC/menu.sh"'
+check "квотный уведомление по объёму не ставит" \
+      'grep -qE -- "--upload-warn 0 --upload-hours 6" "$SRC/menu.sh"'
 check "оба уровня видны на экране автоограничения" \
       'grep -q "why_upload_day_menu" "$SRC/menu.sh" && grep -q "g_up_warn" "$SRC/menu.sh"'
 check "и правятся руками" \
       'grep -q "g_set_upday" "$SRC/menu.sh" && grep -q "g_set_upwarn" "$SRC/menu.sh"'
+
+# Часы отдачи — только на обычных нодах. На нодах с квотой задача другая: там
+# считают деньги за трафик, а не ловят раздачу.
+check "часы отдачи стоят на обоих пресетах" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--upload-hours 6") -eq 2 ]]'
+
+# На нодах с квотой счёт идёт за оба направления, а ограничение стояло только
+# на скачивание — бюджет тёк в другую сторону.
+check "квотный пресет ограничивает и отдачу" \
+      'grep -qE -- "--upload-gbh 3 --upload-day 25" "$SRC/menu.sh"'
+check "обычный часовой порог отдачи не ставит" \
+      'grep -qE -- "--upload-gbh 0 --upload-day 30" "$SRC/menu.sh"'
+check "часовой порог отдачи виден и правится" \
+      'grep -q "why_up_hourly_menu" "$SRC/menu.sh" && grep -q "g_set_upgbh" "$SRC/menu.sh"'
+check "часы помечены как уведомление, а не как путь к штрафу" \
+      'grep -q "g_note" "$SRC/menu.sh" && ! grep -q "g_orpath.} .{T.why_up_hours_menu" "$SRC/menu.sh"'
+check "часы видны на экране и правятся руками" \
+      'grep -q "why_up_hours_menu" "$SRC/menu.sh" && grep -q "g_set_uphours" "$SRC/menu.sh"'
+
+# Суточный порог скачивания — число, а не производная от канала: выведенный
+# арифметикой давал 360 ГБ, которых честное потребление не набирает.
+check "суточный порог фиксирован" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "gbd=150") -eq 2 ]]'
+check "и больше не выводится из канала" \
+      '! grep -q "3600\*0.5\*16" "$SRC/menu.sh"'
 
 # Порог пропорции разный: на домашних 50, на мобильных 35. Причина в живом
 # случае — маркетолог с 38% попал под штраф, а самый низкий из настоящих

@@ -13,6 +13,449 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.58
+
+**The address cut-off is back to an hour. And the disable message now says
+plainly that it was Shape.**
+
+### Twelve hours became redundant
+
+They were introduced in 3.56 to cover the night: the notice arrives at three and
+is seen at nine. But 3.57 brought disabling the subscription after a grace
+period, and that covers the night — more precisely and without collateral.
+
+The harm of a long cut-off remained: **a mobile address moves to another
+subscriber within minutes**, and a bystander inherited someone else's
+0.05 Mbit/s for half a day.
+
+The roles are now cleanly separated:
+
+| | What for |
+| --- | --- |
+| Address cut-off, 1 hour | hold the door while the countdown runs |
+| Subscription disable, after 30 min | the actual measure |
+
+An hour covers a half-hour countdown with room to spare. A bystander loses an
+hour at worst instead of half a day.
+
+If disabling the subscription is off and the night still needs covering, the
+cut-off is raised by hand: `panel set --limit-min 720`. The old drawback returns
+with it.
+
+### The disable message
+
+It existed before but did not say plainly who had done it. Now it does:
+
+```
+⛔ Subscription disabled · Netherlands-3
+
+👤 Ilya · @ilya
+🆔 Telegram: 1063858404
+🔑 Panel login: user_1063858404 · #741
+
+🤖 Disabled by Shape: there were 146 addresses and no reaction for 30 min.
+
+To turn it back on: shaperctl panel enable 741 or in the panel.
+```
+
+### Also
+
+* Tests: the check for 720 in the presets was replaced by a check for 60 and for
+  the absence of 720.
+
+---
+
+## 3.57
+
+**Disabling a subscription after a grace period. The night is covered by hitting
+the account rather than the addresses.**
+
+### Why cutting off addresses does not cover the night
+
+Two arguments, both from the node owner.
+
+**A long cut-off hits the innocent.** A mobile carrier passes an address from one
+subscriber to another within minutes. Twelve hours on an address means a
+bystander can inherit someone else's 0.05 Mbit/s and sit like that for half a
+day without understanding why.
+
+**A short one leaves a gap.** An hour of cut-off against a six-hour pause is five
+hours of free running.
+
+It is the **account** that shares the subscription. That is what to hit.
+
+### How it works
+
+```bash
+shaperctl panel set --disable-after 30
+```
+
+```
+3:00   146 addresses → cut-off + notice, the countdown starts
+3:30   no reaction → POST /api/users/741/actions/disable
+       ↳ none of his buyers have connectivity, on every node at once
+9:00   shaperctl panel enable 741 — once you have looked into it
+```
+
+**The countdown cancels itself.** If you disabled or revoked the subscription in
+time, the buyers vanish from the connection list and at the next check the person
+is no longer an offender. There is nothing to cancel by hand.
+
+The queue lives in the panel state and is checked on every pass, bypassing the
+notification pause: the pause is about messages, this is about a deadline the
+owner set for himself.
+
+### The safety valve
+
+No more than **three** are disabled per pass. If the panel one day returns
+garbage and hundreds end up flagged, the automation will not disable them — it
+will only report.
+
+A mistake of that kind costs too much to rely on it not happening.
+
+### Off by default
+
+This is the only action Shape takes that changes something in the panel rather
+than in itself. Presets do not set it, it is switched on deliberately, and the
+token will need permission to modify users.
+
+Exceptions by tag and by id apply: a marked user does not even enter the queue.
+
+### The way back
+
+```bash
+shaperctl panel enable 741
+shaperctl panel disable 741
+```
+
+Menu: **Panel → [18] Disable subscription after**, **[19] Turn a subscription
+back on**.
+
+### Also
+
+* Tests: 23 new ones. The countdown does not fire early and fires exactly on
+  time, a manually handled user leaves the queue, a returning one starts from
+  zero, junk in the state does not break it, the per-pass cap, an exempted user
+  never enters the queue, the disable reaches the panel and comes with a message
+  explaining how to undo it.
+
+---
+
+## 3.56
+
+**The access cut-off now holds for twelve hours instead of one. And it can be
+lifted from every address of a user with a single command.**
+
+### The night
+
+The notice arrives at three in the morning and is seen at nine. With an hour of
+cut-off and a six-hour pause between checks it worked out like this:
+
+```
+3:00   caught, access cut off
+4:00   the limit expired — free
+9:00   the next check on him is possible at all
+```
+
+**Five hours of running as if nothing had happened.** During the day this does
+not matter — the owner sees the message and disables the subscription in a
+minute. At night there is no one.
+
+Twelve hours cover the night entirely and are still less than a day.
+
+### Lifting — from every address at once
+
+A reseller has a hundred and fifty addresses, and lifting them one by one through
+the menu is physically impossible.
+
+```bash
+shaperctl release --user 741
+```
+
+Menu: **Limited addresses → Lift from every address of a user**. The id comes
+from the Telegram card, the "Panel" line.
+
+For this the panel's penalty now remembers whose it is: the user's id and name.
+The record used to say only "sharing", with no way to tie it to a person.
+
+### Why not the simple route
+
+The pause between checks could have been lowered to an hour, so the cut-off would
+renew itself every hour. But the pause also governs notifications: over a night
+that would be six messages about the same person instead of one.
+
+### Also
+
+* Tests: 12 new ones. The id and name in the penalty record, lifting by id, a
+  non-numeric id, someone else's id, twelve hours in both presets, the menu
+  numbering.
+
+---
+
+## 3.55
+
+**Both presets now cut off a sharer's access rather than merely dropping his
+connections.**
+
+### Why the drop did not work
+
+`drop` tears down established connections through the panel. The client
+reconnects within a second. As a signal saying "we see you" that works; as a
+measure it does not: a reseller lost his connections every six hours and
+immediately got them back.
+
+### What `block` does
+
+Two things at once:
+
+1. **0.05 Mbit/s** on every address of the offender the node can see, for
+   60 minutes.
+2. **A drop of the current connections** through the panel.
+
+Without the second the first is useless: already open connections would merely
+become slow and the person would stay online until they timed out. Without the
+first the second is useless — he is back in a second.
+
+Together they mean the buyers reconnect and find there is practically no
+connectivity. For an hour.
+
+### What it does not do
+
+The limit is **local**, on this node. A buyer who moves to another node will be
+free there until that node also sees twenty addresses of his.
+
+That is deliberate: the auto-limiter and sharing detection in Shape answer for
+their own node and depend on no one. Each node will catch him in its turn.
+
+### Zero cannot be used as the speed
+
+Zero in the kernel map means "no limit" — the engine would let the traffic
+through unaccounted. Hence 0.05, not 0.
+
+### Also
+
+* Tests: 2 new ones — both presets set `block`, and no bare `drop` remains in
+  them.
+* The blocking section in the README was rewritten: it used to explain the
+  mechanics, now it also explains why they are needed instead of a drop.
+
+---
+
+## 3.54
+
+**The sharing threshold is the same on both nodes — 20 addresses. And
+`panel show` reports how far back the node can see.**
+
+### Why the threshold differed and why it should not
+
+Ten addresses on home nodes and twenty on quota nodes followed from the reasoning
+"a mobile carrier changes the address several times an hour, while at home there
+is one address for the whole family".
+
+The reasoning is right and the conclusion is not: **a home node is not only
+wifi**. Mobile clients connect to any node. So the threshold describes the
+client, and the client is unknown to us — which means taking the larger value.
+
+A family of five phones produces fifteen to twenty addresses in ten minutes
+through reconnects and handovers. Real resellers caught on those same nodes
+produce **146 and 230**. At a threshold of twenty the margin is tenfold.
+
+### How much the node remembers
+
+The node owner asked how long an active session lives in the panel. There is no
+answer either in the documentation or in the environment variables — and that is
+not an omission by the panel's authors: the connection list is not a history but
+a **live snapshot from Xray**. How long a dropped address lingers there is up to
+Xray.
+
+But it can be measured. The age of the oldest address is now recorded on every
+poll, and `panel show` prints it:
+
+```
+  Oldest address in the list : 14 min
+```
+
+And when it is **shorter than the window**, a warning follows: the window is then
+capped by the node rather than by the setting, and adjusting it is pointless.
+
+### What stayed the same
+
+The 10-minute window and the 300-second poll interval. The window is not
+responsible for how fast an offender is caught but for how many addresses are
+counted; the speed comes from the interval. The scenario "a hundred addresses
+connected within three minutes" is caught in five to six minutes, and that is
+enough: a reseller's buyers stay for hours, not minutes.
+
+### Also
+
+* Tests: 8 new ones. The oldest address's age is recorded and visible in
+  `panel show`, a node with short memory is flagged, the threshold is identical
+  in both presets and no ten remains in them.
+
+---
+
+## 3.53
+
+**Hours of upload became a notice without a penalty. And nodes with paid traffic
+finally limit the upload, not just the download.**
+
+### Why hours of upload do not punish
+
+A question from the node owner: what if someone's phone is running a backup?
+
+We did the arithmetic:
+
+| What | Volume | At 20 Mbit up |
+| --- | --- | --- |
+| Daily automatic backup | 0.1–2 GB | 1–13 minutes |
+| Back from a holiday | 30 GB | 3.3 hours |
+| **First iCloud setup** | **100–200 GB** | **11–22 hours** |
+
+A routine backup comes nowhere near six hours. But someone switching on the
+upload of ten years of photos for the first time pushes for a whole day — and
+**everything** lines up: a proportion above a hundred percent, a data share near
+a hundred, the hours, a volume above thirty gigabytes.
+
+Exactly one thing tells them apart: a backup ends, seeding does not. We do not
+count that.
+
+So the signal arrives as a notice and the decision stays with the owner:
+
+```
+🔔 Long upload · Italy
+
+👤 Chopiks
+🔑 Panel login: user_8520840224 · #6085
+
+📍 Address: 109.161.37.64
+Uploaded for 9.4 h in 24h — the threshold is 6 h
+📈 For the day: ↓ 4.2 GB · ↑ 11.3 GB (269%)
+
+No limit applied. Seeding and a phone's first backup look the same: it is your call.
+```
+
+The signal has no weight at all — it takes no part in the penalty decision.
+
+### Upload on quota nodes
+
+The second question from the same message: the download is capped at 3 GB an hour
+and the address gets blocked — what about the upload?
+
+There was nothing on the upload. The traffic bill covers **both** directions, and
+the budget was leaking the other way.
+
+```bash
+shaperctl guard --upload-gbh 3 --upload-day 25
+```
+
+A mirror of the download thresholds, with the same numbers.
+
+And here the whole headache of today disappears: **on a quota node it does not
+matter whether it is a torrent or a backup** — a gigabyte costs the same,
+whatever it is. Intent matters only where the traffic is free.
+
+### Presets
+
+| | Quota node | Regular |
+| --- | --- | --- |
+| Hourly upload | **3 GB** | — |
+| Daily upload | **25 GB** | 30 GB |
+| Volume notice | — | 10 GB |
+| Hours notice | 6 h | 6 h |
+
+### Also
+
+* A corrupted timestamp in the packet counter no longer produces "over 496620 h":
+  a window longer than a day means garbage, not a long upload, and the line is
+  not printed at all.
+* Tests: 24 new ones. Twenty hours of upload give no penalty, the signal has no
+  weight, the hourly upload threshold exactly on and below the line, an empty
+  window, a corrupted timestamp, both presets.
+
+---
+
+## 3.52
+
+**Hours of upload — a new signal. The daily download threshold became a number.
+And a command tying the bot's report to Shape's data.**
+
+### Hours of upload
+
+Every previous seeding signal measures "how much". This one measures **"how
+long"**, and that is exactly where a torrent differs from work:
+
+| | How long it lasts |
+| --- | --- |
+| Three gigabytes at 50 Mbit | 8 minutes |
+| An archive for a client | 20 minutes |
+| Seeding | 12 hours, 16, around the clock |
+
+```bash
+shaperctl guard --upload-hours 6
+```
+
+What is counted is the number of samples where the upload exceeded 0.3 Mbit/s.
+The lower bound is mandatory: the acknowledgements of an ordinary download come
+to a noticeable fraction of a megabit, and without it "hours of upload" would
+become "hours online".
+
+The signal depends on neither proportion, nor packet size, nor protocol — kernel
+packet merging, QUIC and encryption have no effect on it. Of everything we have
+built, it is the most robust.
+
+Set on regular nodes only. On quota nodes the job is different: there one counts
+the money spent on traffic, not hunts for seeding.
+
+### Daily download threshold: 360 → 150 GB
+
+It was derived from the channel — sixteen hourly thresholds — giving 180 GB at
+fifty megabits and 360 at a hundred. The node owner put it briefly: even a
+hundred is too much.
+
+He is right, and arithmetic had nothing to do with it. Honest use does not reach
+such figures: 4K is 7–16 GB an hour, a Steam game is 120 GB once and over three
+hours. Three hundred and sixty is barely reachable at all.
+
+It is now a number, not a derivative: **150 GB**. One game fits whole, two do
+not. The penalty for volume alone stays soft — a third of the channel — so even
+someone who hits it finishes the download, just slower.
+
+### `panel user 6085`
+
+The reverse of `panel who`: there an address maps to a person, here a person to
+addresses.
+
+It exists for checking the bot's reports. The bot takes its numbers from the
+panel, and the panel **does not store "up" and "down" separately** — everywhere
+in its responses there is only `totalBytes`. So "123 GB in 24h" is the sum of
+both directions, and a download cannot be told from seeding by it.
+
+```
+  Ilya · user_1063858404 (1063858404)
+  Addresses on the node: 2
+
+  109.161.37.64     ↓ 58.2 GB · ↑ 61.4 GB (105%)
+                    96% as data · packet 1310 B · uploaded for 9.0 h
+  87.253.24.130     ↓ 3.1 GB · ↑ 0.1 GB (3%)
+                    0% as data · packet 140 B
+```
+
+### What was decided against
+
+There will be no fleet-wide checks. Hopping between nodes does not let an
+offender escape; it lets him be caught on each node in turn. And cross-node rules
+would break the main property of the auto-limiter: **it works without a panel at
+all**. A node answers for itself.
+
+### Also
+
+* The daily counter gained an `up_sec` field. Old files read as before.
+* Tests: 22 new ones. The hour threshold exactly on and below the line, a missing
+  field, the upload lower bound, `panel user` with a non-numeric id and with an
+  absent user, the up/down split in its output.
+
+---
+
 ## 3.51
 
 **Exceptions by panel tag. And the address in a message links to ipinfo rather
