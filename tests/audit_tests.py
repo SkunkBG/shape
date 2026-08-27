@@ -861,10 +861,111 @@ check("значение чуть выше порога отдачи и выгл�
 check("шаг именно тысяча, а не 1024", S.BYTE_STEP == 1000.0)
 
 # Порог и его отображение должны сходиться: если признак сработал на 300 МБ,
-# в карточке не может стоять 286.
-_floor = S.GUARD_DEFAULT["upload_ratio_min_mb"] * 1e6
-check("отображение порога совпадает с самим порогом",
-      S.fmt_bytes(_floor).startswith("300."), S.fmt_bytes(_floor))
+# в карточке не может стоять 286. Проверка считает число обратно из строки,
+# а не сверяет его с записанным в тесте: иначе тест ломается от смены порога
+# и говорит «не совпало» там, где всё в порядке.
+_UNITS = {"КБ": 1e3, "МБ": 1e6, "ГБ": 1e9, "ТБ": 1e12,
+          "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12, "B": 1, "Б": 1}
+
+
+def _bytes_back(txt):
+    num, _, unit = txt.strip().partition(" ")
+    return float(num) * _UNITS.get(unit.strip(), 0)
+
+
+for _mb in (300, 500, 1000, 3000, S.GUARD_DEFAULT["upload_ratio_min_mb"]):
+    _floor = _mb * 1e6
+    _shown = S.fmt_bytes(_floor)
+    check(f"порог {_mb} МБ показан без потери величины",
+          abs(_bytes_back(_shown) - _floor) <= _floor * 0.01,
+          f"{_shown} -> {_bytes_back(_shown):.0f}, ждали {_floor:.0f}")
+
+print("\n\033[1mПовторный штраф за суточный признак\033[0m")
+# Живой случай: человек снимает ограничение из меню, и через десять секунд оно
+# возвращается. Суточный счётчик не уменьшается никогда, поэтому признак
+# срабатывал заново до самой полуночи. Для часовых окон это уже было решено
+# очисткой окна (hourly.pop) — суточные пропустили.
+RG = dict(S.GUARD_DEFAULT, upload_ratio_percent=50, upload_ratio_min_mb=300)
+RGD = dict(RG, download_gb_per_day=2)      # плюс суточное скачивание
+RGU = dict(RG, upload_day_gb=1)            # плюс суточная отдача
+
+
+def day_of(up_mb=900, down_mb=300, pen=None):
+    d = {"active": 0, "up": up_mb * MB, "down": down_mb * MB, "up_sec": 9 * 3600}
+    if pen is not None:
+        d["pen"] = pen
+    return d
+
+
+def why_of(day, g=RG):
+    return S.evaluate("x", {"dl": 0, "ul": 0.5, "up_pkt": 0}, g, 10, 0, 0,
+                      {"x": day})[1]
+
+
+check("без отметки признак работает как раньше",
+      why_of(day_of()) == ["ratio"])
+check("сразу после штрафа тот же признак молчит",
+      why_of(day_of(pen={"ratio": 900 * MB})) == [])
+check("вырос на десятую — всё ещё молчит",
+      why_of(day_of(up_mb=990, pen={"ratio": 900 * MB})) == [])
+check("вырос на четверть — штраф возвращается",
+      why_of(day_of(up_mb=1125, pen={"ratio": 900 * MB})) == ["ratio"])
+check("отметка одного признака не глушит другой",
+      why_of(day_of(up_mb=1200, down_mb=2500,
+                    pen={"ratio": 1200 * MB}), RGD) == ["download"])
+check("суточный объём отдачи тоже не повторяется",
+      why_of(day_of(up_mb=1200, down_mb=100,
+                    pen={"ratio": 1200 * MB,
+                         "upload_day": 1200 * MB}), RGU) == [])
+check("а без отметки — срабатывает",
+      why_of(day_of(up_mb=1200, down_mb=100), RGU) == ["upload_day"])
+check("мусор в отметке не роняет проверку",
+      why_of(day_of(pen={"ratio": "нет"})) == ["ratio"])
+check("отметка не того типа не роняет",
+      why_of(day_of(pen="сломано")) == ["ratio"])
+
+check("часовые признаки отметкой не управляются",
+      S.daily_retrigger_ok({"pen": {"hourly": 1}}, "hourly") is True)
+check("рост считается от четверти", S.RETRIGGER_GROWTH == 1.25)
+check("суточных признаков ровно три",
+      set(S.DAILY_SIGNALS) == {"ratio", "upload_day", "download"})
+check("каждый смотрит в свой счётчик",
+      S.DAILY_SIGNALS["download"] == "down"
+      and S.DAILY_SIGNALS["upload_day"] == "up")
+
+_d = day_of()
+S.daily_mark(_d, ["ratio"])
+check("отметка запоминает счётчик на момент штрафа",
+      _d["pen"]["ratio"] == 900 * MB, _d.get("pen"))
+check("и не трогает признаки, которые не сработали",
+      "download" not in _d["pen"], _d.get("pen"))
+S.daily_mark(_d, S.DAILY_SIGNALS)
+check("амнистия отмечает все суточные признаки сразу",
+      set(_d["pen"]) == set(S.DAILY_SIGNALS), _d.get("pen"))
+S.daily_mark(None, ["ratio"])
+check("отсутствие записи не роняет отметку", True)
+
+print("\n\033[1mЧасы отдачи в карточке\033[0m")
+# Признак, который отделяет раздачу от выгрузки, в карточку не попадал: были
+# проценты и байты, а времени не было. По такой карточке нельзя понять, почему
+# человек под ограничением, а сосед с теми же процентами нет.
+def card(up_sec, window_h=16.4):
+    day = {"up": 306_900_000, "down": 519_000_000, "up_sec": up_sec,
+           "upkt": [306_900_000, 341_000, 1853, 279_279_000,
+                    time.time() - window_h * 3600]}
+    return S.penalty_packets(day)[0]
+
+
+check("часы попали в карточку", "9.4" in card(9.4 * 3600), card(9.4 * 3600))
+check("минуты тоже видны", "0.4" in card(0.4 * 3600), card(0.4 * 3600))
+check("нулевые часы не печатаются лишней строкой",
+      S.t("tg_pen_hrs", h="0") not in card(0), card(0))
+check("испорченный счётчик не печатается",
+      S.t("tg_pen_hrs", h="9999") not in card(99 * 3600))
+check("часы стоят после доли и пакетов",
+      card(9.4 * 3600).index("9.4") > card(9.4 * 3600).index("1853"))
+check("подпись часов не повторяет слово «данными»",
+      card(9.4 * 3600).count("данными") == 1, card(9.4 * 3600))
 
 print("\n\033[1mУведомление об обновлении\033[0m")
 check("номер версии разбирается", S.version_tuple("3.48") == (3, 48))

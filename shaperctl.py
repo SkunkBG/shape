@@ -197,6 +197,7 @@ MSG = {
         "tg_upd": "Обновления",
         "tg_pen_stat": "📈 За сутки: {s}",
         "tg_pen_pkts": "📦 Отдача за {d}: {s}",
+        "tg_pen_hrs": "длилась {h} ч",
         "tg_pen_bulk": "данными {p}%",
         "tg_pen_pkt": "пакет {n} Б",
         "tg_pen_pkt_max": "макс {n}",
@@ -623,6 +624,7 @@ MSG = {
         "tg_upd": "Updates",
         "tg_pen_stat": "📈 For the day: {s}",
         "tg_pen_pkts": "📦 Upload over {d}: {s}",
+        "tg_pen_hrs": "lasted {h} h",
         "tg_pen_bulk": "{p}% as data",
         "tg_pen_pkt": "packet {n} B",
         "tg_pen_pkt_max": "max {n}",
@@ -1289,7 +1291,17 @@ GUARD_DEFAULT = {
     #
     # 0 = признак выключен.
     "upload_ratio_percent": 0,
-    "upload_ratio_min_mb": 300,
+    # Три гигабайта, а не триста мегабайт.
+    #
+    # Триста ставились как «лишь бы отсечь мелочь», и это оказалось слишком
+    # низко: за один вечер под ограничение попали трое с 306, 302 и 336 МБ
+    # отдачи. Все трое перешагнули порог и сразу попались — то есть ловил не
+    # признак, а сам порог. Триста мегабайт не стоят ни канала, ни трафика,
+    # ни разбирательства с человеком.
+    #
+    # Цена решения названа прямо: тихий сидер, отдающий меньше трёх гигабайт
+    # в сутки, теперь не ловится. Он и не мешает.
+    "upload_ratio_min_mb": 3000,
 
     # Сколько часов за сутки адрес должен был отдавать данные, чтобы
     # непропорциональная отдача считалась поводом для штрафа.
@@ -1336,6 +1348,21 @@ GUARD_DEFAULT = {
 IPINFO_URL = "https://ipinfo.io/{ip}"
 
 RATIO_LIVE_MBPS = 0.05
+
+# Суточные признаки и счётчик, по которому они считаются.
+#
+# Часовые окна после штрафа чистятся (hourly.pop), и человек получает
+# передышку. У суточных такого не было: счётчик за сутки не уменьшается
+# никогда, поэтому штраф истекал — и через десять секунд выдавался снова, до
+# самой полуночи. Снятие штрафа руками не помогало по той же причине.
+DAILY_SIGNALS = {"ratio": "up", "upload_day": "up", "download": "down"}
+
+# Насколько должен вырасти суточный счётчик, чтобы наказать повторно.
+#
+# Ноль означал бы «штрафовать вечно», бесконечность — «один раз в сутки и
+# гуляй». Четверть выбрана так, чтобы продолжающий раздачу возвращался через
+# час-полтора, а переставший не возвращался вовсе.
+RETRIGGER_GROWTH = 1.25
 
 # Границы правдоподобия для среднего размера пакета. Ниже сорока байт не
 # бывает даже голое подтверждение (20 IP + 20 TCP), выше джамбо-кадра не
@@ -2595,6 +2622,33 @@ def cmd_limited(a):
           f"{t('lim_speed')} {speed_txt} Mbit/s{C['r']}\n")
 
 
+def release_daily_amnesty(ips):
+    """
+    Снятие штрафа руками освобождает от суточных признаков до полуночи.
+
+    Без этого очистка списка не значила ничего: суточный счётчик остаётся на
+    месте, и следующий проход сторожа — через десять секунд — ставит штраф
+    заново. Человек, снявший ограничение, видел, что оно вернулось само, и
+    решал, что программа сломана. Она работала как написана; написана была
+    неверно.
+
+    Освобождение не вечное: счётчик, выросший ещё на четверть, штраф вернёт.
+    """
+    ips = [ip for ip in ips if ip]
+    if not ips:
+        return
+    daily = load_daily()
+    touched = False
+    for ip in ips:
+        day = daily.get(ip)
+        if day is None:
+            continue
+        daily_mark(day, DAILY_SIGNALS)
+        touched = True
+    if touched:
+        save_daily(daily)
+
+
 def cmd_release(a):
     if a.all:
         def drop_all(pens):
@@ -2605,12 +2659,15 @@ def cmd_release(a):
             pens.clear()
             return n
         n = penalties_update(drop_all)
+        release_daily_amnesty(list(load_daily()))
         print(f"{C['grn']}✓ {t('rel_all', n=n)}{C['r']}")
         return
     uid = str(getattr(a, "user", "") or "").strip().lstrip("#")
     if uid:
         if not uid.isdigit():
             die(t("rel_bad_user"))
+
+        freed = []
 
         def drop_user(pens):
             hit = [ip for ip, e in pens.items()
@@ -2621,8 +2678,10 @@ def cmd_release(a):
                 penalty_clear(ip)
                 pens.pop(ip, None)
                 log_event("limit_released", ip=ip, source="cli", user_id=uid)
+                freed.append(ip)
             return len(hit)
         n = penalties_update(drop_user)
+        release_daily_amnesty(freed)
         col = C["grn"] if n else C["yel"]
         print(f"{col}{'✓' if n else '·'} {t('rel_user', n=n, id=uid)}{C['r']}")
         return
@@ -2638,6 +2697,7 @@ def cmd_release(a):
         pens.pop(ip, None)
         pens.pop(a.ip, None)
     penalties_update(drop_one)
+    release_daily_amnesty([ip])
     log_event("limit_released", ip=ip, source="cli")
     print(f"{C['grn']}✓ {t('rel_one', ip=ip)}{C['r']}")
 
@@ -2814,6 +2874,37 @@ def hourly_add(hourly, ip, nbytes, now):
         del d[old]
 
 
+def daily_retrigger_ok(day, reason):
+    """Можно ли наказать повторно за суточный признак."""
+    field = DAILY_SIGNALS.get(reason)
+    if not field:
+        return True
+    marks = (day or {}).get("pen")
+    if not isinstance(marks, dict):
+        return True
+    was = marks.get(reason)
+    if was is None:
+        return True
+    try:
+        was = float(was)
+    except (TypeError, ValueError):
+        return True
+    return (day or {}).get(field, 0) >= was * RETRIGGER_GROWTH
+
+
+def daily_mark(day, reasons):
+    """Запомнить суточные счётчики на момент штрафа."""
+    if day is None:
+        return
+    marks = day.get("pen")
+    if not isinstance(marks, dict):
+        marks = day["pen"] = {}
+    for r in reasons:
+        field = DAILY_SIGNALS.get(r)
+        if field:
+            marks[r] = day.get(field, 0)
+
+
 def up_hours_tick(s, g):
     """
     Считать ли этот замер за «отдавал» — три условия, каждое на свой класс.
@@ -2893,7 +2984,8 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None,
     # торрент с выключенной раздачей выглядит как обычная тяжёлая закачка,
     # и единственное, что его выдаёт, это объём.
     gb = g.get("download_gb_per_day", 0)
-    if gb and day.get("down", 0) >= gb * 1e9:
+    if gb and day.get("down", 0) >= gb * 1e9 \
+            and daily_retrigger_ok(day, "download"):
         return max(g["score_needed"], SIGNAL_WEIGHTS["download"]), ["download"]
 
     # Отдача за скользящий час. Зеркало часового порога на скачивание.
@@ -2921,7 +3013,8 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None,
     # Отдельный путь: за сутки отдано столько-то гигабайт. Без условий про
     # пропорцию, размер пакета и текущую активность — важен только объём.
     up_gb = g.get("upload_day_gb", 0)
-    if up_gb and day.get("up", 0) >= up_gb * 1e9:
+    if up_gb and day.get("up", 0) >= up_gb * 1e9 \
+            and daily_retrigger_ok(day, "upload_day"):
         return (max(g["score_needed"], SIGNAL_WEIGHTS["upload_day"]),
                 ["upload_day"])
 
@@ -2939,6 +3032,7 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None,
     floor_bytes = float(g.get("upload_ratio_min_mb", 300)) * 1e6
     min_hours = float(g.get("upload_ratio_min_hours", 0) or 0)
     if ratio and day.get("up", 0) >= floor_bytes \
+            and daily_retrigger_ok(day, "ratio") \
             and s["ul"] >= RATIO_LIVE_MBPS \
             and day.get("up_sec", 0) >= min_hours * 3600 \
             and (not g.get("ratio_needs_packet")
@@ -3390,6 +3484,11 @@ def cmd_watch(a):
                     # в скользящем часе тут же уронили бы человека повторно.
                     hourly.pop(ip, None)
                     hourly_up.pop(ip, None)
+                    # Суточные счётчики очистить нельзя — они и есть признак.
+                    # Вместо этого запоминаем, на чём человека поймали: пока
+                    # счётчик не вырастет, второй раз за то же не наказываем.
+                    daily_mark(d, reasons)
+                    save_daily(daily)
                     print(t("watch_hit", ip=ip, mbps=mbps,
                             m=g["penalty_min"]) +
                           f" [{score}: {','.join(reasons)}]", flush=True)
@@ -3796,6 +3895,12 @@ def penalty_packets(day, now=None):
     # заблуждение, и оба раза ввёл.
     if MIN_PACKET_BYTES <= top <= MAX_PACKET_BYTES:
         parts.append(t("tg_pen_pkt_max", n=int(top)))
+    # Часы отдачи данными — тот самый признак, которым отделяют раздачу от
+    # выгрузки. Его не было в карточке, и по ней нельзя было понять, почему
+    # человек попал под ограничение, а сосед с теми же процентами нет.
+    up_sec = (day or {}).get("up_sec", 0)
+    if isinstance(up_sec, (int, float)) and 0 < up_sec <= 25 * 3600:
+        parts.append(t("tg_pen_hrs", h=f"{up_sec / 3600:.1f}"))
     return " · ".join(parts), max(0.0, now - since)
 
 

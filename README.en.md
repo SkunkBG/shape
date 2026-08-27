@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.65-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.67-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.65
+# Shape v3.67
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -432,10 +432,10 @@ two-gigabyte threshold. Yet it uploaded 2.4 times what it downloaded — and
 nothing but seeding behaves that way.
 
 ```bash
-shaperctl guard --upload-ratio 50 --upload-ratio-mb 300 --upload-ratio-hours 2
+shaperctl guard --upload-ratio 50 --upload-ratio-mb 3000 --upload-ratio-hours 2
 ```
 
-Uploaded more than half of what was downloaded in a day, with at least 300 MB of
+Uploaded more than half of what was downloaded in a day, with at least 3 GB of
 upload, and sent data for at least two hours — penalty. The path is independent:
 the two-way condition is not checked, otherwise a quiet seeder would never reach
 it.
@@ -483,6 +483,19 @@ an address nobody was behind — the panel does not know such an address, there 
 no point to it, and if the address has been reassigned an innocent person
 suffers. The liveness floor is low, 0.05 Mbit/s: a real seeder uploads
 continuously, one that left uploads nothing.
+
+**No second penalty for the same thing.** A daily counter never goes down, so a
+penalty that expired after an hour used to be handed out again ten seconds later
+— and so on until midnight. Lifting a limit by hand did not help, for the same
+reason.
+
+Now the counter the person was caught on is recorded at penalty time. A second
+penalty for the same signal happens only if the counter **grows by another
+quarter**. Someone who keeps seeding returns in an hour or two; someone who
+stopped does not return at all. `shaperctl release` works the same way: until
+midnight, or until a quarter more volume. The rule covers the three daily
+signals — the ratio, daily upload and daily download; hourly windows are cleared
+separately.
 
 **Why the ratio and not gigabytes.** For an ordinary client, upload is TCP
 acknowledgements, and their share is set by packet size rather than by human

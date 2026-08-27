@@ -398,7 +398,7 @@ guard_preset() {
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb 25 --download-gbh 3 \
-                   --upload-ratio 35 --upload-ratio-mb 300 --upload-ratio-hours 2 \
+                   --upload-ratio 35 --upload-ratio-mb 3000 --upload-ratio-hours 2 \
                    --volume-needs-upload off --volume-mbps 0 \
                    --ratio-needs-packet on \
                    --upload-gbh 3 --upload-day 25 \
@@ -454,7 +454,7 @@ guard_preset() {
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb "$gbd" --download-gbh "$gbh" \
-                   --upload-ratio 50 --upload-ratio-mb 300 --upload-ratio-hours 2 \
+                   --upload-ratio 50 --upload-ratio-mb 3000 --upload-ratio-hours 2 \
                    --volume-needs-upload on --volume-mbps "$soft" \
                    --ratio-needs-packet on \
                    --upload-gbh 0 --upload-day 30 \
@@ -1863,31 +1863,49 @@ screen_backup() {
 # Действие необратимое и мгновенно снимает ограничение со всех клиентов,
 # поэтому здесь три преграды: показ последствий, предложение сделать копию
 # и ввод слова целиком. Обычного «y/N» для такого мало — его жмут не глядя.
+# Тело экрана удаления вынесено отдельной функцией по одной причине: его надо
+# проверять запуском. Пункт [2] — переключатель, и ошибка в нём не видна ни
+# синтаксисом, ни грепом: «Удалить заодно настройки и историю» без состояния
+# читается как команда, человек нажимает, экран перерисовывается — и пункт
+# выглядит сломанным. Тест вызывает эту функцию с обоими значениями.
+uninstall_menu() {
+    local purge="${1:-0}"
+    echo -e "  ${R}${T[un_h1]}${N}"
+    echo -e "  ${R}${T[un_h2]}${N}"
+    echo -e "  ${R}${T[un_h3]}${N}"
+    echo
+    echo -e "  ${B}${T[un_what]}:${N}"
+    echo -e "    ${D}· ${T[un_w1]}${N}"
+    echo -e "    ${D}· ${T[un_w2]}${N}"
+    echo -e "    ${D}· ${T[un_w3]}${N}"
+    echo -e "    ${D}· ${T[un_w4]}${N}"
+    echo
+    if (( purge )); then
+        echo -e "  ${T[un_keep]}: ${R}${T[un_keep_no]}${N}"
+    else
+        echo -e "  ${T[un_keep]}: ${G}${T[un_keep_yes]}${N}"
+    fi
+    hr
+    echo "  [1] ${T[un_backup]}"
+    if (( purge )); then
+        echo -e "  [2] ${T[un_toggle]}: ${R}${T[un_also_yes]}${N}" \
+                "${D}${T[tg_press]}${N}"
+        echo -e "  [3] ${R}${T[un_go_purge]}${N}"
+    else
+        echo -e "  [2] ${T[un_toggle]}: ${G}${T[un_also_no]}${N}" \
+                "${D}${T[tg_press]}${N}"
+        echo -e "  [3] ${R}${T[un_go]}${N}"
+    fi
+    echo "  [0] ← ${T[m0]}"
+    echo
+}
+
+
 screen_uninstall() {
     local purge=0 ans f
     while :; do
         title "${T[un_title]}"
-        echo -e "  ${R}${T[un_h1]}${N}"
-        echo -e "  ${R}${T[un_h2]}${N}"
-        echo -e "  ${R}${T[un_h3]}${N}"
-        echo
-        echo -e "  ${B}${T[un_what]}:${N}"
-        echo -e "    ${D}· ${T[un_w1]}${N}"
-        echo -e "    ${D}· ${T[un_w2]}${N}"
-        echo -e "    ${D}· ${T[un_w3]}${N}"
-        echo -e "    ${D}· ${T[un_w4]}${N}"
-        echo
-        if (( purge )); then
-            echo -e "  ${T[un_keep]}: ${R}${T[un_keep_no]}${N}"
-        else
-            echo -e "  ${T[un_keep]}: ${G}${T[un_keep_yes]}${N}"
-        fi
-        hr
-        echo "  [1] ${T[un_backup]}"
-        echo "  [2] ${T[un_toggle]}"
-        echo -e "  [3] ${R}${T[un_go]}${N}"
-        echo "  [0] ← ${T[m0]}"
-        echo
+        uninstall_menu "$purge"
         case "$(ask "${T[choice]}")" in
             1) f="/root/shape-$(hostname -s 2>/dev/null || echo node)-$(date +%Y%m%d).json"
                f="$(ask "${T[bk_where]}" "$f")"

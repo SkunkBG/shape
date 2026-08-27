@@ -13,6 +13,141 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.67
+
+**A lifted limit no longer comes back on its own. The upload floor is raised
+to 3 GB. The card now shows hours.**
+
+### The main thing: clearing the list now means something
+
+The live case behind all of this: the node owner lifts a limit, and ten seconds
+later the person is blocked again. And so on until midnight.
+
+The cause is in the code, not in the person. A daily counter **never goes
+down**. The penalty is lifted, the day's figures stay the same, the watchdog
+runs every ten seconds, and the signal fires again.
+
+```
+cleared the list        → blocked again 10 seconds later
+penalty expired after 1h → blocked again 10 seconds later
+```
+
+For hourly windows this was solved long ago — the window is cleared after a
+penalty. The daily signals were missed, and three of them ran in an endless
+loop: disproportionate upload, daily upload, daily download.
+
+Now the counter the person was caught on is recorded at penalty time. A repeat
+penalty for the same signal happens only if the **counter grows by another
+quarter**. Someone who keeps seeding comes back in an hour or two; someone who
+stopped does not come back at all. Lifting a limit by hand works the same way:
+until midnight, or until a quarter more volume.
+
+### Upload floor: 300 MB → 3 GB
+
+In a single evening three people were limited: 306.9, 302.6 and 335.6 MB of
+upload. All three crossed the 300 MB floor and were caught at once — meaning it
+was the floor doing the catching, not the signal.
+
+Three hundred megabytes are worth neither the link, nor the traffic, nor a
+conversation with the customer.
+
+**The cost is stated plainly:** a quiet seeder pushing less than three gigabytes
+a day is no longer caught. None of the past confirmed catches — 1.0 GB, 590 MB,
+520 MB — clear the new floor either. This is a deliberate trade: fewer false
+positives at the price of the smallest true ones.
+
+### Hours in the card
+
+```
+📦 Upload over 16.4 h: data 91% · packet 898 B · max 1853 · lasted 9.4 h
+```
+
+The signal that separates seeding from an upload never made it into the card:
+there were percentages and bytes, but no time. From such a card there was no way
+to tell why one person is limited and a neighbour with the same percentages is
+not.
+
+`over 16.4 h` is the age of the packet counter. `lasted 9.4 h` is how much of it
+the address actually spent sending data.
+
+### Other
+
+* The threshold-rendering test was rewritten: it converts the number back from
+  the string instead of comparing against a value written into the test. The old
+  one broke whenever the threshold changed and reported a mismatch where there
+  was none.
+* Tests: 27 new. Repeat penalty before and after counter growth, one signal's
+  mark not silencing another, garbage in the mark, the amnesty on a manual
+  release, hours in the card at nine hours and at twenty minutes, a corrupted
+  counter, field order, and no repetition of the word "data".
+
+---
+
+## 3.66
+
+**The "Also delete settings and history" item now shows its state.**
+
+### What was wrong
+
+```
+  Settings, tokens, node identifier and history: will be kept
+  ────────────────────────────────────────────────────────────
+  [1] Save a backup first (recommended)
+  [2] Also delete settings and history
+  [3] Remove Shape
+```
+
+Item `[2]` is a toggle, but it is phrased in the imperative, exactly like `[3]`.
+A person presses it expecting an action; the screen redraws, one line above it
+changes — and the item looks broken.
+
+The mechanism worked all along: `--purge` reached `uninstall.sh` and the
+settings were removed. Only the label was broken.
+
+### How it looks now
+
+```
+  [2] Also delete settings and history: no — press to toggle
+  [3] Remove Shape
+```
+
+```
+  [2] Also delete settings and history: YES — press to toggle
+  [3] Remove Shape together with the settings
+```
+
+The state sits inside the item itself — the same device as `[15]` on the guard
+screen. Line `[3]` changes along with it, so before typing the word `DELETE`
+you can see what is about to happen.
+
+### Checked by running it, not by grepping
+
+The body of the screen is extracted into its own `uninstall_menu` function, and
+the test **calls it** with both toggle values in both languages. Grepping is
+useless for this: the string was there all along, and a search of the source
+found it.
+
+This is the second screen in a row to break in a way a source search cannot see.
+The first was in 3.59: items `[18]` and `[19]` were shown on one screen while
+their handlers sat in another.
+
+### Also: interface strings are checked in pairs
+
+`tests/lang_parity.py` compares the keys of the Russian and English blocks of
+`lang.sh`. A key added to one block and forgotten in the other breaks nothing
+visibly: bash substitutes an empty string, a hole appears on screen — and only
+in one language, so it can only be noticed by accident. There are 521 keys now,
+with no divergence.
+
+### Other
+
+* Tests: 21 new. Rendering of both states in both languages, `[2]` and `[3]`
+  differing, all items present, no item trailing off after a colon, the default
+  value, `--purge` passed only when the toggle is on, and the language key
+  comparison.
+
+---
+
 ## 3.65
 
 **A disproportionate upload only penalises together with duration.**
