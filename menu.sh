@@ -402,7 +402,7 @@ guard_preset() {
                    --volume-needs-upload off --volume-mbps 0 \
                    --ratio-needs-packet on \
                    --upload-gbh 3 --upload-day 25 \
-                   --upload-warn 0 --upload-hours 6 \
+                   --upload-warn 0 --upload-hours 6 --upload-hours-mbps 0.05 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 20 --window 10 \
                    --limit-min 60 --action-set block >/dev/null 2>&1 || true
@@ -458,7 +458,7 @@ guard_preset() {
                    --volume-needs-upload on --volume-mbps "$soft" \
                    --ratio-needs-packet on \
                    --upload-gbh 0 --upload-day 30 \
-                   --upload-warn 10 --upload-hours 6 \
+                   --upload-warn 10 --upload-hours 6 --upload-hours-mbps 0.05 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                # Двадцать, а не десять: домашняя нода это не только вайфай,
                # с мобильного заходят на любую. У оператора адрес меняется

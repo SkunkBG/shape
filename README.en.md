@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.63-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.64-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.63
+# Shape v3.64
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -329,14 +329,27 @@ shaperctl guard --upload-hours 6
 - An archive for a client, twenty.
 - Seeding runs for twelve hours, sixteen, around the clock.
 
-What is counted is the number of samples where the upload exceeded 0.3 Mbit/s.
-The lower bound is mandatory: the acknowledgements of an ordinary download come
-to a noticeable fraction of a megabit, and without it "hours of upload" would
-become "hours online".
+A sample counts when three conditions hold. Each one filters its own class.
 
-The signal depends on neither proportion, nor packet size, nor protocol. That
-makes it the most robust of the lot: kernel packet merging, QUIC and encryption
-have no effect on it.
+| Condition | What it filters |
+| --- | --- |
+| upload above 0.05 Mbit/s | noise |
+| upload at least 20% of the download | acknowledgements of an ordinary download |
+| upstream packet from 1000 B (`--ratio-needs-packet on`) | conversations and video calls |
+
+Acknowledgements are filtered by share, not by rate, and that matters. Their
+volume is set by download speed, not by the person: at 10 Mbit down they come to
+0.33 Mbit up, at a gigabit to more than three. Any rate floor high enough for a
+fast link eats the quiet seeder along with them. Their share of the download is
+structurally 3-5% at any speed, and a 20% threshold leaves a fourfold margin.
+
+No download in the sample at all — the second condition passes at once: that is
+what pure seeding looks like.
+
+The third condition is optional. On QUIC nodes (Hysteria2) packets are small for
+everyone and `ratio_needs_packet` is turned off there — the hours signal then
+loses its protection against conversations, but stays independent of the
+protocol: the share works the same on QUIC as on TCP.
 
 **There is no penalty for this and there will not be one.** A phone's first
 backup is indistinguishable from seeding by every signal we have: someone who has

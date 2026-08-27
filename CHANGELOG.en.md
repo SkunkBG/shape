@@ -13,6 +13,104 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.64
+
+**The "hours of upload" signal never worked. Now it does.**
+
+### What happened
+
+The ratio rule fired on someone with borderline numbers: 1.8 GB down, 1.2 GB up,
+ratio 66%, data share 67%. Both figures are above their thresholds, but both sit
+in the middle rather than at the edge — they cannot tell seeding from a backup.
+
+Duration was supposed to tell them apart: an upload ends, seeding does not. So
+we asked:
+
+```
+shaperctl panel user 1377
+  78.155.183.248    ↓ 1.8 GB · ↑ 1.2 GB (66%)
+                    data 67% · packet 801 B · max 2357 · sent data for 0.0 h
+```
+
+**Zero hours against 1.2 gigabytes of upload.** The signal built precisely for a
+quiet seeder could not see a quiet seeder.
+
+### Why
+
+Seconds were counted on a single condition: upload in the sample above
+`upload_hours_mbps`, 0.3 Mbit/s by default. This address pushed 1.2 GB in an
+even trickle across 12.7 hours — 0.21 Mbit/s. Not one ten-second sample reached
+the floor.
+
+The floor was there to filter out acknowledgements of an ordinary download —
+otherwise "hours of upload" would become "hours online". But **a rate floor
+cannot filter them out at all**. The volume of acknowledgements is set by
+download speed, not by the person:
+
+| Downloading at | Acknowledgements up |
+| --- | --- |
+| 1 Mbit/s | ~0.03 Mbit/s |
+| 10 Mbit/s | ~0.33 Mbit/s |
+| 100 Mbit/s | ~3.3 Mbit/s |
+
+At ten megabits the 0.3 floor already let acknowledgements through, while still
+eating the quiet seeder. It did nothing but harm.
+
+### How it works now
+
+Three conditions, each aimed at its own class.
+
+**Rate** filters noise only: the floor drops from 0.3 to **0.05 Mbit/s**.
+
+**Share of the download** filters acknowledgements. Theirs is structurally 3-5%
+and does not depend on link speed at all; a sample counts when upload is **at
+least 20% of the download**. A fourfold margin. No download in the sample — the
+condition passes at once: that is what pure seeding looks like.
+
+**Packet size** filters conversations. A video call sends as much up as down and
+is indistinguishable by share; what separates it is a 267-byte packet against
+1300 for a torrent chunk. The condition reuses the existing `ratio_needs_packet`
+setting.
+
+| Who | Up | Down | Packet | Counted |
+| --- | --- | --- | --- | --- |
+| Quiet seeder | 0.21 | 0.31 | 1300 | yes |
+| Download at 10 Mbit | 0.33 | 10 | 100 | no — share |
+| Same, GRO-coalesced | 0.33 | 10 | 1400 | no — share |
+| Download at a gigabit | 30 | 900 | 1400 | no — share |
+| Video call | 1.0 | 1.0 | 267 | no — packet |
+| Seeding, no download | 0.5 | 0 | 1300 | yes |
+
+### What it cost
+
+On QUIC nodes (Hysteria2) packets are small for everyone and
+`ratio_needs_packet` is turned off there. The hours signal then loses its
+protection against conversations: someone on a video call all day will show up
+in a notice. Protocol independence is kept — the download share works the same
+on QUIC as on TCP.
+
+The signal used to be documented as independent of the protocol entirely. That
+is no longer true, and the code now says so plainly.
+
+### Upgrading
+
+The old 0.3 default is replaced with 0.05 on the first config read. That exact
+value counts as "not configured": nobody picked it by hand, it was the default
+from 3.52 through 3.63. **Any other number is left alone** — that is the node
+owner's choice.
+
+The presets set the floor explicitly, so applying a preset fixes it too.
+
+### Other
+
+* Wording: "uploaded for N h" → "sent data for N h", in the card and in
+  `panel user`. The hours now count data upload, not presence.
+* Tests: 21 new. The live 0.21 Mbit case, acknowledgements at three speeds, GRO
+  coalescing, a video call with and without the packet check, a QUIC seeder,
+  both boundaries, an empty sample, migration for three values, the presets.
+
+---
+
 ## 3.63
 
 **The address threshold is derived from the plan: as many devices sold, as many
