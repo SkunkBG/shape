@@ -498,6 +498,54 @@ check("работает при нулевом двустороннем счёт�
 check("у причины есть человекочитаемое название",
       S.t("why_ratio") != "why_ratio")
 
+print("\n\033[1mРаспределение доли данных\033[0m")
+# Порог отношения в 35% попал в цель потому, что мы смотрели распределение по
+# шести тысячам адресов и увидели, где пусто. Порог доли в 70% поставлен по
+# трём точкам из уведомлений — это гадание, и крутить его надо по тем же
+# данным, а не по случайным карточкам.
+BT = 3_000_000.0
+
+
+def bday(up_mb, share, down_mb=1000, pkt=700):
+    up = up_mb * 1e6
+    return {"down": down_mb * 1e6, "up": up,
+            "upkt": [up, up / pkt, 1400, up * share / 100.0, BT]}
+
+
+sample = {"a": bday(500, 1), "b": bday(500, 32), "c": bday(500, 78),
+          "d": bday(500, 100), "e": bday(5, 100)}
+rows, counts = S.bulk_report(sample, 100 * 1e6)
+check("мелочь ниже пола не считается", len(rows) == 4, rows)
+check("сортировка по доле, крупнейшая сверху",
+      [round(r[3]) for r in rows] == [100, 78, 32, 1], rows)
+check("корзины разложены", sum(counts) == 4, counts)
+check("звонок попал в третью корзину", counts[3] == 1, counts)
+check("раздача — в последнюю", counts[-1] == 1, counts)
+
+check("испорченное поле не ломает отчёт",
+      len(S.bulk_report({"x": {"up": 1e9, "upkt": "мусор"}}, 0)[0]) == 0)
+check("поля нет — адрес не в отчёте",
+      len(S.bulk_report({"x": {"up": 1e9}}, 0)[0]) == 0)
+check("пустой день не роняет", S.bulk_report({}, 0) == ([], [0] * 10)
+      or S.bulk_report(None, 0)[0] == [])
+check("корзин столько же, сколько границ, плюс хвост",
+      len(counts) == len(S.BULK_BUCKETS) + 1)
+
+# Отчёт печатается целиком, включая случай «считать не из чего».
+import io as _io
+from contextlib import redirect_stdout
+_buf = _io.StringIO()
+with redirect_stdout(_buf):
+    S.print_bulk_report({"guard": {"ratio_needs_packet": True}}, sample, 100)
+_out = _buf.getvalue()
+check("в отчёте виден текущий порог", str(S.RATIO_BULK_PERCENT) in _out, _out[:200])
+check("и число адресов", "4" in _out)
+_buf = _io.StringIO()
+with redirect_stdout(_buf):
+    S.print_bulk_report({"guard": {}}, {}, 100)
+check("пустой день печатает объяснение, а не пустоту",
+      S.t("bulk_none") in _buf.getvalue(), _buf.getvalue())
+
 print("\n\033[1mОтношение отдачи против видеосвязи\033[0m")
 # Живой случай, три адреса за один вечер. Непропорциональная отдача бывает не
 # только у раздачи: разговор симметричен по определению, обе стороны говорят

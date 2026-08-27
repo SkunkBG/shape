@@ -13,6 +13,73 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.44
+
+**`status --bulk` — the distribution of the data share in uploads. So the
+threshold is set from data rather than from three Telegram cards.**
+
+### Why
+
+The 35% ratio threshold hit the mark because we looked at the distribution across
+6143 addresses and saw where it was empty: honest clients at 2–25%, seeders at
+45–242%, nothing in between.
+
+The 70% share threshold was set from three points in notifications. That is
+guesswork, and it already sits suspiciously close to a live address at 78%.
+
+```bash
+shaperctl status --bulk
+```
+
+```
+  Distribution of the data share in uploads
+  addresses: 339 · upload from 100 MB · for the current day
+      0-10  ████████████████████████ 122
+     10-20  ████████ 43
+     20-30  ███████ 38
+     30-40  ███████ 35
+     40-50  · 0
+     50-60  · 0
+     60-70  · 0
+     70-80  ██████ 30
+     80-90  · 0
+       90+  ██████████████ 71
+
+  top of the list          down        up  as data    avg    max
+  ...
+```
+
+The emptiness between 40 and 70 is where the threshold goes. What falls under the
+current one is highlighted in red.
+
+Menu: **Statistics → 📦 Data share in uploads**.
+
+### Where the numbers come from
+
+From the daily counters in `/etc/shaper/daily.json`, not from the kernel map: the
+split of bytes into large and small lives only there. So the picture covers the
+current day, from midnight.
+
+A lower bound on upload volume (100 MB by default, changed with `--ratio-mb`)
+cuts out the noise: for an address with two megabytes of upload the share means
+nothing.
+
+### On privacy
+
+The distribution itself does not use addresses — it is just a histogram. Addresses
+appear only in the top-of-list section, which is there to look up a particular
+offender on your own node.
+
+If the picture needs discussing with someone, the ten histogram rows are enough:
+there is nothing in them that relates to a person.
+
+### Also
+
+* Tests: 12 new ones. Sorting, bucketing, the volume floor, a corrupted field, an
+  empty day printing an explanation instead of blankness.
+
+---
+
 ## 3.43
 
 **The watchdog's memory moved to disk. Both maps I had left in memory were being

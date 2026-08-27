@@ -1043,16 +1043,18 @@ screen_stats() {
         echo "  [1] ${T[stats_top]}"
         echo "  [2] ${T[stats_full]}"
         echo "  [3] 🔍 ${T[stats_ratio]}"
-        echo "  [4] 📅 ${T[hist_title]}"
-        echo "  [5] 🎯 ${T[pers_title]}"
+        echo "  [4] 📦 ${T[stats_bulk]}"
+        echo "  [5] 📅 ${T[hist_title]}"
+        echo "  [6] 🎯 ${T[pers_title]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
             1) title "${T[stats_title]}"; "$CTL" status; pause ;;
             2) title "${T[stats_title]}"; "$CTL" status --full; pause ;;
             3) title "${T[stats_ratio]}"; "$CTL" status --ratio; pause ;;
-            4) screen_history ;;
-            5) screen_personal ;;
+            4) title "${T[stats_bulk]}"; "$CTL" status --bulk; pause ;;
+            5) screen_history ;;
+            6) screen_personal ;;
             0|"") return ;;
         esac
     done

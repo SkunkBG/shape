@@ -171,6 +171,15 @@ check "и читается при старте" \
       'grep -q "_gs = guard_state()" "$SRC/shaperctl.py"'
 check "файл лежит рядом с остальным состоянием" \
       'grep -q "GUARD_STATE = os.path.join(VAR_DIR" "$SRC/shaperctl.py"'
+
+# Порог доли крутится по распределению, а не по случайным карточкам — значит
+# распределение должно быть видно из меню, а не только из командной строки.
+check "распределение доли есть в меню статистики" \
+      'grep -q -- "status --bulk" "$SRC/menu.sh"'
+check "и у пункта есть название" \
+      'grep -q "stats_bulk" "$SRC/lang.sh"'
+check "нумерация в статистике не разъехалась" \
+      '[[ $(sed -n "/^screen_stats()/,/^}/p" "$SRC/menu.sh" | grep -cE "^ +echo \"  \[[0-9]\]") -eq 7 ]]'
 check "числа показываются до применения" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 2 ]]'
 check "после применения сказано, что настроено всё" \

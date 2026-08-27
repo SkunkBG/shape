@@ -344,7 +344,13 @@ MSG = {
         "h_volume_needs": "часовой объём срабатывает только с крупными пакетами вверх",
         "h_volume_mbps": "скорость штрафа, когда сработал только объём, 0 = обычная",
         "h_ratio_needs": "отношение срабатывает только если отдача шла данными",
-        "h_ratio_bulk_hint": "доля отдачи крупными пакетами",
+        "h_bulk": "распределение доли отдачи крупными пакетами",
+        "bulk_title": "Распределение доли данных в отдаче",
+        "bulk_sub": "адресов: {n} · отдача от {mb} МБ · за текущие сутки",
+        "bulk_none": "пока не из чего считать: суточные счётчики пусты либо отдача мала",
+        "bulk_top": "верх списка          скачано    отдано  данными  средн   макс",
+        "bulk_now": "порог сейчас: {p}% — красным то, что попадает под него",
+        "bulk_off": "признак выключен: guard --ratio-needs-packet on",
         "guard_ratio_pkt": "и только если крупными пакетами ушло больше {n}% отдачи: звонки проходят мимо",
         "guard_vol_needs": "часовой объём — только с пакетами вверх от {n} Б: закачка из магазина проходит мимо",
         "guard_vol_soft": "за один объём режем до {mbps} Мбит/с, а не до штрафной",
@@ -710,7 +716,13 @@ MSG = {
         "h_volume_needs": "hourly volume fires only alongside large upload packets",
         "h_volume_mbps": "penalty speed when volume alone fired, 0 = the usual one",
         "h_ratio_needs": "the ratio fires only if the upload was actual data",
-        "h_ratio_bulk_hint": "share of upload in large packets",
+        "h_bulk": "distribution of the share of upload in large packets",
+        "bulk_title": "Distribution of the data share in uploads",
+        "bulk_sub": "addresses: {n} · upload from {mb} MB · for the current day",
+        "bulk_none": "nothing to count yet: daily counters are empty or the upload is small",
+        "bulk_top": "top of the list          down        up  as data    avg    max",
+        "bulk_now": "threshold now: {p}% — what falls under it is in red",
+        "bulk_off": "signal is off: guard --ratio-needs-packet on",
         "guard_ratio_pkt": "and only if over {n}% of the upload went in large packets: calls go free",
         "guard_vol_needs": "hourly volume needs upload packets from {n} B: a store download goes free",
         "guard_vol_soft": "volume alone is cut to {mbps} Mbit/s, not to the penalty speed",
@@ -1466,6 +1478,81 @@ def ratio_report(users, floor_bytes, threshold):
     return rows, counts
 
 
+BULK_BUCKETS = (10, 20, 30, 40, 50, 60, 70, 80, 90)
+
+
+def bulk_report(daily, floor_bytes):
+    """
+    Распределение доли отдачи, ушедшей крупными пакетами.
+
+    То же самое, что ratio_report, но для второго признака. Порог отношения в
+    35% мы поставили правильно, потому что смотрели на распределение по шести
+    тысячам адресов и увидели, где пусто. Порог доли в 70% поставлен по трём
+    точкам из уведомлений в Telegram — это гадание, и оно уже подозрительно
+    близко к живому адресу с 78%.
+
+    Считается по суточным счётчикам, а не по карте ядра: разбивка байтов на
+    крупные и мелкие живёт только там.
+
+    Адреса нужны только для верхних строк списка; само распределение их не
+    использует, и в нём нет ничего, что относилось бы к конкретному человеку.
+    """
+    rows = []
+    for ip, c in (daily or {}).items():
+        parsed = day_upkt(c)
+        if not parsed or parsed[0] < floor_bytes:
+            continue
+        b, n, top, bulk, _since = parsed
+        up, down = c.get("up", 0), c.get("down", 0)
+        rows.append((ip, down, up, min(100.0, bulk * 100.0 / b),
+                     (b / n) if n else 0, top))
+    rows.sort(key=lambda r: -r[3])
+
+    counts = [0] * (len(BULK_BUCKETS) + 1)
+    for r in rows:
+        for i, edge in enumerate(BULK_BUCKETS):
+            if r[3] < edge:
+                counts[i] += 1
+                break
+        else:
+            counts[-1] += 1
+    return rows, counts
+
+
+def print_bulk_report(cfg, daily, floor_mb, top=10):
+    floor_bytes = float(floor_mb) * 1e6
+    rows, counts = bulk_report(daily, floor_bytes)
+    threshold = RATIO_BULK_PERCENT if cfg["guard"].get("ratio_needs_packet") \
+        else 0
+
+    print(f"\n  {C['b']}{t('bulk_title')}{C['r']}")
+    print(f"  {C['gry']}{t('bulk_sub', n=len(rows), mb=f'{floor_mb:g}')}{C['r']}")
+    if not rows:
+        print(f"  {C['gry']}{t('bulk_none')}{C['r']}\n")
+        return
+
+    peak = max(counts) or 1
+    edges = ["0"] + [str(e) for e in BULK_BUCKETS]
+    for i, n in enumerate(counts):
+        label = f"{edges[i]}-{edges[i + 1]}" if i < len(BULK_BUCKETS) \
+            else f"{BULK_BUCKETS[-1]}+"
+        lo = 0 if i == 0 else BULK_BUCKETS[i - 1]
+        hot = threshold and lo >= threshold
+        col = C["red"] if hot else (C["gry"] if not n else C["b"])
+        print(f"  {label:>8}  {col}{'█' * int(round(n * 24 / peak)) if n else ''}"
+              f"{'' if n else '·'} {n}{C['r']}")
+
+    print(f"\n  {C['gry']}{t('bulk_top')}{C['r']}")
+    for ip, down, up, share, avg, mx in rows[:top]:
+        col = C["red"] if threshold and share >= threshold else C["gry"]
+        print(f"  {ip:<20}{fmt_bytes(down):>10} ↓{fmt_bytes(up):>10} ↑"
+              f"{col}{share:>6.0f}%{C['r']}"
+              f"{C['gry']}{int(avg):>7}{int(mx):>7}{C['r']}")
+    print(f"\n  {C['gry']}"
+          + (t("bulk_now", p=threshold) if threshold else t("bulk_off"))
+          + f"{C['r']}\n")
+
+
 def print_ratio_report(cfg, users, floor_mb, top=10):
     floor_bytes = float(floor_mb) * 1e6
     threshold = cfg["guard"].get("upload_ratio_percent", 0) or 0
@@ -1509,6 +1596,10 @@ def cmd_status(a):
 
     if getattr(a, "ratio", False):
         print_ratio_report(cfg, read_users(), a.ratio_mb)
+        return
+
+    if getattr(a, "bulk", False):
+        print_bulk_report(cfg, load_daily(), a.ratio_mb)
         return
 
     first = read_users()
@@ -5690,6 +5781,7 @@ def build_parser():
     st.add_argument("--full", action="store_true", help=t("h_full"))
     st.add_argument("--json", action="store_true", help=t("h_json"))
     st.add_argument("--ratio", action="store_true", help=t("h_ratio"))
+    st.add_argument("--bulk", action="store_true", help=t("h_bulk"))
     st.add_argument("--ratio-mb", dest="ratio_mb", type=float, default=100,
                     help=t("h_ratio_mb"))
     st.set_defaults(func=cmd_status)

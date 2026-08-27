@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.43-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.44-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.43
+# Shape v3.44
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -350,8 +350,32 @@ The threshold sits at **35%** — in the middle of the gap between 25% and 45%.
 ### Where to see the distribution
 
 ```bash
-shaperctl status --ratio
+shaperctl status --ratio    # distribution of the upload ratio
+shaperctl status --bulk     # distribution of the data share in uploads
 ```
+
+The second shows the same for the second signal: how much of each address's
+upload went in large packets. Counted from the daily counters, for the current
+day.
+
+```
+  Distribution of the data share in uploads
+  addresses: 339 · upload from 100 MB · for the current day
+      0-10  ████████████████████████ 122
+     10-20  ████████ 43
+     20-30  ███████ 38
+     30-40  ███████ 35
+     40-50  · 0
+     50-60  · 0
+     60-70  · 0
+     70-80  ██████ 30
+     80-90  · 0
+       90+  ██████████████ 71
+```
+
+The emptiness between 40 and 70 is where the threshold goes. The same way the
+ratio threshold was chosen: not from theory, but from where the live data has a
+gap. Menu: **Statistics → 📦 Data share in uploads**.
 
 ```
 Upload-to-download ratio
