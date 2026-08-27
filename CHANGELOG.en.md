@@ -13,6 +13,69 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.45
+
+**The share threshold went 70 → 55. The second node showed a seeder in the gap
+the first node thought was empty.**
+
+### What the distribution showed
+
+The `status --bulk` command, added in 3.44, was run on two nodes.
+
+On the first the gap fell between 39 and 73 — a threshold of 70 looked
+acceptable. On the second there was an address in the 60–70 range:
+
+```
+193.39.160.96   150.6 MB ↓   589.7 MB ↑   ratio 392%   66% as data
+```
+
+It uploads four times what it downloads, mostly as data. That is seeding, and a
+70% threshold was missing it.
+
+The combined picture, 26 addresses across two nodes:
+
+```
+    0-39   ███████████████ 15    calls sit at 1-6%
+   40-65   ·  none
+   66-100  ███████████ 11        seeding
+```
+
+The real gap is between 39 and 66. The threshold is set in its middle: **55%**.
+
+### Why the threshold moved three times
+
+| Value | Chosen from | How it was wrong |
+| --- | --- | --- |
+| 30 | three Telegram cards | a video call passed it with 32 |
+| 70 | the same three points, other side | sat at the cluster edge, a seeder at 66 missed |
+| 55 | 26 addresses across two nodes | the middle of the gap |
+
+The lesson is written into the code next to the constant: a threshold set from a
+handful of observations is almost certainly in the wrong place. The 35% ratio
+threshold landed correctly on the first try only because it was chosen from 6143
+addresses.
+
+### What was confirmed
+
+Calls on both nodes sit at 1–6%, far from the threshold:
+
+| Ratio | As data |
+| --- | --- |
+| 87% | 1% |
+| 46% | 2% |
+| 34% | 6% |
+
+All three cross or nearly cross the 35% ratio threshold. Without the share they
+would be penalised every evening.
+
+### Also
+
+* The menu texts described the previous rule (by maximum packet) — they now
+  describe the current one, by share.
+* Tests: 8 new ones, all live data points from both nodes.
+
+---
+
 ## 3.44
 
 **`status --bulk` — the distribution of the data share in uploads. So the

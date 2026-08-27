@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.44-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.45-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.44
+# Shape v3.45
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -443,7 +443,7 @@ differs, and what sits behind it.
 | Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
 | Torrents | two-way traffic with large upload packets | same |
-| Quiet seeders | 35% a day, uploading now, 70%+ as data | same |
+| Quiet seeders | 35% a day, uploading now, 55%+ as data | same |
 | Penalty for a torrent | 1 Mbit/s for 60 min | same |
 | Penalty for volume alone | 1 Mbit/s for 60 min | **a third of the channel** |
 | Sharing | connections dropped | same |
@@ -743,20 +743,26 @@ how many bytes of the upload went in packets of 1000 and above is counted too:
 📦 Upload over 11.9 h: 96% as data · packet 1279 B · max 1400
 ```
 
-| Ratio | As data | What it is |
-| --- | --- | --- |
-| 660% | **100%** | seeding |
-| 100% | **32%** | a video call |
-| 102% | **1%** | audio plus one attachment |
+The distribution across two nodes, 26 addresses:
 
-The threshold sits in the middle of the gap — **70%** — chosen the same way as
-the ratio threshold. Video calls travel in packets just under a thousand, so
-their share is not a few percent but a third.
+```
+    0-39   ███████████████ 15    calls sit at 1-6%
+   40-65   ·  none
+   66-100  ███████████ 11        seeding
+```
 
-A real seeder uploads almost nothing but chunks: 90–100%. It can drop to seventy
-only if something else is going on alongside — and then the ratio still stays
-above 150%, while a conversation hovers around a hundred, because both sides send
-the same stream.
+The threshold sits in the middle of the gap — **55%**. To see the distribution:
+`status --bulk`.
+
+It moved three times, each time because the previous value had been set from too
+small a sample: 30, from three Telegram cards — and a video call passed it with
+32. Then 70, from the same three points but from the other side; it sat not in
+the middle of the gap but flush against the lower edge of the upper cluster, and
+the first below-average seeder (66% at a 392% ratio) did not make it in.
+
+The general lesson: **a threshold set from a handful of observations is almost
+certainly in the wrong place.** The 35% ratio threshold landed correctly on the
+first try only because it was chosen from 6143 addresses.
 
 **Both presets require that share for the ratio signal.** Uploading more than
 35% of the download in a day is not enough; the upload must also have been data.
