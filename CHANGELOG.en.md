@@ -13,6 +13,81 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.65
+
+**A disproportionate upload only penalises together with duration.**
+
+### The live case
+
+A mobile node, an ordinary user:
+
+```
+📈 24h: ↓ 418.8 MB · ↑ 326.0 MB (78%)
+📦 Upload over 2.1 h: data 55% · packet 907 B · max 4246
+🐌 Speed reduced to 1 Mbit/s for 1.0 h
+```
+
+A conversation or seeding? The packet filter did its job — an average of 907
+bytes and a maximum of 4246 come from no voice or video call, those run on small
+packets: the confirmed video-call case had 267 and 349.
+
+But **a video sent to a chat looks exactly like seeding**, and by proportion the
+two cannot be told apart. And the data share scraped through: 55% against a
+threshold of 55.
+
+Then there is the volume — 326 MB over two hours, 0.35 Mbit/s. On a quota node
+that costs the owner nothing. The signal caught someone economically irrelevant.
+
+### Why it happened
+
+The data-share distribution on the mobile node (`status --bulk`) is a **smooth
+slope with no gap**: 161 addresses in the first bucket and a thin layer running
+up to ninety. On home nodes there was emptiness between the honest and the
+seeders, and the threshold went into it. Here there is nowhere to put it — the
+threshold cuts the slope, and the first borderline case fell into it.
+
+### What was added
+
+```bash
+shaperctl guard --upload-ratio-hours 2
+```
+
+The ratio penalises only if the address **sent data for at least N hours in a
+day**. The hours come from the same counter as the `--upload-hours` signal fixed
+in 3.64: only data upload is counted there — acknowledgements and conversations
+do not get in.
+
+| | Ratio | Hours of data upload | Penalty |
+| --- | --- | --- | --- |
+| Video sent to a chat | 78% | 0.5 | no |
+| A phone's first backup | 90%+ | 1-2 | usually no |
+| Seeding | 78% | 8-12 | yes |
+
+Proportion answers "how much", hours answer "how long". An upload ends, seeding
+does not.
+
+### Two hours in the presets
+
+Both presets set `--upload-ratio-hours 2`. The condition is optional:
+`--upload-ratio-hours 0` restores the behaviour from before 3.65.
+
+**An honest caveat.** Every confirmed catch by ratio — 665%, 392%, 75% —
+happened before 3.64, while the hours counter was broken, and we do not know how
+many hours those had. Seeding that does not send data for two hours a day is not
+seeding, but that cannot be checked against the past cases. If the catches stop,
+the value is worth lowering to one hour, and `panel user` will show it: the
+"sent data for N h" line says what the address was short of.
+
+### Other
+
+* The setting shows up in `shaperctl guard` output on its own line.
+* Tests: 12 new. The live case at half an hour and the same at eight hours, the
+  boundary exactly at the threshold and a minute below, a missing counter,
+  garbage in the setting, the condition switched off, the command-line flag,
+  both presets.
+
+---
+
 ## 3.64
 
 **The "hours of upload" signal never worked. Now it does.**

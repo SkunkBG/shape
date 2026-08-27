@@ -240,6 +240,7 @@ MSG = {
         "tg_uph_warn": "Отдавал данные {h} ч за сутки — порог {n} ч",
         "tg_uph_note": "<i>Ограничения нет. Так выглядит и раздача, и первый бэкап телефона: решайте сами.</i>",
         "h_upload_hours": "часов отдачи за сутки для ограничения, 0 = выкл",
+        "h_upload_ratio_hours": "часов отдачи данными, без которых отношение не штрафует, 0 = выкл",
         "h_upload_hours_mbps": "ниже какой отдачи замер не считается отдачей данных",
         "guard_uphours": "отдача дольше {h} ч за сутки — только уведомление, без штрафа",
         "guard_uphourly": "отдача за час: ограничение на {d} ГБ",
@@ -403,6 +404,7 @@ MSG = {
         "guard_vol_needs": "часовой объём — только с пакетами вверх от {n} Б: закачка из магазина проходит мимо",
         "guard_vol_soft": "за один объём режем до {mbps} Мбит/с, а не до штрафной",
         "guard_ratio_live": "и только пока адрес отдаёт: за отвалившегося штраф не выдаём",
+        "guard_ratio_hrs": "и только если отдавал данные дольше {h} ч за сутки: отправка видео так долго не идёт",
         "guard_notify_cd": "повторное уведомление об одном адресе — не чаще раза в {h} ч",
         "guard_exempt_n": "исключений панели: {n} — этих не ограничиваем вовсе",
         "why_hourly": "выкачал гигабайты за час",
@@ -664,6 +666,7 @@ MSG = {
         "tg_uph_warn": "Sent data for {h} h in 24h — the threshold is {n} h",
         "tg_uph_note": "<i>No limit applied. Seeding and a phone's first backup look the same: it is your call.</i>",
         "h_upload_hours": "hours of upload per day for a limit, 0 = off",
+        "h_upload_ratio_hours": "hours of data upload required before the ratio penalises, 0 = off",
         "h_upload_hours_mbps": "below this upload rate a sample is not counted as data",
         "guard_uphours": "uploading for more than {h} h a day — a notice only, no penalty",
         "guard_uphourly": "hourly upload: limit at {d} GB",
@@ -827,6 +830,7 @@ MSG = {
         "guard_vol_needs": "hourly volume needs upload packets from {n} B: a store download goes free",
         "guard_vol_soft": "volume alone is cut to {mbps} Mbit/s, not to the penalty speed",
         "guard_ratio_live": "and only while the address is uploading: no penalty for one that left",
+        "guard_ratio_hrs": "and only if it sent data for over {h} h in a day: an upload does not run that long",
         "guard_notify_cd": "a repeat notification about one address — at most once every {h} h",
         "guard_exempt_n": "panel exceptions: {n} — these are never limited",
         "why_hourly": "downloaded gigabytes within an hour",
@@ -1286,6 +1290,23 @@ GUARD_DEFAULT = {
     # 0 = признак выключен.
     "upload_ratio_percent": 0,
     "upload_ratio_min_mb": 300,
+
+    # Сколько часов за сутки адрес должен был отдавать данные, чтобы
+    # непропорциональная отдача считалась поводом для штрафа.
+    #
+    # Пропорция ловит перекос, но не говорит, за какое время он набрался.
+    # Живой случай: 418 МБ вниз, 326 вверх, отношение 78%, доля данных ровно
+    # 55% при пороге 55 — прошёл впритык, а всего отдачи 326 мегабайт за два
+    # часа. Отправленное в чат видео даёт ровно такую картину, и по пропорции
+    # оно от раздачи неотличимо.
+    #
+    # Отличает их длительность: выгрузка кончается за минуты, раздача идёт
+    # часами. Часы считаются тем же счётчиком, что и признак upload_hours, —
+    # только отдача ДАННЫМИ, подтверждения и разговоры туда не попадают
+    # (см. up_hours_tick).
+    #
+    # 0 = условия нет, отношение штрафует само по себе (поведение до 3.65).
+    "upload_ratio_min_hours": 0,
 
     # Период опроса карт. Каждый цикл — два дампа bpftool и разбор JSON;
     # на одноядерных VPS есть смысл поднять до 20-30 секунд, детект от этого
@@ -2649,6 +2670,7 @@ def cmd_guard(a):
         (a.download_gbh, "download_gb_per_hour", 0, 1000),
         (a.upload_ratio, "upload_ratio_percent", 0, 1000),
         (a.upload_ratio_mb, "upload_ratio_min_mb", 1, 100000),
+        (a.upload_ratio_hours, "upload_ratio_min_hours", 0, 24),
         (a.volume_mbps, "volume_penalty_mbps", 0, 1000),
         (a.interval,   "watch_interval",     5, 60),
         (a.packet,     "packet_bytes",      100, 1500),
@@ -2699,6 +2721,10 @@ def cmd_guard_show(speed, g, exempt=0):
         if g.get("ratio_needs_packet"):
             print(f"  {C['gry']}"
                   f"{t('guard_ratio_pkt', n=RATIO_BULK_PERCENT)}{C['r']}")
+        if g.get("upload_ratio_min_hours"):
+            hrs = t("guard_ratio_hrs",
+                    h=f"{g['upload_ratio_min_hours']:g}")
+            print(f"  {C['gry']}{hrs}{C['r']}")
     w, dgb = g.get("upload_warn_gb", 0), g.get("upload_day_gb", 0)
     if w and dgb:
         print(f"  {C['gry']}{t('guard_upday', w=f'{w:g}', d=f'{dgb:g}')}{C['r']}")
@@ -2907,10 +2933,14 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None,
     # клиента 5-15%.
     #
     # Условие «отдаёт прямо сейчас» обязательно: см. RATIO_LIVE_MBPS.
+    # Условие по длительности необязательное, но именно оно отделяет раздачу
+    # от отправленного в чат видео: пропорция у них одинаковая, время — нет.
     ratio = g.get("upload_ratio_percent", 0)
     floor_bytes = float(g.get("upload_ratio_min_mb", 300)) * 1e6
+    min_hours = float(g.get("upload_ratio_min_hours", 0) or 0)
     if ratio and day.get("up", 0) >= floor_bytes \
             and s["ul"] >= RATIO_LIVE_MBPS \
+            and day.get("up_sec", 0) >= min_hours * 3600 \
             and (not g.get("ratio_needs_packet")
                  or bulk_share(day) >= RATIO_BULK_PERCENT):
         # Нулевое скачивание при заметной отдаче — это тем более перекос,
@@ -6741,6 +6771,8 @@ def build_parser():
                    default=None, help=t("h_upload_gbh"))
     g.add_argument("--upload-hours-mbps", dest="upload_hours_mbps", type=float,
                    default=None, help=t("h_upload_hours_mbps"))
+    g.add_argument("--upload-ratio-hours", dest="upload_ratio_hours", type=float,
+                   default=None, help=t("h_upload_ratio_hours"))
     g.add_argument("--download-gb", type=float, default=None, help=t("h_download_gb"))
     g.add_argument("--download-gbh", type=float, default=None, help=t("h_download_gbh"))
     g.add_argument("--upload-ratio", dest="upload_ratio", type=float, default=None,

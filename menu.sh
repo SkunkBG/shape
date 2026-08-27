@@ -398,7 +398,7 @@ guard_preset() {
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb 25 --download-gbh 3 \
-                   --upload-ratio 35 --upload-ratio-mb 300 \
+                   --upload-ratio 35 --upload-ratio-mb 300 --upload-ratio-hours 2 \
                    --volume-needs-upload off --volume-mbps 0 \
                    --ratio-needs-packet on \
                    --upload-gbh 3 --upload-day 25 \
@@ -454,7 +454,7 @@ guard_preset() {
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb "$gbd" --download-gbh "$gbh" \
-                   --upload-ratio 50 --upload-ratio-mb 300 \
+                   --upload-ratio 50 --upload-ratio-mb 300 --upload-ratio-hours 2 \
                    --volume-needs-upload on --volume-mbps "$soft" \
                    --ratio-needs-packet on \
                    --upload-gbh 0 --upload-day 30 \

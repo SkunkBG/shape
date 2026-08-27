@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.64-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.65-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.64
+# Shape v3.65
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -432,12 +432,24 @@ two-gigabyte threshold. Yet it uploaded 2.4 times what it downloaded — and
 nothing but seeding behaves that way.
 
 ```bash
-shaperctl guard --upload-ratio 50 --upload-ratio-mb 300
+shaperctl guard --upload-ratio 50 --upload-ratio-mb 300 --upload-ratio-hours 2
 ```
 
-Uploaded more than a third of what was downloaded in a day, with at least
-300 MB of upload — penalty. The path is independent: the two-way condition is not
-checked, otherwise a quiet seeder would never reach it.
+Uploaded more than half of what was downloaded in a day, with at least 300 MB of
+upload, and sent data for at least two hours — penalty. The path is independent:
+the two-way condition is not checked, otherwise a quiet seeder would never reach
+it.
+
+**The hours condition arrived in 3.65 and it is required.** The ratio catches
+disproportion but says nothing about how long it took to build up. A live case on
+a mobile node: 418.8 MB down, 326.0 up, ratio 78%, data share exactly 55% against
+a threshold of 55 — and all of it within two hours. A video sent to a chat looks
+exactly like that, and by proportion it is indistinguishable from seeding.
+Duration is what tells them apart.
+
+The hours come from the same counter as the `--upload-hours` signal, where only
+**data** upload is counted: acknowledgements and conversations do not get in.
+To switch the condition off: `--upload-ratio-hours 0`.
 
 **The threshold differs between home and mobile nodes: 50% against 35%.**
 

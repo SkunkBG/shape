@@ -46,7 +46,7 @@ def guard(**kw):
              both_ul=None, percent=None, sustain=None, penalty_mbps=None,
              penalty_min=None, hours=None, upload_gb=None, download_gb=None,
              download_gbh=None, interval=None, packet=None, require_packet=None,
-             upload_ratio=None, upload_ratio_mb=None,
+             upload_ratio=None, upload_ratio_mb=None, upload_ratio_hours=None,
              volume_needs_upload=None, volume_mbps=None,
              ratio_needs_packet=None, upload_warn=None, upload_day=None,
              upload_hours=None, upload_hours_mbps=None, upload_gbh=None,
@@ -500,6 +500,52 @@ score, why = S.evaluate("x", {"dl": 0, "ul": 0.5, "up_pkt": 0}, RATIO_G, 10,
 check("работает при нулевом двустороннем счётчике", why == ["ratio"], why)
 check("у причины есть человекочитаемое название",
       S.t("why_ratio") != "why_ratio")
+
+# ── отношение требует длительности ──────────────────────────────────────────
+#
+# Пропорция ловит перекос, но молчит о том, за какое время он набрался.
+# Живой случай на мобильной ноде: 418.8 МБ вниз, 326.0 вверх — отношение 78%,
+# доля данных ровно 55% при пороге 55, всё это за 2.1 часа. Отправленное в чат
+# видео даёт ровно такую картину. Отличает раздачу длительность, и часы теперь
+# считают именно отдачу данными.
+RATIO_H = dict(RATIO_G, upload_ratio_min_hours=2)
+
+
+def verdict_h(down_mb, up_mb, hours, g=RATIO_H):
+    daily = {"x": {"active": 0, "up": up_mb * MB, "down": down_mb * MB,
+                   "up_sec": hours * 3600}}
+    return S.evaluate("x", {"dl": 0, "ul": 0.5, "up_pkt": 0}, g, 10, 0, 0,
+                      daily)[1]
+
+
+check("отправка видео: тот же перекос за полчаса — не штрафуем",
+      verdict_h(418.8, 326.0, 0.5) == [])
+check("раздача: тот же перекос за восемь часов — штрафуем",
+      verdict_h(418.8, 326.0, 8) == ["ratio"])
+check("ровно на пороге часов — штрафуем", verdict_h(418.8, 326.0, 2) == ["ratio"])
+check("минутой меньше — нет", verdict_h(418.8, 326.0, 1.98) == [])
+check("нулевые часы не проходят", verdict_h(418.8, 326.0, 0) == [])
+
+# Условие необязательное: пока его не включили, поведение прежнее.
+check("по умолчанию условия нет",
+      S.GUARD_DEFAULT["upload_ratio_min_hours"] == 0)
+check("без условия получасовой перекос ловится как раньше",
+      verdict_h(418.8, 326.0, 0.5, RATIO_G) == ["ratio"])
+check("отсутствие счётчика часов равно нулю часов",
+      S.evaluate("x", {"dl": 0, "ul": 0.5, "up_pkt": 0}, RATIO_H, 10, 0, 0,
+                 {"x": {"active": 0, "up": 916.3 * MB,
+                        "down": 379.4 * MB}})[1] == [])
+check("мусор в настройке не роняет проверку",
+      verdict_h(418.8, 326.0, 8, dict(RATIO_G,
+                                      upload_ratio_min_hours=None)) == ["ratio"])
+
+# Настройка должна быть достижима не только из пресета.
+_src_ctl = open(os.path.join(SRC, "shaperctl.py")).read()
+check("флаг есть в командной строке", "--upload-ratio-hours" in _src_ctl)
+check("значение видно в выводе настроек", "guard_ratio_hrs" in _src_ctl)
+check("оба пресета требуют часов",
+      open(os.path.join(SRC, "menu.sh")).read().count(
+          "--upload-ratio-hours 2") == 2)
 
 print("\n\033[1mРаспределение доли данных\033[0m")
 # Порог отношения в 35% попал в цель потому, что мы смотрели распределение по
