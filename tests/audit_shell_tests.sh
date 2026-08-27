@@ -180,6 +180,22 @@ check "и у пункта есть название" \
       'grep -q "stats_bulk" "$SRC/lang.sh"'
 check "нумерация в статистике не разъехалась" \
       '[[ $(sed -n "/^screen_stats()/,/^}/p" "$SRC/menu.sh" | grep -cE "^ +echo \"  \[[0-9]\]") -eq 7 ]]'
+
+# Исключения задаются на экране панели, а действуют и на автоограничении.
+check "число исключений видно на экране автоограничения" \
+      'grep -q "g_exempt_n" "$SRC/menu.sh"'
+check "и читается из раздела панели" \
+      'grep -q "_cfg.get(\"panel\")" "$SRC/menu.sh"'
+
+# Абсолютный объём отдачи: домашний пресет ставит 10/30, мобильный явно ноль.
+check "домашний пресет ставит оба уровня" \
+      'grep -qE -- "--upload-warn 10 --upload-day 30" "$SRC/menu.sh"'
+check "мобильный выключает их явно" \
+      'grep -qE -- "--upload-warn 0 --upload-day 0" "$SRC/menu.sh"'
+check "оба уровня видны на экране автоограничения" \
+      'grep -q "why_upload_day_menu" "$SRC/menu.sh" && grep -q "g_up_warn" "$SRC/menu.sh"'
+check "и правятся руками" \
+      'grep -q "g_set_upday" "$SRC/menu.sh" && grep -q "g_set_upwarn" "$SRC/menu.sh"'
 check "числа показываются до применения" \
       '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 2 ]]'
 check "после применения сказано, что настроено всё" \

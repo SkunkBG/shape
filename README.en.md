@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.45-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.47-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.45
+# Shape v3.47
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -297,6 +297,47 @@ shaperctl guard --both-ul 3 --require-packet on
 
 Without it, lowering the upload floor below 10% is a bad idea.
 
+### Daily upload: two levels
+
+The simplest signal, and the only one that depends on neither proportion, nor
+packet size, nor protocol.
+
+```bash
+shaperctl guard --upload-warn 10 --upload-day 30
+```
+
+**10 GB uploaded in a day — a Telegram notice. The speed is not cut.** One
+message per address per day.
+
+```
+🔔 Heavy upload · Netherlands-3
+
+👤 Daria · @Trifonova_Dasha
+🆔 Telegram: 157655577
+🔑 Panel login: user_157655577 · #3710
+
+📍 Address: 46.138.65.124
+10.5 GB uploaded in 24h — the notice threshold is 10 GB
+📈 For the day: ↓ 3.9 GB · ↑ 10.5 GB (269%)
+📦 Upload over 6.0 h: 96% as data · packet 1255 B · max 1408
+
+No limit applied, this is a warning. At 30 GB the speed will be reduced.
+```
+
+**30 GB — a limit.** With the usual penalty, like the other signals.
+
+**Why this beats the other signals.** The upload ratio catches disproportion —
+and therefore touches conversations, where both sides send equally. The data
+share catches large packets — and therefore depends on whether the kernel merges
+them and which protocol the node runs. Thirty gigabytes up is just thirty
+gigabytes up, and it can be explained to a customer in one sentence.
+
+The notice level exists precisely so you can see who is approaching the line
+before they cross it, and decide for yourself.
+
+The home preset sets 10 and 30. **The mobile preset sets neither** — there the
+channel is the ceiling anyway, and such numbers are meaningless at ten megabits.
+
 ### The quiet seeder and the upload ratio
 
 Torrents look different in three ways, and no single rule catches them all:
@@ -439,6 +480,7 @@ differs, and what sits behind it.
 | --- | --- | --- |
 | Per-address limit | usually 10 Mbit | usually 50–100 Mbit |
 | Volume per hour | **3 GB** fixed | **half the channel** |
+| Daily upload | — | **10 GB notice, 30 GB limit** |
 | Hourly volume is a reason on its own | yes | **only with upload packets** |
 | Volume per day | 25 GB | sixteen hourly thresholds |
 | Sharing: addresses | over 20 | over 10 |
@@ -1103,6 +1145,34 @@ of addresses a day, but only one is alive at any moment. Shape counts only the
 addresses the panel saw within the last `window_min` minutes.
 
 Default: **20 addresses within a 10-minute window**.
+
+### Business accounts
+
+An office on a single subscription looks like resale: twenty employees of a law
+firm are twenty addresses under one panel user, and the rule counts addresses,
+not who they are.
+
+Uploading work files looks like seeding: a real-estate agency uploading property
+videos produces the same proportion, the same packets filled to the brim and the
+same data share as a seeder. **At the network layer they are the same thing, and
+no threshold separates them.** Only knowing who it is does.
+
+```bash
+shaperctl panel set --exempt 2442,6672,152
+```
+
+Numeric IDs from the panel. The list is set whole, not appended to. To check:
+`panel show`, the "Exceptions" line.
+
+These users fall under **neither sharing detection nor the auto-limiter** — no
+penalty, no drop, no notification. The trigger is still written to the event log
+as `guard_exempt`, so it can be looked at if wanted.
+
+The number of exceptions is shown on the auto-limit screen too: the setting lives
+in the panel section but affects both rules.
+
+Without a panel link the exceptions do not work: there is nowhere else to learn
+whose address it is.
 
 ### The token: grant the minimum
 

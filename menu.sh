@@ -243,19 +243,22 @@ print(','.join(map(str, p)))" 2>/dev/null || echo 443)"
 # Все настройки читаются одним вызовом: запуск python3 стоит десятки
 # миллисекунд, а раньше их было десять на каждую отрисовку экрана.
 guard_read() {
-    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300|0|0|0"
+    python3 - <<'PY' 2>/dev/null || echo "0|3|50|15|10|1|60|4|2|50|0|600|0|300|0|0|0|0|0|0"
 import json
 try:
-    g = json.load(open("/etc/shaper/config.json")).get("guard", {})
+    _cfg = json.load(open("/etc/shaper/config.json"))
+    g = _cfg.get("guard", {})
+    _ex = len((_cfg.get("panel") or {}).get("exempt") or [])
 except Exception:
-    g = {}
+    g, _ex = {}, 0
 d = {"enabled": False, "score_needed": 3, "both_dl_percent": 50,
      "both_ul_percent": 15, "both_ways_min": 10, "penalty_mbps": 1,
      "penalty_min": 60, "hours_per_day": 4, "upload_gb_per_day": 2,
      "download_gb_per_day": 50, "download_gb_per_hour": 0, "packet_bytes": 600,
      "upload_ratio_percent": 0, "upload_ratio_min_mb": 300,
      "volume_needs_upload": False, "volume_penalty_mbps": 0,
-     "ratio_needs_packet": False}
+     "ratio_needs_packet": False,
+     "upload_warn_gb": 0, "upload_day_gb": 0}
 d.update(g)
 print("|".join([
     "1" if d["enabled"] else "0",
@@ -268,6 +271,8 @@ print("|".join([
     "1" if d["volume_needs_upload"] else "0",
     f"{d['volume_penalty_mbps']:g}",
     "1" if d["ratio_needs_packet"] else "0",
+    str(_ex),
+    f"{d['upload_warn_gb']:g}", f"{d['upload_day_gb']:g}",
 ]))
 PY
 }
@@ -339,6 +344,7 @@ guard_preset() {
                    --upload-ratio 35 --upload-ratio-mb 300 \
                    --volume-needs-upload off --volume-mbps 0 \
                    --ratio-needs-packet on \
+                   --upload-warn 0 --upload-day 0 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 20 --window 10 \
                    --action-set drop >/dev/null 2>&1 || true
@@ -374,6 +380,8 @@ guard_preset() {
                echo -e "  ${D}  · ${T[gp_p_hour]} ${B}${gbh} GB${N}${D} — ${T[gp_h_vol]}${N}"
                echo -e "  ${D}  · ${T[gp_p_day]} ${gbd} GB${N}"
                echo -e "  ${D}  · ${T[gp_w_share]} 10${N}"
+               echo -e "  ${D}  · ${T[gp_up_warn]} ${B}10 GB${N}${D} → ${T[gp_up_warn2]}${N}"
+               echo -e "  ${D}  · ${T[gp_up_day]} ${B}30 GB${N}"
                echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
                echo -e "  ${D}  · ${T[gp_h_soft]} ${B}${soft} Mbit/s${N}"
                echo
@@ -385,6 +393,7 @@ guard_preset() {
                    --upload-ratio 35 --upload-ratio-mb 300 \
                    --volume-needs-upload on --volume-mbps "$soft" \
                    --ratio-needs-packet on \
+                   --upload-warn 10 --upload-day 30 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 10 --window 10 \
                    --action-set drop >/dev/null 2>&1 || true
@@ -397,11 +406,11 @@ guard_preset() {
 
 screen_guard() {
     local on score both_min bdl bul pen dur hours gb dgb dgbh pkt urp urm speed v
-    local vnu vmb rnp
+    local vnu vmb rnp gex uw ud
     while :; do
         speed="$(cfg speed_mbps 0)"
         IFS='|' read -r on score bdl bul both_min pen dur hours gb dgb dgbh pkt \
-            urp urm vnu vmb rnp <<< "$(guard_read)"
+            urp urm vnu vmb rnp gex uw ud <<< "$(guard_read)"
 
         title "${T[g_title]}"
         echo -e "  ${D}${T[g_h1]}${N}"
@@ -422,6 +431,8 @@ screen_guard() {
         fi
         echo -e "  ${T[g_pen]} : ${B}${pen} Mbit/s${N} ${T[g_for]} ${B}${dur}${N} ${T[min]}"
         echo -e "  ${D}${T[g_notify_cd]}${N}"
+        # Исключения задаются на экране панели, а действуют и здесь.
+        [[ "$gex" != "0" ]] && echo -e "  ${D}${T[g_exempt_n]} ${B}${gex}${N}"
         hr
         echo -e "  ${D}${T[g_signals]}  ${T[g_score_now]} ${score}${N}"
         echo -e "  ${D}  +2  ${T[why_packet]}${N}"
@@ -430,6 +441,8 @@ screen_guard() {
         echo -e "  ${D}  +1  ${T[why_upload]} (>${gb} GB)${N}"
         [[ "$dgb" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_download]} (>${dgb} GB)${N}"
         [[ "$dgbh" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_hourly]} (>${dgbh} GB)${N}"
+        [[ "$ud" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_upload_day_menu]} (>${ud} GB)${N}"
+        [[ "$uw" != "0" ]] && echo -e "  ${D}      └ ${T[g_up_warn]} ${B}${uw} GB${N}"
         [[ "$urp" != "0" ]] && echo -e "  ${D}${T[g_orpath]} ${T[why_ratio_menu]} (>${urp}%, >${urm} MB)${N}"
         # Условие «отдаёт прямо сейчас» решает, кому прилетит штраф, а из
         # строки выше его не видно. Такое уже терялось трижды.
@@ -460,6 +473,8 @@ screen_guard() {
             echo -e " [13] ${T[g_set_vnu]} ${D}(${T[g_off]})${N}"
         fi
         echo -e " [14] ${T[g_set_vmb]} ${D}(${vmb} Mbit/s)${N}"
+        echo -e " [17] ${T[g_set_upday]} ${D}(${ud} GB)${N}"
+        echo -e " [18] ${T[g_set_upwarn]} ${D}(${uw} GB)${N}"
         if [[ "$rnp" == "1" ]]; then
             echo -e " [15] ${T[g_set_rnp]} ${D}(${T[g_on]})${N}"
         else
@@ -512,6 +527,12 @@ screen_guard() {
                     "$(awk "BEGIN{printf \"%.0f\", $speed*0.3}") Mbit/s${N}"
                 v="$(ask "${T[g_set_vmb]}" "$vmb")"
                 [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --volume-mbps "$v" --quiet ;;
+            17) echo -e "  ${D}${T[g_hint_upday]}${N}"
+                v="$(ask "${T[g_set_upday]}" "$ud")"
+                [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --upload-day "$v" --quiet ;;
+            18) echo -e "  ${D}${T[g_hint_upwarn]}${N}"
+                v="$(ask "${T[g_set_upwarn]}" "$uw")"
+                [[ "$v" =~ ^[0-9]+([.][0-9]+)?$ ]] && "$CTL" guard --upload-warn "$v" --quiet ;;
             15) echo -e "  ${D}${T[g_hint_rnp]}${N}"
                 if [[ "$rnp" == "1" ]]; then
                     "$CTL" guard --ratio-needs-packet off --quiet

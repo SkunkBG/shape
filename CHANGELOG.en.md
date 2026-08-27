@@ -13,6 +13,138 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.47
+
+**Daily upload in gigabytes: 10 GB is a notice, 30 GB is a limit. On home nodes
+only.**
+
+### Why another signal
+
+Every previous seeding signal measures something indirect, and each one errs in
+its own way because of it:
+
+| Signal | What it measures | Where it misses |
+| --- | --- | --- |
+| Upload ratio | up/down disproportion | a conversation is exactly 100% |
+| Data share | packet size | depends on protocol and kernel merging |
+| Two-way | speed in both directions | a quiet seeder never reaches the thresholds |
+
+Upload in gigabytes measures nothing indirect. Thirty gigabytes up is thirty
+gigabytes up, whatever they are and over whatever protocol. It can be explained
+to a customer in one sentence, and there is nothing to argue about.
+
+It is also the best available answer to the business-account question: a law firm
+with three gigabytes of documents a day is nowhere near the threshold.
+
+### Two levels
+
+```bash
+shaperctl guard --upload-warn 10 --upload-day 30
+```
+
+**10 GB — a notice and nothing else.** One message per address per day:
+
+```
+🔔 Heavy upload · Netherlands-3
+
+👤 Daria · @Trifonova_Dasha
+🆔 Telegram: 157655577
+🔑 Panel login: user_157655577 · #3710
+
+📍 Address: 46.138.65.124
+10.5 GB uploaded in 24h — the notice threshold is 10 GB
+📈 For the day: ↓ 3.9 GB · ↑ 10.5 GB (269%)
+📦 Upload over 6.0 h: 96% as data · packet 1255 B · max 1408
+
+No limit applied, this is a warning. At 30 GB the speed will be reduced.
+```
+
+**30 GB — a limit.** With the usual penalty, reason `uploaded tens of gigabytes
+in 24h`.
+
+The signal is independent: there may be no download at all, no current upload at
+the moment of the check, and any packet sizes. Only the volume matters.
+
+### Presets
+
+The home preset sets 10 and 30. The mobile preset sets **zeros, explicitly** — at
+ten megabits such numbers are meaningless, and switching over from the home
+preset must not leave its leftovers behind.
+
+### Exceptions apply
+
+A user in `panel set --exempt` gets neither a notice nor a penalty from this
+signal, as with all the others.
+
+### Also
+
+* The notice level is remembered in `guard.state` by date rather than by a flag:
+  the day closes itself, with no separate cleanup at midnight.
+* Both levels are visible on the auto-limit screen and editable by hand — entries
+  `[17]` and `[18]`.
+* Tests: 20 new ones. The threshold exactly on and below the line, independence
+  from download and from the data share, the notice not limiting, the message
+  text, visibility.
+
+---
+
+## 3.46
+
+**Panel exceptions now apply to the auto-limiter as well. A business account is
+not limited at all.**
+
+### Why
+
+A law firm, a real-estate agency, a company on Bitrix — people paying for
+connectivity in order to work. They must not be touched, and both of our checks
+see them as offenders.
+
+**Sharing detection.** Twenty employees on one subscription are twenty addresses
+under one panel user. The rule counts addresses, not who they are. On home nodes
+the threshold is ten with the `drop` action — meaning the office has its
+connections cut in the middle of a working day.
+
+**The upload ratio.** An agency uploading property videos produces the same
+proportion, the same packets filled to the brim and the same data share as a
+seeder. At the network layer they are literally the same thing, and no threshold
+separates them — only knowing who it is does.
+
+### What was done
+
+```bash
+shaperctl panel set --exempt 2442,6672,152
+```
+
+The same list that sharing detection already used now means "leave alone
+entirely". These users get no penalty, no drop and no notification.
+
+The trigger is still written to the event log as `guard_exempt`: it can be looked
+at, and it will not disturb anyone.
+
+The owner of an address is now resolved **before** the penalty rather than after.
+The order used to be the reverse — limit first, label second; that does not work
+for exceptions.
+
+### Visibility
+
+The number of exceptions is shown on the auto-limit screen, even though the
+setting itself lives in the panel section. A setting that changes the outcome
+while staying invisible on its own screen is a recurring class of mistake in this
+project, and there are dedicated tests for it.
+
+### A limitation
+
+Without a panel link the exceptions do not work: there is nowhere else to learn
+whose address it is. On nodes without a panel the auto-limiter behaves as before.
+
+### Also
+
+* Tests: 12 new ones. An exempted user is left alone, others are not, an ID as a
+  number and with spaces, a missing panel and a missing ID, visibility on the
+  screen.
+
+---
+
 ## 3.45
 
 **The share threshold went 70 → 55. The second node showed a seeder in the gap

@@ -48,7 +48,8 @@ def guard(**kw):
              download_gbh=None, interval=None, packet=None, require_packet=None,
              upload_ratio=None, upload_ratio_mb=None,
              volume_needs_upload=None, volume_mbps=None,
-             ratio_needs_packet=None, quiet=True)
+             ratio_needs_packet=None, upload_warn=None, upload_day=None,
+             quiet=True)
     d.update(kw); return argparse.Namespace(**d)
 
 def tg(**kw):
@@ -769,6 +770,117 @@ check("замер отдаёт число пакетов, а не только �
       "up_pkts" in S.traffic_sample(
           {"x": {"down": 0, "up": 0, "up_pkts": 0}},
           {"x": {"down": 100, "up": 1300, "up_pkts": 1}}, 1.0)["x"])
+
+print("\n\033[1mАбсолютный объём отдачи за сутки\033[0m")
+# Единственный признак, который не зависит ни от пропорции, ни от размера
+# пакета, ни от протокола. Отношение отдачи задевает разговоры, доля данных
+# зависит от того, склеивает ли пакеты ядро, — а тридцать гигабайт вверх это
+# просто тридцать гигабайт вверх.
+UP_G = dict(S.GUARD_DEFAULT, upload_day_gb=30, upload_warn_gb=10)
+
+
+def upday(up_gb, g=UP_G, down_gb=1):
+    daily = {"x": {"active": 0, "down": down_gb * 1e9, "up": up_gb * 1e9}}
+    return S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 0}, g, 100, 0, 0,
+                      daily)[1]
+
+
+check("ниже порога не трогаем", upday(29.9) == [], upday(29.9))
+check("ровно на пороге ловим", upday(30) == ["upload_day"])
+check("выше тем более", upday(45) == ["upload_day"])
+check("по умолчанию признак выключен",
+      S.GUARD_DEFAULT["upload_day_gb"] == 0
+      and S.GUARD_DEFAULT["upload_warn_gb"] == 0)
+check("и с умолчаниями сто гигабайт проходят мимо",
+      upday(100, S.GUARD_DEFAULT) == [])
+
+# Признак обязан работать независимо: скачивания может не быть вовсе, текущей
+# активности тоже, пакеты могут быть любыми.
+check("работает без скачивания", upday(30, down_gb=0) == ["upload_day"])
+check("не зависит от доли данных и текущей отдачи",
+      S.evaluate("x", {"dl": 0, "ul": 0, "up_pkt": 60}, UP_G, 100, 0, 0,
+                 {"x": {"active": 0, "down": 1e9, "up": 31e9,
+                        "upkt": [31e9, 1, 100, 0, 0]}})[1] == ["upload_day"])
+check("вес хватает на штраф в одиночку",
+      S.SIGNAL_WEIGHTS["upload_day"] >= S.GUARD_DEFAULT["score_needed"])
+check("у причины есть человекочитаемое название",
+      S.t("why_upload_day") != "why_upload_day")
+
+# Уровень уведомления штрафом не является и в evaluate не попадает вовсе.
+check("порог уведомления сам по себе не ограничивает",
+      upday(11, dict(S.GUARD_DEFAULT, upload_warn_gb=10)) == [])
+
+_b = _io.StringIO()
+_sent = []
+_real = S.tg_send
+S.tg_send = lambda m, c=None: (_sent.append(m), (True, ""))[1]
+S.tg_upload_notice(
+    {"telegram": dict(S.TG_DEFAULT, enabled=True, events=True, node_name="N"),
+     "guard": UP_G}, "1.2.3.4",
+    subject={"label": "Дарья", "user_id": "3710"},
+    day={"down": 4.2e9, "up": 11.3e9})
+S.tg_send = _real
+check("в предупреждении есть имя", "Дарья" in _sent[-1], _sent[-1])
+check("и объём отдачи", "10.5" in _sent[-1], _sent[-1])
+check("и сказано, что ограничения нет",
+      S.t("tg_up_note", n="30") in _sent[-1], _sent[-1])
+check("и назван порог ограничения", "30" in _sent[-1])
+
+# Настройки меняют исход — значит видны на экране автоограничения.
+_b = _io.StringIO()
+with redirect_stdout(_b):
+    S.cmd_guard_show(50, UP_G)
+check("оба уровня видны на экране",
+      "10" in _b.getvalue() and "30" in _b.getvalue()
+      and S.t("guard_upday", w="10", d="30") in _b.getvalue(), _b.getvalue())
+_b = _io.StringIO()
+with redirect_stdout(_b):
+    S.cmd_guard_show(50, dict(S.GUARD_DEFAULT, upload_warn_gb=10))
+check("уровень без ограничения назван честно",
+      S.t("guard_upwarn", w="10") in _b.getvalue(), _b.getvalue())
+
+print("\n\033[1mДеловые аккаунты не ограничиваем автоматически\033[0m")
+# Бюро адвокатов и агентство недвижимости выглядят нарушителями по обеим
+# проверкам сразу: двадцать сотрудников на одной подписке — это двадцать
+# адресов, а выгрузка рабочих файлов на сетевом уровне неотличима от раздачи.
+# Порогом это не лечится: разделяет только знание о том, кто это.
+EX_CFG = {"panel": dict(S.PANEL_DEFAULT, enabled=True, exempt=["2442", "152"])}
+check("исключённого не трогаем",
+      S.guard_exempt(EX_CFG, {"user_id": "2442", "label": "Бюро"}) is True)
+check("остальных трогаем",
+      S.guard_exempt(EX_CFG, {"user_id": "999"}) is False)
+check("номер числом тоже подходит",
+      S.guard_exempt(EX_CFG, {"user_id": 2442}) is True)
+check("без номера решить нельзя — значит не исключение",
+      S.guard_exempt(EX_CFG, {"label": "кто-то"}) is False
+      and S.guard_exempt(EX_CFG, None) is False
+      and S.guard_exempt(EX_CFG, {}) is False)
+check("без панели список пуст и никто не исключён",
+      S.guard_exempt({"panel": dict(S.PANEL_DEFAULT)}, {"user_id": "2442"})
+      is False)
+check("отсутствие раздела панели не роняет",
+      S.guard_exempt({}, {"user_id": "2442"}) is False)
+check("пробелы в списке не мешают",
+      S.guard_exempt({"panel": {"exempt": [" 2442 "]}},
+                     {"user_id": "2442"}) is True)
+
+# Список тот же, что у поиска раздачи: одна настройка, одно значение.
+check("список общий с поиском раздачи",
+      "exempt" in S.PANEL_DEFAULT and S.PANEL_DEFAULT["exempt"] == [])
+
+# Настройка меняет исход и живёт в чужом разделе — значит обязана быть видна
+# на экране автоограничения.
+_b = _io.StringIO()
+with redirect_stdout(_b):
+    S.cmd_guard_show(50, dict(S.GUARD_DEFAULT, enabled=True), 2)
+check("число исключений видно на экране автоограничения",
+      "2" in _b.getvalue() and S.t("guard_exempt_n", n=2) in _b.getvalue(),
+      _b.getvalue())
+_b = _io.StringIO()
+with redirect_stdout(_b):
+    S.cmd_guard_show(50, dict(S.GUARD_DEFAULT, enabled=True), 0)
+check("без исключений строки нет",
+      S.t("guard_exempt_n", n=0) not in _b.getvalue())
 
 print("\n\033[1mПамять сторожа переживает перезапуск\033[0m")
 # Живой случай: в 20:18 адрес был подписан именем из панели, в 20:34 тот же

@@ -228,6 +228,15 @@ MSG = {
         "h_upload_ratio": "отдал за сутки столько-то процентов от скачанного, 0 = признак выключен",
         "h_upload_ratio_mb": "не считать отношение, пока отдача меньше стольких мегабайт",
         "why_ratio": "за сутки отдал непропорционально много",
+        "why_upload_day": "отдал десятки гигабайт за сутки",
+        "tg_up_head": "🔔 <b>Много отдачи</b>",
+        "tg_up_warn": "За сутки отдано {gb} — порог уведомления {n} ГБ",
+        "tg_up_note": "<i>Ограничения нет, это предупреждение. При {n} ГБ скорость будет снижена.</i>",
+        "h_upload_warn": "гигабайт отдачи за сутки для уведомления без штрафа, 0 = выкл",
+        "h_upload_day": "гигабайт отдачи за сутки для ограничения, 0 = выкл",
+        "guard_upday": "отдача за сутки: уведомление на {w} ГБ, ограничение на {d} ГБ",
+        "guard_upwarn": "отдача за сутки: уведомление на {w} ГБ, ограничения нет",
+        "guard_uplim": "отдача за сутки: ограничение на {d} ГБ",
         "edt_off": "СКАЧИВАНИЕ НЕ ОГРАНИЧИВАЕТСЯ: на интерфейсе {kinds}, а не fq",
         "edt_fix": "только fq придерживает пакеты по времени отправки. Почините: modprobe sch_fq, затем systemctl restart shaper",
 
@@ -309,7 +318,7 @@ MSG = {
         "h_pn_mbps": "до скольких мегабит резать нарушителя",
         "h_pn_minutes": "на сколько минут резать",
         "h_pn_cooldown": "пауза между сигналами по одному человеку, в минутах",
-        "h_pn_exempt": "кому раздавать можно: userId через запятую",
+        "h_pn_exempt": "кого не трогать вовсе: userId через запятую, действует и на автоограничение",
         "h_pn_proxy": "http-прокси до панели",
         "h_pn_dry": "только показать найденное, ничего не делать",
         "pn_bad_action": "действие — это notify, limit, block, drop или их сочетание",
@@ -356,6 +365,7 @@ MSG = {
         "guard_vol_soft": "за один объём режем до {mbps} Мбит/с, а не до штрафной",
         "guard_ratio_live": "и только пока адрес отдаёт: за отвалившегося штраф не выдаём",
         "guard_notify_cd": "повторное уведомление об одном адресе — не чаще раза в {h} ч",
+        "guard_exempt_n": "исключений панели: {n} — этих не ограничиваем вовсе",
         "why_hourly": "выкачал гигабайты за час",
         "h_watch_iv": "период опроса карт, сек (больше = легче процессору)",
         "why_download": "выкачал десятки гигабайт за сутки",
@@ -600,6 +610,15 @@ MSG = {
         "h_upload_ratio": "uploaded this percent of what was downloaded in a day, 0 = signal off",
         "h_upload_ratio_mb": "ignore the ratio until upload reaches this many megabytes",
         "why_ratio": "uploaded disproportionately much in 24h",
+        "why_upload_day": "uploaded tens of gigabytes in 24h",
+        "tg_up_head": "🔔 <b>Heavy upload</b>",
+        "tg_up_warn": "{gb} uploaded in 24h — the notice threshold is {n} GB",
+        "tg_up_note": "<i>No limit applied, this is a warning. At {n} GB the speed will be reduced.</i>",
+        "h_upload_warn": "gigabytes uploaded per day for a notice without a penalty, 0 = off",
+        "h_upload_day": "gigabytes uploaded per day for a limit, 0 = off",
+        "guard_upday": "daily upload: notice at {w} GB, limit at {d} GB",
+        "guard_upwarn": "daily upload: notice at {w} GB, no limit",
+        "guard_uplim": "daily upload: limit at {d} GB",
         "edt_off": "DOWNLOADS ARE NOT LIMITED: the interface has {kinds}, not fq",
         "edt_fix": "only fq holds packets until their departure time. Fix: modprobe sch_fq, then systemctl restart shaper",
 
@@ -681,7 +700,7 @@ MSG = {
         "h_pn_mbps": "megabits to throttle an offender down to",
         "h_pn_minutes": "for how many minutes to throttle",
         "h_pn_cooldown": "pause between alerts about one person, in minutes",
-        "h_pn_exempt": "who is allowed to share: comma-separated userIds",
+        "h_pn_exempt": "who is left alone entirely: comma-separated userIds, applies to the auto-limiter too",
         "h_pn_proxy": "http proxy to reach the panel",
         "h_pn_dry": "only show what was found, change nothing",
         "pn_bad_action": "action is notify, limit, block, drop, or a combination",
@@ -728,6 +747,7 @@ MSG = {
         "guard_vol_soft": "volume alone is cut to {mbps} Mbit/s, not to the penalty speed",
         "guard_ratio_live": "and only while the address is uploading: no penalty for one that left",
         "guard_notify_cd": "a repeat notification about one address — at most once every {h} h",
+        "guard_exempt_n": "panel exceptions: {n} — these are never limited",
         "why_hourly": "downloaded gigabytes within an hour",
         "h_watch_iv": "map polling period, sec (higher = lighter on CPU)",
         "why_download": "downloaded tens of gigabytes in 24h",
@@ -1085,7 +1105,24 @@ GUARD_DEFAULT = {
     # 0 = мягкой скорости нет, действует обычный penalty_mbps.
     "volume_penalty_mbps": 0,
 
-    # Третий отдельный путь: за сутки отдал больше, чем скачал.
+    # Абсолютный объём отдачи за сутки. Два уровня: на первом только
+    # уведомление, на втором ограничение.
+    #
+    # Единственный признак, который не зависит ни от пропорции, ни от размера
+    # пакета, ни от протокола. Отношение отдачи ловит перекос и потому задевает
+    # разговоры; доля данных ловит крупные пакеты и потому зависит от того,
+    # склеивает ли их ядро. Тридцать гигабайт вверх — это просто тридцать
+    # гигабайт вверх, и объяснить это клиенту можно одной фразой.
+    #
+    # Уровень уведомления нужен, чтобы видеть подходящих к границе раньше, чем
+    # они её перейдут. Штрафа на нём нет.
+    #
+    # 0 = уровень выключен. По умолчанию выключены оба: на мобильной ноде такие
+    # числа бессмысленны, там канал сам по себе потолок.
+    "upload_warn_gb": 0,
+    "upload_day_gb": 0,
+
+    # Четвёртый отдельный путь: за сутки отдал больше, чем скачал.
     #
     # Тихий сидер не попадает ни под одно другое правило. Он отдаёт по
     # полмегабита круглосуточно: мгновенные пороги для него слишком высоки, а
@@ -1200,7 +1237,7 @@ RATIO_BULK_PERCENT = 55
 GUARD_NOTIFY_COOLDOWN = 6 * 3600
 
 SIGNAL_WEIGHTS = {"packet": 2, "peak": 1, "hours": 2, "upload": 1,
-                  "download": 3, "hourly": 3, "ratio": 3}
+                  "download": 3, "hourly": 3, "ratio": 3, "upload_day": 3}
 
 # Веса признаков. Одной нагрузки (3) не хватает — нужен второй признак.
 # Так разовая большая закачка проходит мимо, а торрент набирает 7 из 7.
@@ -1257,7 +1294,10 @@ PANEL_DEFAULT = {
     "limit_mbps": 1,
     "limit_min": 60,
     "cooldown_min": 360,  # не долбить одним и тем же нарушителем
-    "exempt": [],         # userId, которым делиться разрешено (семья и т.п.)
+    # userId, которых не трогает ни поиск раздачи, ни автоограничение.
+    # Деловые аккаунты: офис на одной подписке и выгрузка рабочих файлов
+    # выглядят нарушением по обеим проверкам, и порогом это не лечится.
+    "exempt": [],
 
     # Имя и Telegram ID вместо внутреннего номера пользователя. Требует у
     # токена права users:read. Выключишь — в сообщениях останутся номера,
@@ -2374,6 +2414,8 @@ def cmd_guard(a):
         (a.penalty_min,  "penalty_min",     1, 10080),
         (a.hours,      "hours_per_day",     1, 24),
         (a.upload_gb,  "upload_gb_per_day", 0.1, 1000),
+        (a.upload_warn, "upload_warn_gb",    0, 10000),
+        (a.upload_day,  "upload_day_gb",     0, 10000),
         (a.download_gb, "download_gb_per_day", 0, 10000),
         (a.download_gbh, "download_gb_per_hour", 0, 1000),
         (a.upload_ratio, "upload_ratio_percent", 0, 1000),
@@ -2400,10 +2442,11 @@ def cmd_guard(a):
     cfg["guard"] = g
     save_config(cfg)
     if not a.quiet:
-        cmd_guard_show(cfg["speed_mbps"], g)
+        cmd_guard_show(cfg["speed_mbps"], g,
+                       len((cfg.get("panel") or {}).get("exempt") or []))
 
 
-def cmd_guard_show(speed, g):
+def cmd_guard_show(speed, g, exempt=0):
     print()
     state = f"{C['grn']}{t('guard_on')}{C['r']}" if g["enabled"] \
         else f"{C['gry']}{t('guard_off')}{C['r']}"
@@ -2426,6 +2469,13 @@ def cmd_guard_show(speed, g):
         if g.get("ratio_needs_packet"):
             print(f"  {C['gry']}"
                   f"{t('guard_ratio_pkt', n=RATIO_BULK_PERCENT)}{C['r']}")
+    w, dgb = g.get("upload_warn_gb", 0), g.get("upload_day_gb", 0)
+    if w and dgb:
+        print(f"  {C['gry']}{t('guard_upday', w=f'{w:g}', d=f'{dgb:g}')}{C['r']}")
+    elif w:
+        print(f"  {C['gry']}{t('guard_upwarn', w=f'{w:g}')}{C['r']}")
+    elif dgb:
+        print(f"  {C['gry']}{t('guard_uplim', d=f'{dgb:g}')}{C['r']}")
     if g.get("download_gb_per_hour") and g.get("volume_needs_upload"):
         print(f"  {C['gry']}{t('guard_vol_needs', n=g['packet_bytes'])}{C['r']}")
     print(f"  {t('guard_penalty')}: {g['penalty_mbps']:g} Mbit/s "
@@ -2437,6 +2487,11 @@ def cmd_guard_show(speed, g):
         print(f"  {C['gry']}{soft}{C['r']}")
     print(f"  {C['gry']}"
           f"{t('guard_notify_cd', h=GUARD_NOTIFY_COOLDOWN // 3600)}{C['r']}")
+    # Исключения живут в разделе панели, а действуют и здесь. Настройка,
+    # меняющая исход и невидимая на этом экране, — ровно тот класс ошибок,
+    # который мы ловим отдельными тестами.
+    if exempt:
+        print(f"  {C['gry']}{t('guard_exempt_n', n=exempt)}{C['r']}")
     print()
 
 
@@ -2562,7 +2617,14 @@ def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None):
                         SIGNAL_WEIGHTS["hourly"] + SIGNAL_WEIGHTS["packet"]),
                     ["hourly", "packet"])
 
-    # Третий независимый путь: за сутки отдал непропорционально много.
+    # Отдельный путь: за сутки отдано столько-то гигабайт. Без условий про
+    # пропорцию, размер пакета и текущую активность — важен только объём.
+    up_gb = g.get("upload_day_gb", 0)
+    if up_gb and day.get("up", 0) >= up_gb * 1e9:
+        return (max(g["score_needed"], SIGNAL_WEIGHTS["upload_day"]),
+                ["upload_day"])
+
+    # Четвёртый независимый путь: за сутки отдал непропорционально много.
     #
     # Считается от скачанного, а не в абсолюте, потому что тихого сидера
     # выдаёт именно перекос: 916 МБ вверх против 379 МБ вниз. В абсолютных
@@ -2708,6 +2770,30 @@ def notify_due(notified, ip, reasons, now=None):
     return True
 
 
+def guard_exempt(cfg, who):
+    """
+    Деловой аккаунт: автоограничение его не трогает.
+
+    Список тот же, что у поиска раздачи, — `panel set --exempt`. Он и там, и
+    здесь означает одно: «про этого человека мы знаем, что он такой».
+
+    Зачем это нужно. Бюро адвокатов или агентство недвижимости выглядят
+    нарушителями по обеим проверкам сразу. По раздаче — потому что двадцать
+    сотрудников на одной подписке это двадцать адресов у одного пользователя.
+    По отношению отдачи — потому что выгрузка видео объектов на сетевом уровне
+    неотличима от раздачи торрента: та же пропорция, те же набитые доверху
+    пакеты, та же доля данных. Разделить их порогом нельзя в принципе,
+    разделяет только знание о том, кто это.
+
+    Без панели не работает: узнать, чей это адрес, больше неоткуда.
+    """
+    uid = str((who or {}).get("user_id") or "").strip()
+    if not uid:
+        return False
+    return uid in {str(x).strip()
+                   for x in ((cfg.get("panel") or {}).get("exempt") or [])}
+
+
 VOLUME_ONLY = {"download", "hourly"}
 
 
@@ -2741,6 +2827,10 @@ def cmd_watch(a):
                 if isinstance(v, list) and len(v) == 2}
     owners_seen = {k: v for k, v in (_gs.get("owners") or {}).items()
                    if isinstance(v, list) and len(v) == 2}
+    # Кому уже сообщали про объём отдачи и в какой день. Хранится дата, а не
+    # флаг: тогда сутки закрываются сами, без отдельной чистки в полночь.
+    noticed = {k: str(v) for k, v in (_gs.get("noticed") or {}).items()
+               if isinstance(v, str)}
     daily = load_daily()
     today = time.strftime("%Y-%m-%d")
     prev, prev_t = read_users(), time.monotonic()
@@ -2856,6 +2946,36 @@ def cmd_watch(a):
                 if not guard_on or ip in pens or ip in wl:
                     continue
 
+                # Уровень уведомления по объёму отдачи. Один раз в сутки на
+                # адрес: смысл в том, чтобы заметить подходящего к границе, а
+                # не напоминать о нём каждые десять секунд.
+                warn_gb = g.get("upload_warn_gb", 0)
+                if warn_gb and d["up"] >= warn_gb * 1e9 \
+                        and noticed.get(ip) != today:
+                    noticed[ip] = today
+                    nwho = owner_of(ip) or panel_owner(cfg, ip)
+                    nunknown = None
+                    nsubject = None
+                    if nwho:
+                        owner_remember(owners_seen, ip, nwho)
+                        nsubject = nwho
+                    else:
+                        nold, nat = owner_recall(owners_seen, ip)
+                        if nold:
+                            nwho, nsubject = nold, dict(nold, seen_at=nat)
+                        else:
+                            nunknown = panel_owner_reason(cfg, ip)
+                    if not guard_exempt(cfg, nwho):
+                        log_event("guard_upload_notice", ip=ip,
+                                  source="watchdog", up=int(d["up"]),
+                                  subject=(nwho or {}).get("label"))
+                        tg_upload_notice(cfg, ip, subject=nsubject,
+                                         unknown=nunknown, day=d)
+                    guard_state_save({"notified": {k: list(v) for k, v
+                                                   in notified.items()},
+                                      "owners": owners_seen,
+                                      "noticed": noticed})
+
                 # счётчики с допуском: короткий провал не обнуляет наблюдение
                 both = s["dl"] >= dl_floor and s["ul"] >= ul_floor
                 # Крупные пакеты вверх как часть обязательного условия, а не
@@ -2872,6 +2992,40 @@ def cmd_watch(a):
                 score, reasons = evaluate(ip, s, g, cap, both_streak[ip],
                                           peak_streak[ip], daily, hourly)
                 if score >= need_score:
+                    # Владельца выясняем ДО штрафа, а не после: деловой
+                    # аккаунт трогать нельзя вообще, а не «ограничить и потом
+                    # подписать именем».
+                    #
+                    # Сначала свой список владельцев — он заполняется руками и
+                    # потому точнее. Не нашлось — спрашиваем панель: она знает
+                    # всех, но только пока адрес активен.
+                    subject, unknown = None, None
+                    who = owner_of(ip) or panel_owner(cfg, ip)
+                    if who:
+                        owner_remember(owners_seen, ip, who)
+                        subject = who
+                    else:
+                        # Панель знает человека, только пока он на ноде. Тот
+                        # же нарушитель через двадцать минут приходил уже
+                        # безымянным, хотя ответ был получен и выброшен.
+                        old, at = owner_recall(owners_seen, ip)
+                        if old:
+                            who, subject = old, dict(old, seen_at=at)
+                        else:
+                            unknown = panel_owner_reason(cfg, ip)
+
+                    # Исключения панели действуют и здесь. Офис на одной
+                    # подписке — это не нарушитель: агентство, заливающее
+                    # видео объектов, по сети неотличимо от раздачи, и
+                    # разделить их порогом нельзя в принципе. Разделяет
+                    # только знание о том, кто это.
+                    if guard_exempt(cfg, who):
+                        log_event("guard_exempt", ip=ip, source="watchdog",
+                                  reason=",".join(reasons),
+                                  user_id=str((who or {}).get("user_id") or ""),
+                                  subject=(who or {}).get("label"))
+                        continue
+
                     until = time.time() + g["penalty_min"] * 60
                     mbps = penalty_rate(g, reasons)
                     penalty_apply(ip, mbps, until)
@@ -2879,26 +3033,8 @@ def cmd_watch(a):
                              "since": time.time(), "source": "watchdog",
                              "kind": "auto", "reason": ",".join(reasons),
                              "score": score, "reasons": reasons}
-                    # Ярлык владельца прикрепляем в момент выдачи: позже
-                    # человек может отключиться, и связь потеряется.
-                    #
-                    # Сначала свой список владельцев — он заполняется руками и
-                    # потому точнее. Не нашлось — спрашиваем панель: она знает
-                    # всех, но только пока адрес активен.
-                    who = owner_of(ip) or panel_owner(cfg, ip)
-                    unknown = None
-                    if who:
-                        owner_remember(owners_seen, ip, who)
-                        entry["subject"] = who
-                    else:
-                        # Панель знает человека, только пока он на ноде. Тот
-                        # же нарушитель через двадцать минут приходил уже
-                        # безымянным, хотя ответ был получен и выброшен.
-                        old, at = owner_recall(owners_seen, ip)
-                        if old:
-                            entry["subject"] = dict(old, seen_at=at)
-                        else:
-                            unknown = panel_owner_reason(cfg, ip)
+                    if subject:
+                        entry["subject"] = subject
                     # Под замком: файл теперь правит ещё и API.
                     penalties_update(lambda p, i=ip, e=entry: p.__setitem__(i, e))
                     pens[ip] = entry
@@ -2918,7 +3054,8 @@ def cmd_watch(a):
                     # не чаще раза в шесть часов.
                     guard_state_save({"notified": {k: list(v) for k, v
                                                    in notified.items()},
-                                      "owners": owners_seen})
+                                      "owners": owners_seen,
+                                      "noticed": noticed})
                     if notify_due(notified, ip, reasons):
                         tg_penalty(cfg, ip, mbps, g["penalty_min"],
                                    reasons, subject=entry.get("subject"),
@@ -3203,6 +3340,36 @@ def penalty_packets(day, now=None):
     if MIN_PACKET_BYTES <= top <= MAX_PACKET_BYTES:
         parts.append(t("tg_pen_pkt_max", n=int(top)))
     return " · ".join(parts), max(0.0, now - since)
+
+
+def tg_upload_notice(cfg, ip, subject=None, unknown=None, day=None):
+    """
+    Событие: адрес много отдал за сутки. Ограничения нет.
+
+    Отдельное сообщение, а не штраф с нулевой скоростью: смысл уровня в том,
+    чтобы владелец ноды увидел подходящих к границе раньше, чем они её
+    перейдут, и сам решил, что с ними делать.
+    """
+    tg = cfg["telegram"]
+    if not tg.get("enabled") or not tg.get("events"):
+        return
+    g = cfg["guard"]
+    lines = offender_card(tg, subject, t("tg_up_head"), unknown)
+    lines.append(t("tg_pen_addr", ip=html.escape(ip)))
+    lines.append(t("tg_up_warn", gb=fmt_bytes((day or {}).get("up", 0)),
+                   n=f"{g.get('upload_warn_gb', 0):g}"))
+    figures = penalty_figures(day)
+    if figures:
+        lines.append(t("tg_pen_stat", s=figures))
+    pkts, window = penalty_packets(day)
+    if pkts:
+        lines.append(t("tg_pen_pkts", d=fmt_hold(window), s=pkts))
+    if g.get("upload_day_gb"):
+        lines.append("")
+        lines.append(t("tg_up_note", n=f"{g['upload_day_gb']:g}"))
+    ok, err = tg_send("\n".join(lines), cfg)
+    if not ok:
+        print(f"telegram: {err}", flush=True)
 
 
 def tg_penalty(cfg, ip, mbps, minutes, reasons, subject=None, unknown=None,
@@ -5803,6 +5970,10 @@ def build_parser():
     g.add_argument("--penalty-min", type=int, default=None, help=t("h_pen_min"))
     g.add_argument("--hours", type=float, default=None, help=t("h_hours"))
     g.add_argument("--upload-gb", type=float, default=None, help=t("h_upload_gb"))
+    g.add_argument("--upload-warn", dest="upload_warn", type=float,
+                   default=None, help=t("h_upload_warn"))
+    g.add_argument("--upload-day", dest="upload_day", type=float,
+                   default=None, help=t("h_upload_day"))
     g.add_argument("--download-gb", type=float, default=None, help=t("h_download_gb"))
     g.add_argument("--download-gbh", type=float, default=None, help=t("h_download_gbh"))
     g.add_argument("--upload-ratio", dest="upload_ratio", type=float, default=None,
