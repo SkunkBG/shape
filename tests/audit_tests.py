@@ -55,7 +55,8 @@ def guard(**kw):
 def tg(**kw):
     d = dict(action="set", at=None, token=None, chat=None, thread=None, name=None,
              proxy=None, enable=False, disable=False, events=None, daily=None,
-             backup=None, backup_thread=None, backup_day=None, quiet=True)
+             backup=None, backup_thread=None, backup_day=None, updates=None,
+             quiet=True)
     d.update(kw); return argparse.Namespace(**d)
 
 print("\n\033[1m1. Регрессия: правка автоограничения стирала настройки Telegram\033[0m")
@@ -792,6 +793,49 @@ check("замер отдаёт число пакетов, а не только �
       "up_pkts" in S.traffic_sample(
           {"x": {"down": 0, "up": 0, "up_pkts": 0}},
           {"x": {"down": 100, "up": 1300, "up_pkts": 1}}, 1.0)["x"])
+
+print("\n\033[1mУведомление об обновлении\033[0m")
+check("номер версии разбирается", S.version_tuple("3.48") == (3, 48))
+check("мусор не роняет", S.version_tuple("x") == ()
+      and S.version_tuple(None) == () and S.version_tuple("") == ())
+check("новее — это новее", S.update_newer("3.48", "3.49") is True)
+check("та же версия — нет", S.update_newer("3.48", "3.48") is False)
+check("старее — нет", S.update_newer("3.48", "3.47") is False)
+check("сравнение числовое, а не строковое",
+      S.update_newer("3.5", "3.48") is True, "3.48 новее 3.5")
+check("смена мажорной версии видна", S.update_newer("3.48", "4.0") is True)
+check("неизвестная установленная версия не даёт ложной тревоги",
+      S.update_newer("unknown", "3.49") is False)
+check("пустой ответ репозитория тоже", S.update_newer("3.48", "") is False)
+
+_real_fetch, _real_ver, _real_send = S.update_fetch, S.shape_version, S.tg_send
+_ups = []
+S.tg_send = lambda m, c=None: (_ups.append(m), (True, ""))[1]
+S.shape_version = lambda: "3.48"
+S.update_fetch = lambda p="": "3.49"
+_cfg = {"telegram": dict(S.TG_DEFAULT, enabled=True, node_name="Akenia")}
+_st = {}
+check("в первый раз сообщаем", S.update_due(_cfg, _st, T0) is True)
+check("и запоминаем, о чём", _st.get("seen") == "3.49", _st)
+check("сразу второй раз — молчим", S.update_due(_cfg, _st, T0 + 60) is False)
+check("через шесть часов, версия та же — тоже молчим",
+      S.update_due(_cfg, _st, T0 + S.UPDATE_INTERVAL + 1) is False)
+S.update_fetch = lambda p="": "3.50"
+check("новая версия — снова сообщаем",
+      S.update_due(_cfg, _st, T0 + 3 * S.UPDATE_INTERVAL) is True)
+S.update_fetch = lambda p="": ""
+check("репозиторий недоступен — молчим, а не паникуем",
+      S.update_due(_cfg, _st, T0 + 6 * S.UPDATE_INTERVAL) is False)
+check("выключено в настройках — не проверяем вовсе",
+      S.update_due({"telegram": dict(S.TG_DEFAULT, enabled=True,
+                                     updates=False)}, {}, T0) is False)
+check("Telegram выключен — тем более",
+      S.update_due({"telegram": dict(S.TG_DEFAULT, updates=True)}, {}, T0)
+      is False)
+check("в сообщении обе версии", "3.48" in _ups[0] and "3.49" in _ups[0], _ups[0])
+check("и сказано, чем обновлять", "shaper" in _ups[0], _ups[0])
+check("по умолчанию включено", S.TG_DEFAULT["updates"] is True)
+S.update_fetch, S.shape_version, S.tg_send = _real_fetch, _real_ver, _real_send
 
 print("\n\033[1mАбсолютный объём отдачи за сутки\033[0m")
 # Единственный признак, который не зависит ни от пропорции, ни от размера

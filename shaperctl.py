@@ -190,6 +190,11 @@ MSG = {
         "tg_pen_addr": "📍 Адрес: {ip}",
         "tg_pen_speed": "🐌 Скорость снижена до {mbps} Мбит/с на {d}",
         "tg_pen_why": "Причина: <i>{why}</i>",
+        "tg_upd_head": "⬆️ <b>Доступно обновление</b>",
+        "tg_upd_have": "Установлено: <code>{v}</code>",
+        "tg_upd_new": "В репозитории: <code>{v}</code>",
+        "tg_upd_how": "<i>Обновить: shaper → Сервис → Обновление из GitHub</i>",
+        "tg_upd": "Обновления",
         "tg_pen_stat": "📈 За сутки: {s}",
         "tg_pen_pkts": "📦 Отдача за {d}: {s}",
         "tg_pen_bulk": "данными {p}%",
@@ -572,6 +577,11 @@ MSG = {
         "tg_pen_addr": "📍 Address: {ip}",
         "tg_pen_speed": "🐌 Speed cut to {mbps} Mbit/s for {d}",
         "tg_pen_why": "Reason: <i>{why}</i>",
+        "tg_upd_head": "⬆️ <b>An update is available</b>",
+        "tg_upd_have": "Installed: <code>{v}</code>",
+        "tg_upd_new": "In the repository: <code>{v}</code>",
+        "tg_upd_how": "<i>To update: shaper → Service → Update from GitHub</i>",
+        "tg_upd": "Updates",
         "tg_pen_stat": "📈 For the day: {s}",
         "tg_pen_pkts": "📦 Upload over {d}: {s}",
         "tg_pen_bulk": "{p}% as data",
@@ -1255,6 +1265,7 @@ TG_DEFAULT = {
     "node_name": "",      # как подписывать ноду, пусто = имя хоста
     "events": True,       # сообщение при каждом ограничении
     "daily": True,        # сводка за прошедшие сутки
+    "updates": True,      # сообщение, когда в репозитории появилась версия новее
     "digest_at": "09:00", # во сколько её присылать, местное время ноды
     "proxy": "",          # socks5://… или http://… — нужен на российских нодах
 
@@ -2831,6 +2842,7 @@ def cmd_watch(a):
     # флаг: тогда сутки закрываются сами, без отдельной чистки в полночь.
     noticed = {k: str(v) for k, v in (_gs.get("noticed") or {}).items()
                if isinstance(v, str)}
+    upd = _gs.get("update") if isinstance(_gs.get("update"), dict) else {}
     daily = load_daily()
     today = time.strftime("%Y-%m-%d")
     prev, prev_t = read_users(), time.monotonic()
@@ -2859,6 +2871,13 @@ def cmd_watch(a):
                 today = day_now
             digest_due(cfg)
             backup_due(cfg)
+            # Раз в шесть часов, и только если что-то изменилось: сохраняем
+            # состояние проверки обновлений тем же файлом, что и остальное.
+            if update_due(cfg, upd):
+                guard_state_save({"notified": {k: list(v) for k, v
+                                               in notified.items()},
+                                  "owners": owners_seen, "noticed": noticed,
+                                  "update": upd})
             # Опрос панели. Внутри свой дедлайн и своя пауза после ошибки:
             # недоступная панель не должна ни ронять сторож, ни задерживать
             # выдачу штрафов дольше одного пропущенного прохода.
@@ -2974,7 +2993,7 @@ def cmd_watch(a):
                     guard_state_save({"notified": {k: list(v) for k, v
                                                    in notified.items()},
                                       "owners": owners_seen,
-                                      "noticed": noticed})
+                                      "noticed": noticed, "update": upd})
 
                 # счётчики с допуском: короткий провал не обнуляет наблюдение
                 both = s["dl"] >= dl_floor and s["ul"] >= ul_floor
@@ -3055,7 +3074,7 @@ def cmd_watch(a):
                     guard_state_save({"notified": {k: list(v) for k, v
                                                    in notified.items()},
                                       "owners": owners_seen,
-                                      "noticed": noticed})
+                                      "noticed": noticed, "update": upd})
                     if notify_due(notified, ip, reasons):
                         tg_penalty(cfg, ip, mbps, g["penalty_min"],
                                    reasons, subject=entry.get("subject"),
@@ -3121,6 +3140,37 @@ def _socks5(sock, host, port, user=None, pwd=None):
     _recvn(sock, (4 if atyp == 1 else 16 if atyp == 4 else _recvn(sock, 1)[0]) + 2)
 
 
+def _get(url, proxy="", timeout=15):
+    """GET с теми же правилами прокси, что и у отправки в Telegram."""
+    u = urllib.parse.urlsplit(url)
+    if proxy.startswith(("socks5://", "socks5h://")):
+        p = urllib.parse.urlsplit(proxy)
+        sock = socket.create_connection((p.hostname, p.port or 1080),
+                                        timeout=timeout)
+        try:
+            _socks5(sock, u.hostname, 443, p.username, p.password)
+            ctx = ssl.create_default_context()
+            conn = http.client.HTTPSConnection(u.hostname, 443,
+                                               timeout=timeout, context=ctx)
+            conn.sock = ctx.wrap_socket(sock, server_hostname=u.hostname)
+            conn.request("GET", u.path, headers={"Host": u.hostname})
+            r = conn.getresponse()
+            body = r.read()
+            if r.status != 200:
+                raise OSError(f"HTTP {r.status}")
+            return body.decode("utf-8", "replace")
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(
+        {"http": proxy, "https": proxy} if proxy else {}))
+    with opener.open(urllib.request.Request(url), timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
 def _post(url, data, proxy="", content_type="application/x-www-form-urlencoded"):
     u = urllib.parse.urlsplit(url)
     if proxy.startswith(("socks5://", "socks5h://")):
@@ -3160,6 +3210,84 @@ def _post(url, data, proxy="", content_type="application/x-www-form-urlencoded")
         {"http": proxy, "https": proxy} if proxy else {}))
     with opener.open(req, timeout=15) as r:
         return r.status
+
+
+# Проверка обновлений. Тянем один маленький файл, а не клонируем репозиторий:
+# клон в фоновом сторожа — это десятки мегабайт и минуты на медленной ноде.
+#
+# Веток две намеренно: у публичного репозитория основная может называться
+# и main, и master, а гадать в коде, который работает на чужих нодах, нельзя.
+UPDATE_URLS = (
+    "https://raw.githubusercontent.com/SkunkBG/shape/main/VERSION",
+    "https://raw.githubusercontent.com/SkunkBG/shape/master/VERSION",
+)
+UPDATE_INTERVAL = 6 * 3600
+VERSION_RE = re.compile(r"^\d+(\.\d+){0,3}$")
+
+
+def version_tuple(v):
+    """«3.48» → (3, 48). Не разобралось — пустой кортеж."""
+    try:
+        return tuple(int(x) for x in str(v).strip().split(".")[:4])
+    except (TypeError, ValueError):
+        return ()
+
+
+def update_newer(local, remote):
+    """Есть ли в репозитории версия новее установленной."""
+    lt, rt = version_tuple(local), version_tuple(remote)
+    return bool(lt and rt and rt > lt)
+
+
+def update_fetch(proxy=""):
+    """Номер версии из репозитория. Не вышло — пустая строка, и это не ошибка."""
+    for url in UPDATE_URLS:
+        try:
+            body = _get(url, proxy, timeout=10)
+        except Exception:
+            continue
+        v = (body or "").strip().splitlines()
+        v = v[0].strip() if v else ""
+        if VERSION_RE.match(v):
+            return v
+    return ""
+
+
+def tg_update_notice(cfg, remote):
+    """Сообщение о доступном обновлении. Одно на версию."""
+    tg = cfg["telegram"]
+    lines = [f"{t('tg_upd_head')} · <b>{node_label(tg)}</b>", "",
+             t("tg_upd_have", v=html.escape(shape_version())),
+             t("tg_upd_new", v=html.escape(remote)), "",
+             t("tg_upd_how")]
+    ok, err = tg_send("\n".join(lines), cfg)
+    if not ok:
+        print(f"telegram: {err}", flush=True)
+    return ok
+
+
+def update_due(cfg, state, now=None):
+    """
+    Раз в шесть часов: не появилась ли версия новее. Сообщаем один раз на
+    версию — иначе напоминание превратилось бы в четыре сообщения в сутки.
+
+    Состояние правится на месте: {"at": когда проверяли, "seen": о чём уже
+    сообщили}.
+    """
+    tg = cfg["telegram"]
+    if not tg.get("enabled") or not tg.get("updates"):
+        return False
+    now = now if now is not None else time.time()
+    if now - float(state.get("at") or 0) < UPDATE_INTERVAL:
+        return False
+    state["at"] = now
+    remote = update_fetch(tg.get("proxy") or "")
+    if not remote or remote == state.get("seen"):
+        return False
+    if not update_newer(shape_version(), remote):
+        return False
+    state["seen"] = remote
+    return tg_update_notice(cfg, remote)
 
 
 def node_label(tg):
@@ -4881,6 +5009,8 @@ def cmd_telegram(a):
         tg["enabled"] = False
     if a.events is not None:
         tg["events"] = a.events == "on"
+    if a.updates is not None:
+        tg["updates"] = a.updates == "on"
     if a.daily is not None:
         tg["daily"] = a.daily == "on"
     cfg["telegram"] = tg
@@ -6018,6 +6148,7 @@ def build_parser():
     tg.add_argument("--enable", action="store_true")
     tg.add_argument("--disable", action="store_true")
     tg.add_argument("--events", choices=["on", "off"], default=None)
+    tg.add_argument("--updates", choices=["on", "off"], default=None)
     tg.add_argument("--daily", choices=["on", "off"], default=None)
     tg.add_argument("--backup", choices=["on", "off"], default=None,
                     help=t("h_tg_backup"))

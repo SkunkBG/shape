@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.48-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.49-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.48
+# Shape v3.49
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -886,6 +886,28 @@ Top downloaders:
 1. 185.12.34.56 — 24.8 GB
 2. 91.234.12.7 — 19.2 GB
 ```
+
+### Update notification
+
+```
+⬆️ An update is available · Akenia
+
+Installed: 3.48
+In the repository: 3.49
+
+To update: shaper → Service → Update from GitHub
+```
+
+Every six hours the node fetches a single `VERSION` file from the repository —
+not a clone, a dozen bytes. If a version newer than the installed one appears, a
+message arrives, **one per version**, not a reminder four times a day.
+
+The proxy is the one configured for Telegram: on nodes where Telegram is blocked,
+GitHub usually is too.
+
+If the repository is unreachable, nothing happens and the next attempt is in six
+hours. The toggle: **Telegram → [13] About updates**, or
+`telegram set --updates on|off` on the command line.
 
 **Digest time** is set in the menu, entry `[9]`, `09:00` node local time by
 default. The digest always covers the previous calendar day: at midnight a

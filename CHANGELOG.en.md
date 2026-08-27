@@ -13,6 +13,60 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.49
+
+**A Telegram notification when a newer version appears in the repository.**
+
+```
+⬆️ An update is available · Akenia
+
+Installed: 3.48
+In the repository: 3.49
+
+To update: shaper → Service → Update from GitHub
+```
+
+### How it works
+
+Every six hours the node fetches a single `VERSION` file from the repository. Not
+a clone — a dozen bytes. Cloning the repository from the background watchdog
+would mean tens of megabytes and minutes of work on a slow node, every few hours
+at that.
+
+The message arrives **once per version**. Otherwise it would turn into a reminder
+four times a day, and people would stop reading it — as they do with everything
+that repeats.
+
+The proxy is the one configured for Telegram: on nodes where Telegram is
+unreachable, GitHub usually is too.
+
+If the repository does not answer, nothing happens and nothing is written; the
+next attempt is in six hours. Both `main` and `master` are tried: guessing inside
+code that runs on other people's nodes is not acceptable.
+
+### Version comparison is numeric
+
+`3.5` is older than `3.48`, though as strings it is the other way round. The
+number is parsed into components and compared component by component.
+
+If the installed version cannot be read, there is no alarm: without a reference
+point there is nothing to compare against.
+
+### The toggle
+
+**Telegram → [13] About updates**, on by default. On the command line:
+`telegram set --updates on|off`.
+
+### Also
+
+* The check state lives in the same `guard.state` as the rest of the watchdog's
+  memory — no new file appeared.
+* Tests: 20 new ones. Numeric version comparison, one message per version, the
+  six-hour pause, an unreachable repository, the toggle off, an unreadable
+  installed version.
+
+---
+
 ## 3.48
 
 **The ratio threshold on home nodes went from 35% to 50%. The first confirmed
