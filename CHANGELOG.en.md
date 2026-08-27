@@ -13,6 +13,99 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.63
+
+**The address threshold is derived from the plan: as many devices sold, as many
+addresses are normal.**
+
+### Why
+
+One threshold for everyone stops working once plans differ. The node owner is
+introducing a grid: 5 devices for 500 GB, 10 for 1 TB, 15 for 3 TB. Twenty
+addresses for someone on a fifteen-device plan are normal; for someone on a
+one-device plan they are not.
+
+```bash
+shaperctl panel set --per-device 4
+```
+
+| Plan | Threshold |
+| --- | --- |
+| 1 device | 20 (base) |
+| 5 devices | 20 (base) |
+| 10 devices | 40 |
+| 15 devices | 60 |
+
+The multiplier exists because **a mobile client changes address** on reconnect
+and on handover: one device produces several addresses per window.
+
+### The rule only raises the threshold
+
+The base stays the lower bound. No new triggers appear — only false ones can
+disappear. That makes the setting safe: switching it on tightens nothing.
+
+### The plan, not registered devices
+
+It takes `hwidDeviceLimit` — what was sold.
+
+The count of registered devices will not do: it depends on whether the client
+installed the app. And above all — **someone handed a config file never appears
+in the device list at all**. That is exactly how resale works, and exactly why a
+device limit does not stop it.
+
+The field arrives in the user card Shape requests anyway, for the name. **Zero**
+extra requests.
+
+If no plan is set, the base threshold applies. Guessing how many devices the
+owner sold is not something to do on his behalf.
+
+### How it shows
+
+The plan check is the second stage, after the base threshold: the base acts as a
+pre-filter, so there is no need to ask about the plan for all six thousand users.
+
+The message states which threshold was applied:
+
+```
+Simultaneous addresses: 25 over the last 10 min
+Threshold for his plan: 60 — devices sold: 15
+```
+
+Menu: **Panel → [20] Threshold from the plan**. Off by default.
+
+### Also
+
+* Tests: 15 new ones. Thresholds for five plans, the setting off, a missing card,
+  junk in the field, the rule never lowering the threshold, a full pass — a
+  fifteen-device plan clears the suspicion, a one-device plan keeps it.
+
+---
+
+## 3.62
+
+**A repeat sharing message no longer says "addresses: 0".**
+
+The pause between actions on one offender is six hours, while the cut-off lasts
+an hour. When the pause ends and the check fires a second time, there is nothing
+to add: all of his addresses are already limited. The message meanwhile said:
+
+```
+🚫 Access to the node cut off for 60 min, addresses: 0
+```
+
+The zero meant "added on this pass" but read as "nothing was done". The cut-off
+was in fact in place.
+
+What is counted now is what is limited **right now**, not what was added. On a
+repeat it will show the same 146 as the first time.
+
+### Also
+
+* Tests: 3 new ones. The first pass cuts off 25 addresses, the second shows the
+  same 25 rather than zero, while genuinely adding nothing.
+
+---
+
 ## 3.61
 
 **In the status line "Panel" became "Remnawave".**

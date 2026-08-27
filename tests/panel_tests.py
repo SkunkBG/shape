@@ -505,7 +505,7 @@ check("ник разобран из описания", d["1"]["handle"] == "@nic
 check("telegram разобран", d["1"]["telegram_id"] == "850000001", d["1"])
 check("лишние поля выброшены",
       set(d["1"]) == {"id", "username", "name", "handle", "tag",
-                      "telegram_id"},
+                      "device_limit", "telegram_id"},
       sorted(d["1"]))
 
 # Отдельного поля под имя в панели нет: логин там «user_637181482», а имя,
@@ -813,6 +813,100 @@ card_own = "\n".join(S.offender_card(
 check("и карточка не падает", "Кто-то" in card_own, card_own)
 check("имя без telegram ссылкой не становится",
       "tg://user" not in card_own, card_own)
+
+print("\n\033[1m32a. Порог адресов от тарифа\033[0m")
+# «Сколько устройств продано» и «сколько адресов норма» — одно и то же число,
+# только второе больше: у мобильного клиента адрес меняется при
+# переподключении, и одно устройство даёт несколько адресов за окно.
+#
+# Лимит устройств берётся из тарифа, а не из числа зарегистрированных: те
+# зависят от того, поставил ли клиент приложение, а тариф не зависит ни от
+# чего. И тот, кому переслали конфиг файлом, в устройствах не появится вовсе.
+PD = dict(S.PANEL_DEFAULT, ip_threshold=20, per_device=4)
+check("тариф неизвестен — базовый порог",
+      S.panel_threshold(PD, {"device_limit": 0}) == (20, False))
+check("карточки нет — тоже базовый",
+      S.panel_threshold(PD, None) == (20, False))
+check("одно устройство: базовый остаётся нижней границей",
+      S.panel_threshold(PD, {"device_limit": 1}) == (20, True))
+check("пять устройств: 20, то есть базовый",
+      S.panel_threshold(PD, {"device_limit": 5}) == (20, True))
+check("десять устройств: 40",
+      S.panel_threshold(PD, {"device_limit": 10}) == (40, True))
+check("пятнадцать: 60",
+      S.panel_threshold(PD, {"device_limit": 15}) == (60, True))
+check("выключено — тариф не смотрим",
+      S.panel_threshold(dict(PD, per_device=0), {"device_limit": 15})
+      == (20, False))
+check("правило только поднимает порог",
+      all(S.panel_threshold(PD, {"device_limit": d})[0] >= 20
+          for d in range(0, 40)))
+check("по умолчанию выключено", S.PANEL_DEFAULT["per_device"] == 0)
+
+check("лимит устройств читается из карточки",
+      S.panel_person({"id": 1, "username": "u",
+                      "hwidDeviceLimit": 15})["device_limit"] == 15)
+check("мусор в поле не роняет",
+      S.panel_person({"id": 1, "username": "u",
+                      "hwidDeviceLimit": "много"})["device_limit"] == 0
+      and S.panel_person({"id": 1, "username": "u"})["device_limit"] == 0)
+
+# Полный проход: тариф на 15 устройств снимает подозрение с того, кого базовый
+# порог поймал бы.
+fresh_cache(); drop_state()
+sent.clear(); docs.clear(); PANEL["drops"] = []
+S.read_users = lambda: {}
+PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
+                              "hwidDeviceLimit": 15}}
+PANEL["users"] = make_users({741: 25}, age=60)
+res_pd = S.panel_scan({"panel": conf(action="notify", per_device=4),
+                       "telegram": dict(S.TG_DEFAULT, enabled=True,
+                                        token="x", chat_id="1")})
+check("25 адресов при тарифе на 15 устройств — не нарушитель",
+      res_pd["offenders"] and res_pd["offenders"][0].get("skipped") is True,
+      res_pd["offenders"])
+check("и в Telegram ничего не ушло", sent == [], sent)
+
+fresh_cache(); drop_state(); sent.clear()
+PANEL["directory"]["741"]["hwidDeviceLimit"] = 1
+res_pd2 = S.panel_scan({"panel": conf(action="notify", per_device=4),
+                        "telegram": dict(S.TG_DEFAULT, enabled=True,
+                                         token="x", chat_id="1")})
+check("тот же человек с тарифом на одно устройство — нарушитель",
+      res_pd2["offenders"] and not res_pd2["offenders"][0].get("skipped"),
+      res_pd2["offenders"])
+check("и в сообщении сказано, какой порог применён",
+      sent and ("тариф" in sent[0] or "plan" in sent[0]), sent[:1])
+
+print("\n\033[1m32b. Повторное сообщение не говорит «адресов: 0»\033[0m")
+# Пауза между срабатываниями шесть часов, перекрытие держится час и дольше.
+# На втором проходе добавлять нечего — все адреса уже перекрыты, — и в
+# сообщение уходило «Доступ перекрыт, адресов: 0». Выглядит как сбой, хотя
+# перекрытие на месте. Показывать надо то, что под ограничением сейчас.
+_st2, _pu2, _lp2 = {}, S.penalties_update, S.load_penalties
+S.penalties_update = lambda fn: fn(_st2)
+S.load_penalties = lambda: dict(_st2)
+S.penalty_clear = lambda ip: None
+S.whitelist_ips = lambda: set()
+S.read_users = lambda: {"10.241.0.%d" % i: {} for i in range(25)}
+
+fresh_cache(); drop_state()
+sent.clear(); docs.clear(); PANEL["drops"] = []
+PANEL["directory"] = {"741": {"id": 741, "username": "user_741"}}
+PANEL["users"] = make_users({741: 25}, age=60)
+cfg_rep2 = {"panel": conf(action="block", cooldown_min=0),
+            "telegram": dict(S.TG_DEFAULT, enabled=True, token="x", chat_id="1")}
+S.panel_scan(cfg_rep2)
+check("первый проход: перекрыто 25", "25" in sent[0], sent[0][:300])
+
+sent.clear()
+S.panel_scan(cfg_rep2)
+check("второй проход: снова 25, а не 0",
+      "25" in sent[0] and ": 0" not in sent[0], sent[0][:300])
+check("и добавить действительно было нечего", len(_st2) == 25, len(_st2))
+
+S.penalties_update, S.load_penalties = _pu2, _lp2
+drop_state()
 
 print("\n\033[1m33a. Отсрочка на отключение подписки\033[0m")
 # Ночью владельца нет. Перекрытие адресов ночь не закрывает: длинное задевает
@@ -1214,6 +1308,7 @@ def _set(**kw):
              enable=False, disable=False, interval=None, window=None,
              threshold=None, action_set=None, mbps=None, minutes=None,
              cooldown=None, exempt=None, exempt_tags=None, disable_after=None,
+             per_device=None,
              report=None, report_at=None,
              report_thread=None, resolve=None, dry_run=False, json=False)
     d.update(kw)

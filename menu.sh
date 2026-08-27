@@ -964,6 +964,7 @@ print("|".join([
     d.get("report_at") or "09:00",
     "0" if d.get("resolve") is False else "1",
     str(d.get("disable_after_min") or 0),
+    "%g" % float(d.get("per_device") or 0),
     ", ".join(str(x) for x in (d.get("exempt_tags") or [])) or "-",
 ]))
 PY
@@ -971,10 +972,10 @@ PY
 
 screen_panel() {
     local on url uuid tok texp every win thr act act_txt cool exempt mbps lmin
-    local rep rep_at names v dis etags
+    local rep rep_at names v dis etags pdev
     while :; do
         IFS='|' read -r on url uuid tok texp every win thr act cool exempt \
-            mbps lmin rep rep_at names dis etags <<< "$(pn_read)"
+            mbps lmin rep rep_at names dis pdev etags <<< "$(pn_read)"
         title "${T[pn_title]}"
         echo -e "  ${D}${T[pn_h1]}${N}"
         echo -e "  ${D}${T[pn_h2]}${N}"
@@ -1052,6 +1053,11 @@ screen_panel() {
         else
             echo -e " [18] ${T[pn_set_dis]}: ${R}${dis} ${T[pn_min]}${N}"
         fi
+        if [[ "$pdev" == "0" ]]; then
+            echo -e " [20] ${T[pn_set_pdev]}: ${D}${T[tg_off]}${N}"
+        else
+            echo -e " [20] ${T[pn_set_pdev]}: ${B}×${pdev}${N}"
+        fi
         echo " [19] ${T[pn_enable_user]}"
         echo "  [0] ← ${T[m0]}"
         echo
@@ -1115,6 +1121,9 @@ screen_panel() {
            18) echo -e "  ${D}${T[pn_hint_dis]}${N}"
                v="$(ask "${T[pn_set_dis]}" "$dis")"
                [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" panel set --disable-after "$v" >/dev/null ;;
+           20) echo -e "  ${D}${T[pn_hint_pdev]}${N}"
+               v="$(ask "${T[pn_set_pdev]}" "$pdev")"
+               [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" panel set --per-device "$v" >/dev/null ;;
            19) v="$(ask "${T[pn_ask_id]}")"
                [[ -n "$v" ]] && { echo; "$CTL" panel enable "$v"; pause; } ;;
             0|"") return ;;

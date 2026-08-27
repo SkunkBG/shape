@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.61-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.63-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.61
+# Shape v3.63
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -1306,6 +1306,48 @@ shaperctl panel user 6085
 
 The first line is seeding, the second ordinary use. The question "what was he
 downloading" closes in a second.
+
+### Address threshold from the plan
+
+The device count in a plan and the address count worth treating as normal are the
+same number, only the second is larger: a mobile client changes address on
+reconnect and on handover, so one device produces several addresses per window.
+
+```bash
+shaperctl panel set --per-device 4
+```
+
+| Plan | Address threshold |
+| --- | --- |
+| 1 device | 20 (base) |
+| 5 devices | 20 (base) |
+| 10 devices | 40 |
+| 15 devices | 60 |
+
+**The rule only raises the threshold and never lowers it.** The base stays the
+lower bound, so no new triggers appear — only false ones can disappear for
+customers who bought many devices.
+
+Change the plan in the panel and the rule changes with it. Nothing to touch on
+the nodes.
+
+**It takes `hwidDeviceLimit` — the plan, not the number of registered devices.**
+The difference matters: registered devices depend on whether the client installed
+the app, and someone handed a config file never appears among them at all. The
+plan depends on nothing — it is what you sold.
+
+The field arrives in the user card Shape requests anyway, for the name. Zero
+extra requests.
+
+If the plan is unknown (no limit set), the base threshold applies. Guessing how
+many devices the owner sold is not something to do on his behalf.
+
+The message shows which threshold was applied:
+
+```
+Simultaneous addresses: 25 over the last 10 min
+Threshold for his plan: 60 — devices sold: 15
+```
 
 ### The night: disabling the subscription after a grace period
 

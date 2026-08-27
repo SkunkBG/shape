@@ -316,6 +316,10 @@ MSG = {
         "pn_msg_blocked": "🚫 Доступ к ноде перекрыт на {m} мин, адресов: {n}",
         "pn_msg_nothing": "Ничего не предпринято: включено только уведомление.",
         "pn_msg_ips": "Адресов одновременно: <b>{n}</b> за последние {w} мин",
+        "pn_msg_tariff": "<i>Порог для его тарифа: {t} — продано устройств {d}</i>",
+        "h_pn_per_device": "во сколько раз порог адресов больше числа устройств в тарифе, 0 = один порог на всех",
+        "pn_per_device": "Порог от тарифа",
+        "pn_per_device_v": "×{k} к числу устройств",
         "pn_msg_limited": "Ограничено адресов: {n} — до {mbps} Мбит/с на {m} мин",
         "pn_msg_dropped": "Соединения оборваны: {n}",
         "pn_msg_more": "…и ещё {n}. Полный список — файлом следом.",
@@ -736,6 +740,10 @@ MSG = {
         "pn_msg_blocked": "🚫 Access to the node cut off for {m} min, addresses: {n}",
         "pn_msg_nothing": "Nothing was done: only notification is enabled.",
         "pn_msg_ips": "Simultaneous addresses: <b>{n}</b> over the last {w} min",
+        "pn_msg_tariff": "<i>Threshold for his plan: {t} — devices sold: {d}</i>",
+        "h_pn_per_device": "how many times the address threshold exceeds the plan's device count, 0 = one threshold for all",
+        "pn_per_device": "Threshold from the plan",
+        "pn_per_device_v": "×{k} the device count",
         "pn_msg_limited": "Addresses limited: {n} — to {mbps} Mbit/s for {m} min",
         "pn_msg_dropped": "Connections dropped: {n}",
         "pn_msg_more": "…and {n} more. The full list follows as a file.",
@@ -1436,6 +1444,19 @@ PANEL_DEFAULT = {
     # каждой из двадцати восьми нод и править везде при каждом новом клиенте;
     # тег ставится в панели один раз и виден отовсюду.
     "exempt_tags": [],
+
+    # Во сколько раз порог адресов больше числа устройств в тарифе. 0 = не
+    # учитывать тариф вовсе и держать один порог на всех.
+    #
+    # Смысл в том, что «сколько устройств продано» и «сколько адресов норма» —
+    # это одно и то же число, только второе больше: у мобильного клиента адрес
+    # меняется при переподключении и хендовере, и одно устройство даёт
+    # несколько адресов за окно.
+    #
+    # Правило только ПОДНИМАЕТ порог и никогда не опускает: базовый остаётся
+    # нижней границей. Новых срабатываний оно не добавляет — только убирает
+    # ложные у тех, кому продано много устройств.
+    "per_device": 0,
 
     # Через сколько минут без реакции владельца отключить подписку целиком.
     # 0 = никогда. По умолчанию выключено: это единственное действие Shape,
@@ -4082,6 +4103,21 @@ PANEL_ACTIONS = ("notify", "limit", "block", "drop")
 PANEL_DISABLE_MAX = 3
 
 
+def panel_threshold(p, person):
+    """
+    Порог адресов для конкретного человека: базовый или от его тарифа.
+
+    Возвращает (порог, от_тарифа_ли). Тариф неизвестен — базовый: гадать за
+    владельца, сколько устройств он продал, нельзя.
+    """
+    base = max(PANEL_MIN_THRESHOLD, int(p.get("ip_threshold") or 20))
+    k = float(p.get("per_device") or 0)
+    dev = int((person or {}).get("device_limit") or 0)
+    if k <= 0 or dev <= 0:
+        return base, False
+    return max(base, int(dev * k)), True
+
+
 # «Перекрыть доступ» — это очень маленькая скорость, а не ноль.
 #
 # Ноль в карте ядра означает «ограничения нет»: движок так и написан, и это
@@ -4368,11 +4404,19 @@ def person_name(desc):
 
 
 def panel_person(u):
-    """Из карточки панели оставляем шесть полей. Остальные два десятка — мимо."""
+    """Из карточки панели оставляем семь полей. Остальные два десятка — мимо."""
     if not isinstance(u, dict) or u.get("id") is None:
         return None
     name, handle = person_name(u.get("description"))
+    # Лимит устройств — это тариф, который владелец продал. Не путать с числом
+    # зарегистрированных устройств: те зависят от того, поставил ли клиент
+    # приложение, а тариф не зависит ни от чего.
+    try:
+        dev = int(u.get("hwidDeviceLimit"))
+    except (TypeError, ValueError):
+        dev = 0
     return {"id": str(u.get("id")),
+            "device_limit": max(0, dev),
             "username": str(u.get("username") or ""),
             "name": name,
             "handle": handle,
@@ -4802,11 +4846,16 @@ def panel_notify(cfg, rec):
                                "user_id": rec["user_id"]}, t("pn_msg_head"))
     lines.append(t("pn_msg_ips", n=rec["count"],
                    w=max(1, int(p.get("window_min") or 10))))
+    if rec.get("by_tariff"):
+        lines.append(t("pn_msg_tariff", t=rec.get("threshold", 0),
+                       d=(rec.get("person") or {}).get("device_limit", 0)))
 
+    # Показываем то, что под ограничением сейчас, а не прирост за проход.
+    now_n = rec.get("limited_now", len(rec.get("limited") or []))
     if rec.get("blocked"):
-        lines.append(t("pn_msg_blocked", n=len(rec["limited"]), m=minutes))
-    elif rec.get("limited"):
-        lines.append(t("pn_msg_limited", n=len(rec["limited"]),
+        lines.append(t("pn_msg_blocked", n=now_n, m=minutes))
+    elif rec.get("limited") or now_n:
+        lines.append(t("pn_msg_limited", n=now_n,
                        mbps=p.get("limit_mbps", 1), m=minutes))
     if rec.get("dropped"):
         lines.append(t("pn_msg_dropped", n=len(rec["dropped"])))
@@ -5004,6 +5053,18 @@ def panel_scan(cfg, now=None, act=True):
         # весь справочник в шесть тысяч записей каждые пять минут незачем.
         rec["person"] = panel_user(p, rec["user_id"])
 
+        # Порог от тарифа — второй этап. Базовый работает пре-фильтром: он
+        # только нижняя граница, поэтому кандидат, у которого тариф на
+        # пятнадцать устройств, сюда дойдёт и отсеется здесь. Спрашивать
+        # тариф у всех шести тысяч ради этого не надо.
+        rec["threshold"], from_tariff = panel_threshold(p, rec.get("person"))
+        rec["by_tariff"] = from_tariff
+        if rec["count"] < rec["threshold"]:
+            rec["skipped"] = True
+            log_event("panel_under_tariff", user_id=rec["user_id"],
+                      ips=rec["count"], threshold=rec["threshold"])
+            continue
+
         # Тег проверяем здесь, а не в panel_offenders: там карточка ещё не
         # запрошена, а тянуть её ради каждого пользователя панели — шесть
         # тысяч запросов вместо одного на нарушителя.
@@ -5026,6 +5087,13 @@ def panel_scan(cfg, now=None, act=True):
         elif "limit" in actions:
             rec["limited"] = panel_limit(p, rec["ips"], None,
                                          rec["user_id"], rec.get("person"))
+        # Сколько его адресов под ограничением ПРЯМО СЕЙЧАС, а не сколько
+        # добавилось этим проходом. На повторном срабатывании все они уже
+        # перекрыты, добавлять нечего, и в сообщение уходило «адресов: 0» —
+        # будто ничего не сделано, хотя перекрытие держится.
+        pens_now = load_penalties()
+        rec["limited_now"] = sum(1 for ip in rec["ips"] if ip in pens_now)
+
         if "drop" in actions or "block" in actions:
             try:
                 panel_drop(p, rec["ips"])
@@ -5124,6 +5192,9 @@ def cmd_panel(a):
             print(f"  {t('pn_exempt')} : {', '.join(p['exempt'])}")
         if p.get("exempt_tags"):
             print(f"  {t('pn_exempt_tags')} : {', '.join(p['exempt_tags'])}")
+        if p.get("per_device"):
+            pd = t("pn_per_device_v", k=f"{p['per_device']:g}")
+            print(f"  {t('pn_per_device')} : {pd}")
         if p.get("disable_after_min"):
             print(f"  {t('pn_disable_after')} : "
                   f"{C['red']}{p['disable_after_min']:g} {t('pn_min')}{C['r']}")
@@ -5187,6 +5258,10 @@ def cmd_panel(a):
             p["cooldown_min"] = max(0, a.cooldown)
         if a.exempt is not None:
             p["exempt"] = [w.strip() for w in a.exempt.split(",") if w.strip()]
+        if a.per_device is not None:
+            if not 0 <= a.per_device <= 100:
+                die(t("guard_range", k="per_device", lo=0, hi=100))
+            p["per_device"] = a.per_device
         if a.disable_after is not None:
             if not 0 <= a.disable_after <= 1440:
                 die(t("guard_range", k="disable_after_min", lo=0, hi=1440))
@@ -6687,6 +6762,8 @@ def build_parser():
                     help=t("h_pn_exempt_tags"))
     pn.add_argument("--disable-after", dest="disable_after", type=float,
                     default=None, help=t("h_pn_disable_after"))
+    pn.add_argument("--per-device", dest="per_device", type=float,
+                    default=None, help=t("h_pn_per_device"))
     pn.add_argument("--dry-run", dest="dry_run", action="store_true",
                     help=t("h_pn_dry"))
     pn.add_argument("--json", action="store_true")
