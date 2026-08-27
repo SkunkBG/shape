@@ -13,6 +13,150 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.61
+
+**In the status line "Panel" became "Remnawave".**
+
+There are many panels, and on someone else's node "Panel on" says nothing about
+what the link is actually to. The product name does.
+
+```
+  🛰  Remnawave  connected  disables the subscription after 60 min
+```
+
+The column width is preserved: labels in the status line are padded with spaces
+inside the strings themselves, because `printf %-10s` in bash counts bytes while
+Cyrillic in UTF-8 takes two per character — the column would drift precisely in
+Russian.
+
+Verified by running it on a fake config, both on and off.
+
+---
+
+## 3.60
+
+**The status line now shows the links to the outside world: Telegram, the panel,
+the API.**
+
+### What was missing
+
+The main screen answered questions about the shaper and the auto-limiter but said
+nothing about whether Telegram, the panel and the API were configured. Learning
+that notifications go nowhere, or that the panel is not connected, required
+walking into the section.
+
+```
+  🟢  Shaper    running    interface ens3
+  🔁  Autostart on         survives a server reboot
+  🚀  Speed     50 Mbit/s  for every IP address
+  🔌  Port      443
+  🚦  Auto-limit on        both ways ↓5 ↑1.5 Mbit/s 10 min → 1 Mbit/s for 60 min
+      or 11.2 GB an hour · 150 GB a day · upload over 50%
+  ✉️   Telegram   on         node label: Netherlands-3
+  🛰  Panel      connected  disables the subscription after 60 min
+  🔑  API        running
+```
+
+The subscription-disable grace period is shown in red: it is the only thing Shape
+does in the panel rather than in itself, and it should be known from the first
+screen.
+
+### "On" means a working configuration
+
+Not a checkbox. Telegram with the flag on but without a token or a chat is shown
+as **off**. So is a panel without a UUID.
+
+Half a configuration is worse than none: one is sure it works when it does not.
+That is exactly what a status line is for.
+
+### The API has three states
+
+`running` · `not running` (installed but the service is down) · `not installed`.
+
+### Verified by running it
+
+In the previous version the menu items were on the screen while their handlers
+were in another function, and a `grep` over the file did not notice. So this test
+does not search for strings — it **calls** `status_line` on a fake config and
+looks at what it printed:
+
+* everything on — eight lines, the node label and the grace period in place;
+* everything off — it says notifications go nowhere;
+* on but without a token and a UUID — shown as off;
+* broken JSON — the line is still printed in full.
+
+Verified that the test fails when the output is broken.
+
+`links_state` also takes the config path from `ETC_DIR` instead of hardcoding it:
+otherwise such a test would have to run against the real `/etc`.
+
+### An old hole in the tests turned up along the way
+
+There is a check that "the number of output fields matches the number of
+variables in the parse" — it catches column drift, where values silently shift by
+one. It only worked with the **last** parse line in a function, and `status_line`
+now has two, which made the check meaningless.
+
+It now looks for the line that reads the specific function, and covers five pairs
+instead of two: `links_state`, `tg_read` and `pn_read` were added.
+
+### Also
+
+* Tests: a new file `tests/status_line_tests.sh`, 14 checks.
+
+---
+
+## 3.59
+
+**The menu items "Disable subscription after" and "Turn a subscription back on"
+did not work. Plus a test that stops it happening again.**
+
+### What was broken
+
+The items were drawn in the panel screen, while the `case` branches that handle
+the keypress ended up in the whitelist screen. The items are visible, pressing
+them does nothing.
+
+The cause is how I inserted them: anchored on "before the line `0|"") return`".
+**Every** screen ends with that line, and the match landed on the wrong one. The
+same mistake this project has already seen, when an insertion found the first
+match instead of the intended one.
+
+### Why the tests missed it
+
+The check was this:
+
+```bash
+grep -q "panel set --disable-after" menu.sh
+```
+
+The string is in the file, so the check is happy. That it ended up in someone
+else's function is something a whole-file `grep` cannot see in principle.
+
+### What was added
+
+`tests/menu_wiring.py` matches **within each screen**: every displayed item `[N]`
+must have an `N)` branch in the same screen.
+
+There turned out to be three subtleties, all real:
+
+* The comparison must be against the `case` blocks that read the user's choice,
+  not every `case` in the function. The panel screen has another one that
+  translates an action name into text, and its `*)` would have disabled the check
+  entirely.
+* There can be several such blocks: the API screen first asks "install?" and only
+  then shows the menu.
+* A screen with a `*)` branch needs no checking — it catches everything left.
+
+Verified that the test fails when a handler is removed and stays silent on the
+intact file.
+
+### Also
+
+* The handlers were moved into the panel screen and removed from the whitelist.
+
+---
+
 ## 3.58
 
 **The address cut-off is back to an hour. And the disable message now says

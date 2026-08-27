@@ -168,6 +168,60 @@ status_line() {
     else
         echo -e "  🚦  ${T[st_guard]} ${D}${T[st_g_off]}${N}   ${D}${T[st_g_none]}${N}"
     fi
+
+    # Связь с внешним миром. Раньше главный экран о ней молчал, и понять, что
+    # Telegram не настроен или API лежит, можно было только зайдя в раздел.
+    local tg_on tg_name pn_on pn_dis api_st
+    IFS='|' read -r tg_on tg_name pn_on pn_dis api_st <<< "$(links_state)"
+
+    if [[ "$tg_on" == "1" ]]; then
+        echo -e "  ✉️   ${T[st_tg]} ${G}${T[st_on]}${N}   ${D}${T[st_tg_as]} ${tg_name}${N}"
+    else
+        echo -e "  ✉️   ${T[st_tg]} ${D}${T[st_off]}${N}  ${D}${T[st_tg_no]}${N}"
+    fi
+
+    if [[ "$pn_on" == "1" ]]; then
+        if [[ "$pn_dis" == "0" ]]; then
+            echo -e "  🛰  ${T[st_pn]} ${G}${T[st_pn_on]}${N} ${D}${T[st_pn_nodis]}${N}"
+        else
+            echo -e "  🛰  ${T[st_pn]} ${G}${T[st_pn_on]}${N} ${R}${T[st_pn_dis]} ${pn_dis} ${T[min]}${N}"
+        fi
+    else
+        echo -e "  🛰  ${T[st_pn]} ${D}${T[st_pn_offw]}${N} ${D}${T[st_pn_no]}${N}"
+    fi
+
+    case "$api_st" in
+        run)  echo -e "  🔑  ${T[st_api]} ${G}${T[st_running]}${N}" ;;
+        dead) echo -e "  🔑  ${T[st_api]} ${R}${T[st_stopped]}${N}  ${D}${T[st_api_dead]}${N}" ;;
+        *)    echo -e "  🔑  ${T[st_api]} ${D}${T[st_api_none]}${N}" ;;
+    esac
+}
+
+links_state() {
+    # Telegram, панель и API одной строкой: включён|подпись|включена|отсрочка|api
+    local api="none"
+    if [[ -f "$APP_DIR/api/server.py" ]]; then
+        if systemctl is-active shape-api >/dev/null 2>&1; then api="run"
+        else api="dead"; fi
+    fi
+    # Путь берём из ETC_DIR, а не вписываем: только так эту строку можно
+    # прогнать тестом на подставном конфиге, не трогая настоящий /etc.
+    python3 - "$api" "$ETC_DIR/config.json" <<'PY' 2>/dev/null || echo "0|—|0|0|$api"
+import json, os, sys
+try:
+    c = json.load(open(sys.argv[2]))
+except Exception:
+    c = {}
+tg = c.get("telegram") or {}
+pn = c.get("panel") or {}
+print("|".join([
+    "1" if tg.get("enabled") and tg.get("token") and tg.get("chat_id") else "0",
+    str(tg.get("node_name") or os.uname().nodename),
+    "1" if pn.get("enabled") and pn.get("token") and pn.get("node_uuid") else "0",
+    "%g" % float(pn.get("disable_after_min") or 0),
+    sys.argv[1],
+]))
+PY
 }
 
 # ── Настройка лимита ──────────────────────────────────────────────────
@@ -1058,6 +1112,11 @@ screen_panel() {
                    >/dev/null ;;
            16) echo; "$CTL" panel test; pause ;;
            17) echo; "$CTL" panel scan --dry-run; pause ;;
+           18) echo -e "  ${D}${T[pn_hint_dis]}${N}"
+               v="$(ask "${T[pn_set_dis]}" "$dis")"
+               [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" panel set --disable-after "$v" >/dev/null ;;
+           19) v="$(ask "${T[pn_ask_id]}")"
+               [[ -n "$v" ]] && { echo; "$CTL" panel enable "$v"; pause; } ;;
             0|"") return ;;
         esac
     done
@@ -1144,11 +1203,6 @@ screen_whitelist() {
                [[ -n "$ip" ]] && { "$CTL" whitelist add "$ip"; sleep 1; } ;;
             2) ip="$(ask "${T[wl_ask]}")"
                [[ -n "$ip" ]] && { "$CTL" whitelist del "$ip"; sleep 1; } ;;
-           18) echo -e "  ${D}${T[pn_hint_dis]}${N}"
-               v="$(ask "${T[pn_set_dis]}" "$dis")"
-               [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" panel set --disable-after "$v" >/dev/null ;;
-           19) v="$(ask "${T[pn_ask_id]}")"
-               [[ -n "$v" ]] && { "$CTL" panel enable "$v"; pause; } ;;
             0|"") return ;;
         esac
     done

@@ -136,10 +136,16 @@ check "нумерация в ограниченных адресах не раз
 
 # Отключение подписки — единственное действие Shape, которое меняет что-то в
 # панели, а не у себя. Значит оно должно быть видно и выключаться.
-check "отсрочка отключения настраивается из меню" \
-      'grep -q "pn_set_dis" "$SRC/menu.sh" && grep -q -- "panel set --disable-after" "$SRC/menu.sh"'
-check "и есть обратная кнопка" \
-      'grep -q "pn_enable_user" "$SRC/menu.sh" && grep -q -- "panel enable" "$SRC/menu.sh"'
+check "отсрочка отключения настраивается из экрана панели" \
+      'awk "/^screen_panel\\(\\)/,/^}/" "$SRC/menu.sh" | grep -q -- "panel set --disable-after"'
+check "и обратная кнопка там же" \
+      'awk "/^screen_panel\\(\\)/,/^}/" "$SRC/menu.sh" | grep -q -- "panel enable"'
+
+# Живой случай: пункты были нарисованы в экране панели, а ветки case уехали в
+# экран белого списка. Пункты видны, нажатие не делает ничего. Проверка по
+# всему файлу такое пропускает — grep находит и то, и другое.
+check "у каждого показанного пункта есть обработчик в том же экране" \
+      'python3 "$SRC/tests/menu_wiring.py" "$SRC/menu.sh"'
 check "пресеты её не включают" \
       '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "--disable-after"'
 # Порог одинаковый на обеих нодах. Разный он был, пока считалось, что
@@ -302,20 +308,33 @@ check "shaperctl show тоже его печатает" \
 # сходиться ровно так же, как длина рабочей.
 FN="$(mktemp -d)/state.sh"
 { sed -n '/^read_state()/,/^}/p' "$SRC/menu.sh"
-  sed -n '/^guard_read()/,/^}/p' "$SRC/menu.sh"; } > "$FN"
+  sed -n '/^guard_read()/,/^}/p' "$SRC/menu.sh"
+  sed -n '/^links_state()/,/^}/p' "$SRC/menu.sh"
+  sed -n '/^tg_read()/,/^}/p' "$SRC/menu.sh"
+  sed -n '/^pn_read()/,/^}/p' "$SRC/menu.sh"; } > "$FN"
 # shellcheck disable=SC1090
 source "$FN"
+# Функции читают пути из этих переменных. В песочнице ни того, ни другого нет,
+# и они обязаны отдать запасную строку — её длина проверяется наравне с рабочей.
+APP_DIR="${APP_DIR:-/nonexistent}"
+ETC_DIR="${ETC_DIR:-/nonexistent}"
 
-vars_in() {   # сколько имён в строке разбора у функции-потребителя
+# Ищем именно ту строку разбора, которая читает нужную функцию: в одном
+# потребителе их бывает несколько. Раньше считалась последняя, и добавление
+# второго разбора в status_line превратило проверку в бессмысленную.
+vars_in() {   # $1 — функция-потребитель, $2 — функция-источник
     sed -n "/^$1()/,/^}/p" "$SRC/menu.sh" |
-        tr '\n' ' ' | sed -n "s/.*IFS='|' read -r \(.*\)<<<.*/\1/p" |
-        tr -d '\\' | wc -w
+        sed -e ':a' -e '/\\$/{N;s/\\\n//;ba' -e '}' |
+        grep -F "<<< \"\$($2)\"" |
+        sed -n "s/.*IFS='|' read -r \(.*\)<<<.*/\1/p" | wc -w
 }
 
-for pair in "read_state status_line" "guard_read screen_guard"; do
+for pair in "read_state status_line" "guard_read screen_guard" \
+            "links_state status_line" "tg_read screen_telegram" \
+            "pn_read screen_panel"; do
     set -- $pair
-    out="$("$1" | awk -F'|' '{print NF}')"
-    got="$(vars_in "$2")"
+    out="$("$1" 2>/dev/null | awk -F'|' '{print NF}')"
+    got="$(vars_in "$2" "$1")"
     check "$1: полей $out, переменных $got" '[[ "'"$out"'" == "'"$got"'" ]]'
 done
 rm -rf "$(dirname "$FN")"

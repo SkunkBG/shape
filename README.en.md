@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.58-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.61-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.58
+# Shape v3.61
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -120,9 +120,28 @@ shaper
   <img src="assets/screenshot.png" alt="Main screen" width="760">
 </p>
 
-The main screen shows what actually matters: whether the shaper is running,
-whether autostart survives a reboot, the current speed, the ports, and the state
-of the auto-limiter.
+```
+  ⚡ Shape · per-IP speed limiter
+  ────────────────────────────────────────────────────────────
+  🟢  Shaper    running    interface ens3
+  🔁  Autostart on         survives a server reboot
+  🚀  Speed     50 Mbit/s  for every IP address
+  🔌  Port      443
+  🚦  Auto-limit on        both ways ↓5 ↑1.5 Mbit/s 10 min → 1 Mbit/s for 60 min
+      or 11.2 GB an hour · 150 GB a day · upload over 50%
+  ✉️   Telegram   on         node label: Netherlands-3
+  🛰  Remnawave  connected  disables the subscription after 60 min
+  🔑  API        running
+  ────────────────────────────────────────────────────────────
+```
+
+The main screen shows **everything that is on and off**, so there is no need to
+walk into the sections and check them one by one.
+
+The bottom three lines are about links to the outside world. "On" there means a
+working configuration rather than a checkbox: Telegram without a token or a chat
+is shown as off, and so is a panel without a UUID. Half a configuration is worse
+than none — one is sure it works when it does not.
 
 ### Setting a limit
 
