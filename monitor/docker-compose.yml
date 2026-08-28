@@ -22,7 +22,13 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     environment:
-      # Домены и токен записи приходят из .env — в Caddyfile их нет.
+      # Домены, почта и токен записи приходят из .env — в Caddyfile их нет.
+      #
+      # ACME_EMAIL обязателен. Без него Caddy берёт умолчание из Caddyfile —
+      # admin@localhost, — а Let's Encrypt отказывает: «Domain name needs at
+      # least one dot». Ошибка вылезает только на живом сервере и выглядит
+      # так, будто виноват домен, а не забытая переменная.
+      ACME_EMAIL: ${ACME_EMAIL:?нужен ACME_EMAIL}
       SHAPE_DOMAIN: ${SHAPE_DOMAIN:?нужен SHAPE_DOMAIN}
       SHAPE_PUSH_TOKEN: ${SHAPE_PUSH_TOKEN:?нужен SHAPE_PUSH_TOKEN}
     depends_on:

@@ -64,12 +64,16 @@ cd shape/monitor
 sudo bash install.sh
 ```
 
-The installer asks for the domain and an e-mail address, generates secrets into
-`.env` with mode 600, validates the Authelia configuration and brings the stack
-up. It does nothing silently.
+It asks for **three things** — the domain, an e-mail address and a password for
+the gate — and then does the rest itself: computes the password hash, writes the
+files, generates secrets into `.env` with mode 600, validates the Authelia
+configuration and brings the stack up.
 
-Then three steps it will print: the gate password, the second factor, the node
-setup.
+You do not have to invent a password: an empty answer means the installer
+generates one and shows it once.
+
+At the end it prints both passwords and the ready-made command for the nodes.
+Nothing else to do: open `https://grafana.<domain>`.
 
 ## Access: two layers, and that is not paranoia
 
@@ -80,16 +84,21 @@ behind it**.
 
 | Layer | What it is | What for |
 | --- | --- | --- |
-| Authelia | password + TOTP | strangers cannot even see that this is Grafana |
+| Authelia | the gate password | strangers cannot even see that this is Grafana |
 | Grafana | its own login | someone already inside the perimeter is still outside |
 
-The second factor was chosen not out of strictness but because you travel. An IP
-allowlist is out from the start, and a client certificate would mean that a new
-device on a trip locks you out.
+**There is no second factor, and that is deliberate.** There was one, and it was
+removed after the first live deployment: there is no mail server, so confirmation
+codes had to be dug out of a file inside the container, and registering a device
+took six steps across two consoles. Protection that cannot be used does not
+protect — people simply stop using it.
 
-**Plan the recovery path in advance.** A lost phone with the TOTP secret must not
-lock you out forever: keep the backup codes and keep SSH access to the machine —
-from there the user is edited by hand in `authelia/users.yml`.
+Bringing it back is easy once a mail server exists: in
+`authelia/configuration.yml` replace `one_factor` with `two_factor` and configure
+`notifier.smtp`.
+
+A forgotten gate password does not lock you out forever: SSH access to the
+machine is always there, and the user is edited in `authelia/users.yml`.
 
 ## Metrics intake: why it is not behind the gate
 

@@ -142,8 +142,15 @@ print("\n\033[1mAuthelia\033[0m")
 AUTH = yaml.safe_load(read("authelia", "configuration.yml"))
 check("по умолчанию всё запрещено",
       AUTH["access_control"]["default_policy"] == "deny")
-check("правило требует второй фактор",
-      AUTH["access_control"]["rules"][0]["policy"] == "two_factor")
+# Второй фактор убран после первой живой установки: почтового сервера нет,
+# коды приходилось доставать из файла внутри контейнера, на регистрацию
+# устройства уходило шесть шагов и две консоли. Защита, которой невозможно
+# пользоваться, не защищает. Слоёв всё равно два — гейт и вход Grafana.
+check("правило требует хотя бы пароль",
+      AUTH["access_control"]["rules"][0]["policy"] in ("one_factor",
+                                                       "two_factor"))
+check("и оно закрывает именно графики",
+      AUTH["access_control"]["rules"][0]["domain"].startswith("grafana."))
 check("подбор пароля ограничен", AUTH["regulation"]["max_retries"] <= 5)
 
 # Секреты в конфиге — это секреты в репозитории. Они должны приходить
@@ -173,6 +180,44 @@ INST_CODE = "\n".join(l for l in INST.split("\n")
 check("секреты берёт у ядра, а не у $RANDOM",
       "/dev/urandom" in INST_CODE and "$RANDOM" not in INST_CODE)
 check("права на .env закрыты", "umask 077" in INST)
+# Живой случай: ACME_EMAIL не был передан контейнеру, Caddy взял умолчание
+# admin@localhost, и Let's Encrypt отказал — «Domain name needs at least one
+# dot». В логах ругань на домен, а виновата забытая переменная.
+check("почта доезжает до caddy",
+      "ACME_EMAIL" in str(SERVICES["caddy"]["environment"]))
+check("и обязательна", "${ACME_EMAIL:?" in read("docker-compose.yml"))
+check("в Caddyfile нет умолчания для почты",
+      "{$ACME_EMAIL}" in CADDY and "admin@localhost" not in uncomment(CADDY))
+
+# Живой случай: установщик копировал пример с ненастоящим хешем и поднимал
+# стек. Authelia падала при старте раз в минуту, Caddy отдавал 502 на всё, а
+# в логах было «no such host» — то есть беда выглядела сетевой.
+#
+# Теперь пароль спрашивается при установке, хеш считает сама Authelia, а
+# файл пишет установщик. Заглушке взяться неоткуда — но проверка перед
+# запуском всё равно стоит, на случай правки руками.
+check("пример пароля нерабочий", "ЗАМЕНИТЕ" in read("authelia", "users.yml.example"))
+check("установщик спрашивает пароль сразу", "read -rsp" in INST)
+check("и сверяет его дважды", INST.count("read -rsp") >= 2)
+check("хеш считает сама Authelia, а не человек",
+      "crypto hash generate argon2" in INST and "hash_password" in INST)
+# Флаг --password кладёт пароль в аргументы процесса, где его видно в ps.
+# Он оставлен запасным вариантом, но первым идёт stdin.
+check("пароль не уходит в аргументы первым способом",
+      INST_CODE.index("| docker run --rm -i ")
+      < INST_CODE.index("--password"))
+check("установщик сам пишет users.yml", 'cat > "$USERS_FILE"' in INST)
+check("и не поднимает стек без рабочего хеша",
+      "grep -q 'argon2id' \"$USERS_FILE\"" in INST)
+check("проверка стоит ДО запуска",
+      INST.index("grep -q 'argon2id'") < INST.index("up -d"))
+check("домен проверяется на точку и на схему",
+      "http*|*/*" in INST and "в домене должна быть точка" in INST)
+check("почта проверяется", "*@*.*" in INST)
+check("короткий пароль отвергается", "восьми знаков" in INST)
+check("сгенерированный пароль показывается один раз",
+      "GATE_SHOWN" in INST and "второй раз он нигде не покажется" in INST)
+
 check("проверяет конфиг Authelia до запуска",
       INST.index("validate-config") < INST.index("compose --project-directory \"$HERE\" up -d"))
 check("спрашивает подтверждение перед запуском", "Продолжить?" in INST)

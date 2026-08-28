@@ -13,6 +13,140 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.74
+
+**Deploying the monitoring server: six steps across two consoles became three
+questions.**
+
+### What the first live deployment showed
+
+Someone deployed the server and got stuck. What followed: compute the password
+hash with a separate command, paste it into a file by hand, restart the
+container, go to the browser, click "Register device", receive a notice about an
+e-mail that will never arrive, go back to the console, dig the code out of a file
+inside the container, go back to the browser, type it in — and only then the QR
+code.
+
+Six steps, two consoles, switching between them. Halfway through, the code turned
+out to be eight characters instead of the expected twenty, and it all had to
+start over.
+
+**Protection that cannot be used does not protect** — people simply stop using
+it.
+
+### The second factor is gone
+
+```yaml
+policy: one_factor    # was two_factor
+```
+
+There are still two layers: the gate password and Grafana's own login. From
+outside it is still impossible to tell what stands behind the gate — which was
+the point all along. The scanners that found the names three minutes after the
+certificates were issued get a login page and nothing else.
+
+What was lost is protection against theft of the password itself. The trade is
+stated plainly: TOTP without a mail server cost six steps, and that price was due
+every time.
+
+To bring it back: `two_factor` in `configuration.yml` plus `notifier.smtp`.
+
+### The installer asks everything at once
+
+```
+Domain, without a subdomain (for example example.com):
+E-mail (Let's Encrypt and the gate login):
+Password:
+```
+
+Then it does the rest: computes the hash **using Authelia itself** (its own
+algorithm, its own parameters), writes `users.yml`, generates the secrets, brings
+the stack up and prints both passwords along with the ready-made command for the
+nodes.
+
+You do not have to invent a password — an empty answer and the installer
+generates one.
+
+**The password never reaches the process arguments.** The first method feeds it
+through `stdin`; the `--password` flag is kept as a fallback, because it does not
+exist in every build and it is visible in `ps`.
+
+### Input checks
+
+A domain with a scheme or a slash is rejected outright — `https://example.com` in
+that field would mean three broken names and wasted Let's Encrypt attempts. So is
+an e-mail without a dot in its domain: that is exactly what tripped certificate
+issuance. A password shorter than eight characters is not accepted.
+
+### Other
+
+* `users.yml.example` is now an illustration of the structure rather than a
+  template to edit by hand: the installer writes the file itself.
+* Tests: 16 new, 97 in the monitoring set. The password is asked for and
+  confirmed twice, Authelia computes the hash, the password stays out of the
+  arguments, the installer writes the file, the stack does not come up without a
+  working hash and the check runs before startup, the domain and e-mail are
+  validated, a generated password is displayed.
+
+---
+
+## 3.73
+
+**Two bugs found by the first live deployment of the monitoring server.**
+
+### The e-mail never reached Caddy
+
+```
+contact email has invalid domain: Domain name needs at least one dot
+```
+
+The `Caddyfile` had `email {$ACME_EMAIL:admin@localhost}`, while
+`docker-compose.yml` passed the container only the domain and the token. The
+variable never arrived, Caddy took the default — and Let's Encrypt refused,
+because `localhost` has no dot.
+
+**Worse than the bug was how it looked.** The logs complain about the domain,
+so you start looking in DNS, in the records, in the firewall — everywhere except
+the forgotten line in compose.
+
+The variable is now passed and mandatory, and **the Caddyfile default is gone**:
+an empty value makes Caddy fail immediately and for the right reason. A silent
+default that is guaranteed not to work is the worst of both worlds.
+
+### The installer brought the stack up with a broken password
+
+```
+failed to parse hash for user 'admin': argon2 decode error:
+provided encoded hash has an invalid format
+```
+
+The installer copied `users.yml.example` with a placeholder instead of a hash
+and went on to start the stack. Authelia cannot parse such a hash and dies at
+startup — once a minute, forever. Caddy then fails to resolve the container by
+name and returns **502 to everything**, with `no such host` in the logs.
+
+So a problem in the password file looked like a problem with the network.
+
+The installer now **stops before starting anything** if the placeholder is still
+in `users.yml`, and prints three steps: compute the hash, paste it, run again.
+
+### What this says about the checks
+
+Both bugs lived in the files, and both slipped past 81 checks. What was verified
+was the presence of variables in compose and the presence of routes in the
+Caddyfile — but not that **values from one file reach the other**, and not that
+the installer refuses to start a combination known to be broken.
+
+Seven new checks close exactly that.
+
+### Other
+
+* `chown: /config/...: Read-only file system` in the Authelia log is not an
+  error but noise: the configs are mounted read-only on purpose.
+* Tests: 7 new, 88 in the monitoring set.
+
+---
+
 ## 3.72
 
 **The `monitor/` directory: the monitoring server deploys with one command.**
