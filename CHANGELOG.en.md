@@ -13,6 +13,88 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.69
+
+**The monitor gained a "data" column.**
+
+```
+   IP                       now  upload  packet     data     avg    total holding  share of limit
+ ▪ 91.78.14.164            12.4     3.1    1420      79%     8.2  82.0 MB   5 min  ███·········
+ ▪ 80.115.217.88            4.2     0.6     209       1%     3.9 212.0 MB       —  █···········
+ ▪ 176.192.194.127          0.4     0.9    1508      95%     0.5 578.0 MB  15 min  ▏···········
+ ▪ 5.166.135.241           22.0     0.4      88        —    18.1   3.2 GB   1 min  █████▍······
+```
+
+### Why, when "packet" is already right there
+
+They answer different questions. **Packet** answers "what is going up right
+now" and jumps from window to window: someone sends an attachment in a
+messenger and the column reads over a thousand for ten seconds. **Data** is the
+share of the day's upload that went in large packets; it knows no jumps and
+shows behaviour rather than a moment.
+
+They diverge precisely for the addresses worth looking at: a high instantaneous
+packet with a low daily share means a burst; the reverse means it is quiet now
+but the day was spent seeding.
+
+This is the very number the watchdog uses to decide whether an upload counts as
+data (`ratio_needs_packet`). Until now it could only be seen in `status --bulk`
+or after the fact in a card.
+
+### How to read it
+
+| Colour | Share | Meaning |
+| --- | --- | --- |
+| grey | under 55% | acknowledgements, ordinary downloading |
+| yellow | from 55% | reached the watchdog's threshold |
+| red | from 80% | little room for doubt |
+| `—` | — | no upload at all today |
+
+A dash, not a zero: zero would mean "uploaded, but in acknowledgements", and
+that is a different statement.
+
+### Other
+
+* The monitor re-reads the daily counters every five seconds, together with the
+  penalty list. The watchdog writes them; the monitor only reads.
+* Table width 87 → 96.
+* Tests: 20 new. The dash for a missing record, for zero upload and for a
+  corrupted field; the percentages and three colour thresholds; the share never
+  exceeding a hundred. Plus a structural check: **the column widths in the
+  header and in the table row must match field for field** — they are built by
+  two separate f-strings, and a column is easy to add to one and forget in the
+  other.
+
+---
+
+## 3.68
+
+**`panel user` printed the upload hours twice.**
+
+```
+data 1% · packet 209 B · max 1101 · lasted 0.0 h · sent data for 0.0 h
+```
+
+The hours were added to the packet breakdown in 3.67, for the Telegram card
+where they were missing. In `panel user` they already had a field of their own,
+so the same number came out under two names. On one line that reads as two
+different quantities.
+
+`penalty_packets` gained an `hours` parameter; `panel user` calls it with
+`hours=False` and prints the hours under its own label.
+
+```
+data 1% · packet 209 B · max 1101 · sent data for 0.0 h
+```
+
+### Other
+
+* Tests: 5 new. Hours switched off by the parameter, the other fields still
+  present, the number appearing once in the assembled line, hours on by default,
+  and `panel user` actually calling the breakdown without them.
+
+---
+
 ## 3.67
 
 **A lifted limit no longer comes back on its own. The upload floor is raised

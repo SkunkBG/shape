@@ -880,6 +880,60 @@ for _mb in (300, 500, 1000, 3000, S.GUARD_DEFAULT["upload_ratio_min_mb"]):
           abs(_bytes_back(_shown) - _floor) <= _floor * 0.01,
           f"{_shown} -> {_bytes_back(_shown):.0f}, ждали {_floor:.0f}")
 
+print("\n\033[1mКолонка «данными» в мониторе\033[0m")
+# Мгновенный размер пакета говорит про «сейчас» и скачет: отправил человек
+# вложение — и на десять секунд в колонке тысяча. Доля за сутки скачков не
+# знает, и по ней видно поведение, а не момент.
+def _day(total, bulk_pct):
+    return {"upkt": [total, total / 900, 1800, total * bulk_pct / 100,
+                     time.time() - 3600]}
+
+
+check("нет записи — прочерк", S.bulk_cell(None)[0] == "—")
+check("пустая запись — прочерк", S.bulk_cell({})[0] == "—")
+check("нулевая отдача — прочерк, а не ноль процентов",
+      S.bulk_cell(_day(0, 0))[0] == "—", S.bulk_cell(_day(0, 0))[0])
+check("испорченное поле — прочерк", S.bulk_cell({"upkt": [1, 2]})[0] == "—")
+check("подтверждения показаны как 1%", S.bulk_cell(_day(26.9e6, 1))[0] == "1%")
+check("раздача показана как 95%", S.bulk_cell(_day(335e6, 95))[0] == "95%")
+check("доля не может превысить сто",
+      S.bulk_cell({"upkt": [100, 1, 1800, 500, time.time()]})[0] == "100%")
+
+check("ниже порога сторожа — серым",
+      S.bulk_cell(_day(1e6, 54))[1] == S.C["gry"])
+check("ровно на пороге — жёлтым",
+      S.bulk_cell(_day(1e6, S.RATIO_BULK_PERCENT))[1] == S.C["byel"])
+check("совсем высокая доля — красным",
+      S.bulk_cell(_day(1e6, S.BULK_LOUD_PERCENT))[1] == S.C["bred"])
+check("громкий порог выше порога сторожа",
+      S.BULK_LOUD_PERCENT > S.RATIO_BULK_PERCENT)
+
+# Заголовок и строка собираются двумя разными f-строками. Колонку легко
+# добавить в одну и забыть в другой — таблица разъедется, а синтаксис
+# промолчит. Сверяем ширины полей одну за одной.
+_mon = re.search(r"def cmd_monitor.*?\n(?=\ndef )", _src_ctl2 := open(
+    os.path.join(SRC, "shaperctl.py")).read(), re.S).group(0)
+_head = re.search(r'out\.append\(f"\{C\[.gry.\]\}   \{.IP.*?\)\n', _mon, re.S)
+_row = re.search(r'out\.append\(f" \{mark\} \{ip.*?\)\n', _mon, re.S)
+check("заголовок таблицы найден", _head is not None)
+check("строка таблицы найдена", _row is not None)
+if _head and _row:
+    _hw = re.findall(r"[<>](\d+)", _head.group(0))
+    _rw = re.findall(r"[<>](\d+)", _row.group(0))
+    check("колонок в заголовке и в строке поровну",
+          len(_hw) == len(_rw), f"{_hw} против {_rw}")
+    check("ширины колонок совпадают", _hw == _rw, f"{_hw} против {_rw}")
+    check("колонка «данными» есть в заголовке", "mon_bulk" in _head.group(0))
+    check("и заполняется в строке", "bulk_txt" in _row.group(0))
+    _sum = sum(int(x) for x in _rw)
+    _wid = int(re.search(r"width = (\d+)", _mon).group(1))
+    check("разделитель не короче колонок", _wid >= _sum, f"{_wid} < {_sum}")
+
+check("у колонки есть подпись под таблицей",
+      "mon_leg_bulk" in _mon and S.t("mon_leg_bulk", n=55) != "mon_leg_bulk")
+check("суточные счётчики монитор перечитывает, а не читает раз",
+      _mon.count("load_daily()") == 2, _mon.count("load_daily()"))
+
 print("\n\033[1mПовторный штраф за суточный признак\033[0m")
 # Живой случай: человек снимает ограничение из меню, и через десять секунд оно
 # возвращается. Суточный счётчик не уменьшается никогда, поэтому признак
@@ -966,6 +1020,29 @@ check("часы стоят после доли и пакетов",
       card(9.4 * 3600).index("9.4") > card(9.4 * 3600).index("1853"))
 check("подпись часов не повторяет слово «данными»",
       card(9.4 * 3600).count("данными") == 1, card(9.4 * 3600))
+
+# В `panel user` часы печатаются своей подписью следующим полем. Пока карточка
+# добавляла их безусловно, в одной строке выходило два одинаковых числа под
+# разными названиями — читается как две разные величины.
+def card_nohrs(up_sec):
+    day = {"up": 306_900_000, "down": 519_000_000, "up_sec": up_sec,
+           "upkt": [306_900_000, 341_000, 1853, 279_279_000,
+                    time.time() - 16.4 * 3600]}
+    return S.penalty_packets(day, hours=False)[0]
+
+
+check("часы выключаются параметром", "9.4" not in card_nohrs(9.4 * 3600),
+      card_nohrs(9.4 * 3600))
+check("остальные поля при этом на месте",
+      "1853" in card_nohrs(9.4 * 3600) and "91%" in card_nohrs(9.4 * 3600))
+check("в panel user часы печатаются один раз",
+      (card_nohrs(9.4 * 3600) + " · "
+       + S.t("pn_user_uphours", h="9.4")).count("9.4") == 1)
+check("по умолчанию часы включены — карточка их печатает",
+      "9.4" in card(9.4 * 3600))
+_src_ctl2 = open(os.path.join(SRC, "shaperctl.py")).read()
+check("panel user зовёт разбор пакетов без часов",
+      "penalty_packets(d, hours=False)" in _src_ctl2)
 
 print("\n\033[1mУведомление об обновлении\033[0m")
 check("номер версии разбирается", S.version_tuple("3.48") == (3, 48))

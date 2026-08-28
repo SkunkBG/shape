@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.67-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.69-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.67
+# Shape v3.69
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -160,16 +160,17 @@ address has been holding the load:
    Channel now     ↓   54.1   ↑  10.4 Mbit/s   ▂▃▄▅▅▆▇█████  last minute
    Limit per address  10 Mbit/s   for every IP    loading 58 of 377
   ────────────────────────────────────────────────────────────────────────────
-   IP                       now  upload packet     avg    total holding  share of limit
- ▪ 109.248.47.99           10.1     0.1    140     3.1  12.4 GB  12 min  ████████████ 101%
- ▪ 91.78.0.72               9.8     0.2    150     9.6   8.1 GB  44 min  ███████████▉  98%
-   91.79.7.124              6.4     0.2    130     1.1   1.2 GB       —  ███████▊····  64%
- ✓ 203.0.113.40             5.1     0.4    160     4.8   3.0 GB   5 min  ██████▏·····  51%
-   91.79.15.94              1.4     2.7   1310     1.7  22.8 GB       —  █▊··········  14%
- ⊘ 89.253.46.46             1.0     0.0    120     4.3  412 MB        —  █▎··········  10%
+   IP                       now  upload packet     data     avg    total holding  share of limit
+ ▪ 109.248.47.99           10.1     0.1    140       2%     3.1  12.4 GB  12 min  ████████████
+ ▪ 91.78.0.72               9.8     0.2    150       1%     9.6   8.1 GB  44 min  ███████████▉
+   91.79.7.124              6.4     0.2    130       3%     1.1   1.2 GB       —  ███████▊····
+ ✓ 203.0.113.40             5.1     0.4    160       4%     4.8   3.0 GB   5 min  ██████▏·····
+   91.79.15.94              1.4     2.7   1310      91%     1.7  22.8 GB       —  █▊··········
+ ⊘ 89.253.46.46             1.0     0.0    120        —     4.3  412 MB        —  █▎··········
   ────────────────────────────────────────────────────────────────────────────
    showing 20 of 68   ▪ holding over 30 s   ✓ whitelisted   ⊘ limited
    packet — average upload size in bytes; from 600 it is data, not acknowledgements
+   data — share of the daily upload sent in large packets; from 55% it is no longer acknowledgements
    total — transferred since the engine loaded, down and up together
 ```
 
@@ -184,6 +185,17 @@ to 80%, red above. The upload column has its own scale: mobile carriers give a
 narrow uplink, so noticeable upload is the first sign of seeding. In the sample
 above 91.79.15.94 downloads only 1.4 Mbit/s but uploads 2.7 — that is what a
 torrent looks like.
+
+The **data** column answers the same question over a day rather than a moment.
+The packet size jumps from window to window: someone sends an attachment in a
+messenger and it reads over a thousand for ten seconds. The share knows no
+jumps.
+
+The two columns diverge exactly for the addresses worth a look: a high packet
+with a low share means a burst; a low packet with a high share means it is quiet
+now but the day was spent seeding. Grey up to 55%, yellow from 55 (the
+watchdog's threshold), red from 80. A dash means there was no upload at all
+today — which is not the same as zero percent.
 
 The **total** column is how much the address has transferred since the engine
 loaded, down and up together. Speed shows the present moment, and "0.1 Mbit"

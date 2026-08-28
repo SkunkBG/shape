@@ -98,7 +98,9 @@ MSG = {
         "h_req_packet": "требовать крупные пакеты вверх: on/off",
         "guard_req_packet": "и только при пакетах вверх от {n} байт — подтверждения не в счёт",
         "mon_pkt": "пакет",
+        "mon_bulk": "данными",
         "mon_leg_pkt": "пакет — средний размер в отдаче, байт; от {n} это данные, а не подтверждения",
+        "mon_leg_bulk": "данными — доля суточной отдачи крупными пакетами; от {n}% это уже не подтверждения",
         "id_node": "нода",
         "id_config": "отпечаток",
         "id_none": "не создан",
@@ -525,7 +527,9 @@ MSG = {
         "h_req_packet": "require large upload packets: on/off",
         "guard_req_packet": "and only with upload packets from {n} bytes — acknowledgements do not count",
         "mon_pkt": "packet",
+        "mon_bulk": "data",
         "mon_leg_pkt": "packet — average upload size in bytes; from {n} it is data, not acknowledgements",
+        "mon_leg_bulk": "data — share of the daily upload sent in large packets; from {n}% it is no longer acknowledgements",
         "id_node": "node",
         "id_config": "fingerprint",
         "id_none": "not created",
@@ -1449,6 +1453,10 @@ UPLOAD_HOURS_MBPS_WAS = 0.3
 # смотрится командой `status --bulk`, и двигать его надо по ней.
 RATIO_BULK_PERCENT = 55
 
+# С какой доли красить колонку монитора красным, а не жёлтым.
+# Жёлтый — «дошёл до порога сторожа», красный — «сомнений почти нет».
+BULK_LOUD_PERCENT = 80
+
 # Как часто напоминать об одном и том же адресе с той же причиной.
 #
 # Штраф снимается через час, суточные счётчики за этот час не меняются — и
@@ -2089,8 +2097,13 @@ def cmd_monitor(a):
     history, since, chan = {}, {}, []
     prev, prev_t = read_users(), time.monotonic()
     pens, pens_at = load_penalties(), 0.0
+    # Суточные счётчики пишет сторож; монитор их только читает. Обновляем
+    # вместе со штрафами, раз в пять секунд: доля за сутки меняется медленно.
+    daily = load_daily()
     wl = whitelist_ips()
-    width = 87
+    # Ширина разделителя привязана к сумме колонок: строка длиннее его на три
+    # знака отступа. Меняете колонки — меняйте и это число, тест сверит.
+    width = 96
 
     print("\033[?25l", end="", flush=True)   # спрятать курсор
     try:
@@ -2106,6 +2119,7 @@ def cmd_monitor(a):
             if now_t - pens_at > 5:
                 pens, pens_at = load_penalties(), now_t
                 wl = whitelist_ips()
+                daily = load_daily()
 
             rows = []
             for ip, (dl, ul, up_pkt) in rt.items():
@@ -2150,7 +2164,8 @@ def cmd_monitor(a):
                            f" {t('mon_of')} {len(rows)}")
             out.append(f"  {C['gry']}{'─' * width}{C['r']}")
             out.append(f"{C['gry']}   {'IP':<21}{t('now'):>8}{t('mon_up'):>8}"
-                       f"{t('mon_pkt'):>7}{t('mon_avg'):>8}{t('mon_total'):>9}"
+                       f"{t('mon_pkt'):>7}{t('mon_bulk'):>9}"
+                       f"{t('mon_avg'):>8}{t('mon_total'):>9}"
                        f"{t('mon_hold'):>7}  {t('mon_share')}{C['r']}")
 
             if not active:
@@ -2201,9 +2216,14 @@ def cmd_monitor(a):
                     vol_col = C["bred"]
                 elif vol >= 5e9:
                     vol_col = C["byel"]
+                # Доля отдачи данными за сутки. Рядом с мгновенным пакетом
+                # намеренно: одно число про сейчас, другое про поведение, и
+                # расходятся они как раз у тех, кого стоит посмотреть.
+                bulk_txt, bulk_col = bulk_cell(daily.get(ip))
                 out.append(f" {mark} {ip:<21}{col}{dl:>8.1f}{C['r']}"
                            f"{ul_col}{ul:>8.1f}{C['r']}"
                            f"{pkt_col}{pkt_txt:>7}{C['r']}"
+                           f"{bulk_col}{bulk_txt:>9}{C['r']}"
                            f"{C['gry']}{avg:>8.1f}{C['r']}"
                            f"{vol_col}{fmt_bytes(vol):>9}{C['r']}"
                            f"{hold_col}{hold_txt:>7}{C['r']}"
@@ -2215,6 +2235,8 @@ def cmd_monitor(a):
                        f"   ▪ {t('mon_leg_hold')}   ✓ {t('mon_leg_wl')}"
                        f"   ⊘ {t('mon_leg_limited')}{C['r']}")
             out.append(f"   {C['gry']}{t('mon_leg_pkt', n=PKT_DATA_HINT)}{C['r']}")
+            out.append(f"   {C['gry']}"
+                       f"{t('mon_leg_bulk', n=RATIO_BULK_PERCENT)}{C['r']}")
             out.append(f"   {C['gry']}{t('mon_leg_total')}{C['r']}")
             print("\n".join(out), flush=True)
     except KeyboardInterrupt:
@@ -2967,6 +2989,31 @@ def bulk_share(day):
     if not parsed or not parsed[0]:
         return 0.0
     return min(100.0, parsed[3] * 100.0 / parsed[0])
+
+
+def bulk_cell(day):
+    """
+    Колонка «данными» в мониторе: (текст, цвет).
+
+    Мгновенный размер пакета отвечает на вопрос «что идёт вверх прямо сейчас»
+    и скачет от окна к окну: человек отправил вложение — и в колонке «пакет»
+    на десять секунд тысяча с лишним. Доля за сутки скачков не знает, и по ней
+    видно поведение, а не момент.
+
+    Нет отдачи вовсе — прочерк, а не ноль: ноль означал бы «отдавал, но
+    подтверждениями», а это другое утверждение.
+    """
+    parsed = day_upkt(day)
+    if not parsed or not parsed[0]:
+        return "—", C["gry"]
+    share = min(100.0, parsed[3] * 100.0 / parsed[0])
+    if share >= BULK_LOUD_PERCENT:
+        col = C["bred"]
+    elif share >= RATIO_BULK_PERCENT:
+        col = C["byel"]
+    else:
+        col = C["gry"]
+    return f"{share:.0f}%", col
 
 
 def evaluate(ip, s, g, cap, both_streak, peak_streak, daily, hourly=None,
@@ -3863,9 +3910,13 @@ def penalty_figures(day):
     return out
 
 
-def penalty_packets(day, now=None):
+def penalty_packets(day, now=None, hours=True):
     """
     Вторая строка: чем именно была отдача. Не из чего считать — пусто.
+
+    hours=False — для тех мест, где часы уже печатаются своей подписью.
+    Одно и то же число под двумя разными названиями в одной строке читается
+    как две разные величины; в `panel user` так и вышло.
 
     Отдельной строкой, потому что срок у неё свой. Поле с пакетами
     обнуляется при смене формата, и сразу после обновления оно покрывает
@@ -3899,7 +3950,7 @@ def penalty_packets(day, now=None):
     # выгрузки. Его не было в карточке, и по ней нельзя было понять, почему
     # человек попал под ограничение, а сосед с теми же процентами нет.
     up_sec = (day or {}).get("up_sec", 0)
-    if isinstance(up_sec, (int, float)) and 0 < up_sec <= 25 * 3600:
+    if hours and isinstance(up_sec, (int, float)) and 0 < up_sec <= 25 * 3600:
         parts.append(t("tg_pen_hrs", h=f"{up_sec / 3600:.1f}"))
     return " · ".join(parts), max(0.0, now - since)
 
@@ -5560,7 +5611,9 @@ def cmd_panel(a):
                 continue
             pct = f" ({up * 100 / down:.0f}%)" if down else ""
             print(f"  {ip:<18}↓ {fmt_bytes(down)} · ↑ {fmt_bytes(up)}{pct}")
-            pk, _win = penalty_packets(d)
+            # Часы печатает следующая строка своей подписью — здесь они
+            # выключены, иначе одно число выходит дважды.
+            pk, _win = penalty_packets(d, hours=False)
             extra = []
             if pk:
                 extra.append(re.sub(r"<[^>]+>", "", pk))
