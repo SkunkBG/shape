@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.71-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.72-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.71
+# Shape v3.72
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -1753,8 +1753,20 @@ like a panel where nobody is cheating.
 
 ## Monitoring
 
-Prometheus metrics come out **two ways**, and the API is not required for
-either. Set up in the menu: **Service → 📈 Monitoring**.
+Prometheus metrics come out **three ways**, and the API is not required for
+any of them. Set up in the menu: **Service → 📈 Monitoring**.
+
+**The node pushes on its own — the only path that works from behind NAT and
+from countries where VPNs are blocked.** Not a single inbound port is opened:
+
+```bash
+shaperctl metrics set --url https://push.example.com/api/v1/import/prometheus \
+                      --token WRITE_TOKEN
+systemctl enable --now shape-push.timer
+```
+
+A ready-made receiving server lives in [monitor/](monitor/): VictoriaMetrics,
+Grafana, Caddy and a gate with a second factor, one command on a bare VPS.
 
 **As a file — if node_exporter is already on the node.** The wizard finds its
 textfile directory, installs a systemd timer and writes `shape.prom` there

@@ -18,6 +18,7 @@ bash    status_line_tests.sh    # строка состояния на глав�
 python3 menu_wiring.py ../menu.sh   # у каждого пункта меню есть обработчик
 python3 lang_parity.py ../lang.sh   # у каждой строки есть перевод
 python3 privacy_scan.py         # в репозитории нет данных живых людей
+python3 monitor_tests.py        # сервер мониторинга: порты, маршруты, секреты
 gcc -O1 -Wno-unknown-pragmas -I stub -o /tmp/h bpf_harness.c && /tmp/h
 ```
 

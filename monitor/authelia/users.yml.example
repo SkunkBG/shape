@@ -1,0 +1,22 @@
+# Пользователи гейта. Скопируйте в users.yml и замените всё.
+#
+# Хеш пароля считается так (пароль не остаётся в истории оболочки):
+#
+#   docker run --rm -it authelia/authelia:4.38 \
+#       authelia crypto hash generate argon2
+#
+# Второй фактор (TOTP) настраивается при первом входе: Authelia покажет
+# QR-код. Ссылка на его настройку кладётся в /data/notification.txt внутри
+# контейнера — достать её можно так:
+#
+#   docker compose exec authelia cat /data/notification.txt
+
+users:
+  admin:
+    disabled: false
+    displayname: 'Владелец нод'
+    # Замените на свой хеш. Этот — от пароля, которого нет.
+    password: '$argon2id$v=19$m=65536,t=3,p=4$ЗАМЕНИТЕ$ЭТУ$СТРОКУ'
+    email: 'you@example.com'
+    groups:
+      - admins

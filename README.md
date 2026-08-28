@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.71-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-3.72-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--2.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v3.71
+# Shape v3.72
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -1781,8 +1781,20 @@ shape_panel_sharing_found           сколько нарушителей на �
 
 ## Мониторинг
 
-Метрики Prometheus отдаются **двумя путями**, и API для этого не обязателен.
+Метрики Prometheus отдаются **тремя путями**, и API для этого не обязателен.
 Настраивается в меню: **Сервис → 📈 Мониторинг**.
+
+**Нода отправляет сама — единственный путь, который работает из-за NAT и из
+стран, где блокируют VPN.** Входящих портов не открывается ни одного:
+
+```bash
+shaperctl metrics set --url https://push.example.com/api/v1/import/prometheus \
+                      --token ТОКЕН_ЗАПИСИ
+systemctl enable --now shape-push.timer
+```
+
+Готовый сервер для приёма — в [monitor/](monitor/): VictoriaMetrics, Grafana,
+Caddy и гейт со вторым фактором, одной командой на чистую VPS.
 
 **Через файл — если на ноде уже есть node_exporter.** Мастер сам находит его
 каталог textfile, ставит systemd-таймер и раз в минуту пишет туда

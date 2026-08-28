@@ -13,6 +13,110 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.72
+
+**The `monitor/` directory: the monitoring server deploys with one command.**
+
+```
+node in Russia ─┐
+node in Europe ─┼─→  https://push.<domain>  ─→  VictoriaMetrics
+node behind NAT ┘         (token)                     │
+                                                      ↓
+    you ─→  https://grafana.<domain>  ─→  Authelia  ─→  Grafana
+                                          (gate)     (own login)
+```
+
+```bash
+git clone https://github.com/SkunkBG/shape.git
+cd shape/monitor && sudo bash install.sh
+```
+
+### The rule that matters has not changed
+
+**The dashboard only reads.** No rule on any node looks at the central source.
+The server dies, the domain expires, the VPS burns down — nothing changes on the
+nodes.
+
+This is not a promise but a property of the design: Shape has no line that reads
+a decision from outside.
+
+### Two layers of access
+
+Grafana has a recognisable login page: its version can be read off it, and known
+holes follow from the version. The gate in front returns the same thing to every
+unauthenticated visitor, and from outside it is **impossible to tell what stands
+behind it**.
+
+| Layer | What it is | What for |
+| --- | --- | --- |
+| Authelia | password + TOTP | strangers cannot even see that this is Grafana |
+| Grafana | its own login | someone inside the perimeter is still outside |
+
+The second factor was chosen not out of strictness but because the node owner
+travels. An IP allowlist is out from the start; a client certificate would mean
+that a new device on a trip locks you out.
+
+### The most dangerous place is the intake
+
+A node cannot go through an interactive login, so it has a route of its own. That
+route is **deliberately narrow**:
+
+```
+@push {
+    path /api/v1/import*
+    method POST
+    header Authorization "Bearer {$SHAPE_PUSH_TOKEN}"
+}
+```
+
+All three conditions must match. The path is restricted because VictoriaMetrics
+keeps series deletion next door (`/api/v1/admin/tsdb/delete_series`): opening the
+whole storage here would hand whoever holds the token the ability to **erase the
+history**. And the token sits on 28 nodes and will leak sooner or later.
+
+A stolen token buys exactly one thing: writing junk metrics.
+
+### What is inside
+
+| Container | Version | Exposed |
+| --- | --- | --- |
+| caddy | 2.8-alpine | **80, 443** |
+| victoriametrics | v1.102.0 | none |
+| grafana | 11.2.0 | none |
+| authelia | 4.38 | none |
+
+One container faces outward. Versions are pinned: Authelia's configuration
+changed incompatibly between 4.37 and 4.38, and `latest` will simply fail to come
+up one morning.
+
+The dashboard is not copied but mounted from `grafana/` next to the node code:
+two copies of one file drift apart, and the one that drifts is always the one out
+of sight.
+
+### What is checked, and what is not
+
+Docker and Caddy do not run in the sandbox. But nearly everything that breaks in
+a stack like this is visible in the files themselves — **81 checks**: published
+ports (caddy only), the write route with its three conditions, the absence of
+deletion and reading in it, secrets as variables rather than in the config, every
+variable being mandatory, `.env` and `users.yml` in `.gitignore`, the installer
+taking randomness from the kernel, image versions matching the documentation.
+
+**What cannot be checked** is whether Authelia comes up with exactly this config
+schema. That is stated plainly, and the installer calls `authelia
+validate-config` before the first start rather than after.
+
+### Other
+
+* `README.md` and `README.en.md` in `monitor/` — how it works, what it costs,
+  maintenance, backups.
+* Metrics push was added to the main README's "Monitoring" section as the first
+  of three paths.
+* The intake endpoint was confirmed against the VictoriaMetrics documentation:
+  `POST /api/v1/import/prometheus`, body in Prometheus text format.
+
+---
+
 ## 3.71
 
 **Real people's data removed from the repository. And a check added so it does
