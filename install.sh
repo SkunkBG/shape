@@ -180,6 +180,8 @@ install -m 644 "$SRC/systemd/shape-api.service" "$APP_DIR/api/shape-api.service"
 mkdir -p "$APP_DIR/systemd"
 install -m 644 "$SRC/systemd/shape-metrics.service" "$APP_DIR/systemd/"
 install -m 644 "$SRC/systemd/shape-metrics.timer"   "$APP_DIR/systemd/"
+install -m 644 "$SRC/systemd/shape-push.service"    "$APP_DIR/systemd/"
+install -m 644 "$SRC/systemd/shape-push.timer"      "$APP_DIR/systemd/"
 
 if (( WITH_API )); then
     step "Установка API"

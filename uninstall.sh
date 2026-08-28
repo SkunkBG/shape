@@ -49,7 +49,8 @@ fi
 [[ -n "${SHAPE_UNINSTALL_DETACHED:-}" ]] && trap 'rm -f "$0"' EXIT
 
 step "Остановка служб"
-for unit in shaper-watch shaper shape-api shape-metrics.timer shape-metrics shape-tunnel; do
+for unit in shaper-watch shaper shape-api shape-metrics.timer shape-metrics \
+            shape-push.timer shape-push shape-tunnel; do
     if systemctl list-unit-files "$unit"* >/dev/null 2>&1; then
         systemctl disable --now "$unit" >/dev/null 2>&1 || true
     fi
@@ -113,6 +114,8 @@ rm -f "$UNIT_DIR/shaper.service" \
       "$UNIT_DIR/shape-api.service" \
       "$UNIT_DIR/shape-metrics.service" \
       "$UNIT_DIR/shape-metrics.timer" \
+      "$UNIT_DIR/shape-push.service" \
+      "$UNIT_DIR/shape-push.timer" \
       "$UNIT_DIR/shape-tunnel.service"
 systemctl daemon-reload
 ok "юниты удалены"

@@ -33,7 +33,13 @@ S.WL_FILE = os.path.join(ETC, "whitelist.txt")
 import argparse
 ok = fail = 0
 def check(name, cond, extra=""):
+    # ok — счётчик, и он глобальный. Живой случай: в одном из блоков ниже
+    # написали «ok, err = ...», булево легло в счётчик, итог показал 189
+    # вместо 441, и все проверки при этом были зелёными. Поэтому тип
+    # сверяется на каждом шаге: молчаливая потеря счёта хуже падения.
     global ok, fail
+    if not isinstance(ok, int) or isinstance(ok, bool):
+        raise SystemExit("счётчик ok затёрт присваиванием — ищите «ok, ... =»")
     if cond: ok += 1; print(f"  \033[32m✓\033[0m {name}")
     else:    fail += 1; print(f"  \033[31m✗ {name}\033[0m {extra}")
 
@@ -879,6 +885,129 @@ for _mb in (300, 500, 1000, 3000, S.GUARD_DEFAULT["upload_ratio_min_mb"]):
     check(f"порог {_mb} МБ показан без потери величины",
           abs(_bytes_back(_shown) - _floor) <= _floor * 0.01,
           f"{_shown} -> {_bytes_back(_shown):.0f}, ждали {_floor:.0f}")
+
+print("\n\033[1mОтправка метрик наружу\033[0m")
+# Ноды стоят за NAT и в странах, где WireGuard блокируют по отпечатку.
+# Поэтому не сервер приходит за метриками, а нода отправляет сама обычным
+# исходящим HTTPS.
+check("по умолчанию отправка выключена",
+      S.METRICS_DEFAULT["push_url"] == "")
+check("пустой адрес — это не ошибка, а выключатель",
+      S.valid_push_url("") == ("", None))
+check("https принимается",
+      S.valid_push_url("https://m.example.com/api/v1/import/prometheus")[1] is None)
+check("простой http наружу запрещён",
+      S.valid_push_url("http://m.example.com/x")[1] == "met_need_https")
+check("к себе http можно", S.valid_push_url("http://127.0.0.1:8428/x")[1] is None)
+check("в приватную сеть http можно",
+      S.valid_push_url("http://10.100.0.2:8428/x")[1] is None)
+check("localhost по имени тоже свой",
+      S.valid_push_url("http://localhost:8428/x")[1] is None)
+check("к публичному адресу по http нельзя",
+      S.valid_push_url("http://8.8.8.8/x")[1] == "met_need_https")
+for _bad in ("ftp://m.example.com/x", "не адрес", "https://", "://x"):
+    check(f"«{_bad}» отвергнут", S.valid_push_url(_bad)[1] == "met_bad_url", _bad)
+check("у обеих бед есть человеческий текст",
+      S.t("met_bad_url") != "met_bad_url" and S.t("met_need_https") != "met_need_https")
+
+# Секция должна доезжать до load_config и переживать запись других секций.
+_saved = open(S.CONFIG_FILE).read() if os.path.exists(S.CONFIG_FILE) else None
+try:
+    with open(S.CONFIG_FILE, "w") as f:
+        json.dump({"telegram": {"token": "keep"}}, f)
+    check("секция появляется с умолчаниями",
+          S.load_config()["metrics"] == S.METRICS_DEFAULT)
+    S.save_config({"metrics": dict(S.METRICS_DEFAULT,
+                                   push_url="https://m.example.com/i",
+                                   push_token="secret-token-value")})
+    _cfg = S.load_config()
+    check("настройка сохраняется",
+          _cfg["metrics"]["push_url"] == "https://m.example.com/i")
+    check("и не стирает соседние секции",
+          _cfg["telegram"]["token"] == "keep")
+
+    # Отправка: подменяем транспорт, сеть в тестах не трогаем.
+    _sent = []
+
+    def _fake_post(url, data, proxy="", content_type="", headers=None):
+        _sent.append((url, data, proxy, content_type, headers or {}))
+        return 200
+
+    _real_post = S._post
+    S._post = _fake_post
+    # ВАЖНО: не «ok» — так называется счётчик пройденных проверок в этом
+    # файле, и присваивание сюда булева значения тихо обнуляет весь итог.
+    sent_ok, err = S.metrics_push(_cfg, "shape_up{node=\"n\"} 1\n")
+    check("отправка проходит", sent_ok is True, err)
+    check("ушло на заданный адрес", _sent[0][0] == "https://m.example.com/i")
+    check("тело — это байты", isinstance(_sent[0][1], bytes))
+    check("тело не переписано", b"shape_up" in _sent[0][1])
+    check("токен ушёл заголовком",
+          _sent[0][4].get("Authorization") == "Bearer secret-token-value")
+    check("тип содержимого текстовый", "text/plain" in _sent[0][3])
+
+    # Без токена заголовка быть не должно — пустой Bearer это не «нет токена».
+    S.save_config({"metrics": dict(S.METRICS_DEFAULT,
+                                   push_url="https://m.example.com/i")})
+    _sent.clear()
+    S.metrics_push(S.load_config(), "x 1\n")
+    check("без токена заголовка нет", "Authorization" not in _sent[0][4])
+
+    # Выключенная отправка молчит и в сеть не лезет.
+    S.save_config({"metrics": dict(S.METRICS_DEFAULT)})
+    _sent.clear()
+    sent_ok, err = S.metrics_push(S.load_config(), "x 1\n")
+    check("выключенная отправка не отправляет",
+          sent_ok is False and not _sent)
+    check("и объясняет почему", err == S.t("met_push_off"), err)
+
+    # Ошибка сети не роняет и не выносит токен в журнал.
+    S.save_config({"metrics": dict(S.METRICS_DEFAULT,
+                                   push_url="https://m.example.com/i",
+                                   push_token="secret-token-value")})
+
+    def _boom(*a, **kw):
+        raise OSError("нет связи с secret-token-value")
+
+    S._post = _boom
+    sent_ok, err = S.metrics_push(S.load_config(), "x 1\n")
+    check("сбой не роняет программу", sent_ok is False)
+    check("токен в тексте ошибки замаскирован",
+          "secret-token-value" not in err, err)
+    S._post = _real_post
+finally:
+    if _saved is None:
+        os.path.exists(S.CONFIG_FILE) and os.remove(S.CONFIG_FILE)
+    else:
+        open(S.CONFIG_FILE, "w").write(_saved)
+
+check("токен отправки помечен как секрет",
+      ("metrics", "push_token") in S.SECRET_PATHS)
+check("прокси отправки тоже",
+      ("metrics", "push_proxy") in S.SECRET_PATHS)
+# scrub раньше знал только про токен бота, и каждый новый секрет пришлось бы
+# вспоминать отдельно в каждом месте, где печатается ошибка.
+check("scrub чистит любой секрет из списка",
+      "abcdefgh12345" not in S.scrub("упало на abcdefgh12345",
+                                     {"panel": {"token": "abcdefgh12345"}}))
+check("короткое значение не маскируется целиком",
+      S.scrub("ошибка 42", {"panel": {"token": "42"}}) == "ошибка 42")
+
+_src_units = os.path.join(SRC, "systemd")
+check("таймер отправки есть",
+      os.path.exists(os.path.join(_src_units, "shape-push.timer")))
+check("служба отправки есть",
+      os.path.exists(os.path.join(_src_units, "shape-push.service")))
+_unit = open(os.path.join(_src_units, "shape-push.service")).read()
+check("секрета в юните нет", "Bearer" not in _unit and "http" not in _unit.lower()
+      or "config.json" in _unit)
+check("установщик кладёт оба файла",
+      open(os.path.join(SRC, "install.sh")).read().count("shape-push") == 2)
+check("удаление их убирает",
+      open(os.path.join(SRC, "uninstall.sh")).read().count("shape-push") >= 3)
+_timer = open(os.path.join(_src_units, "shape-push.timer")).read()
+check("у таймера есть разброс: 28 нод не должны приходить в одну секунду",
+      "RandomizedDelaySec" in _timer)
 
 print("\n\033[1mКолонка «данными» в мониторе\033[0m")
 # Мгновенный размер пакета говорит про «сейчас» и скачет: отправил человек

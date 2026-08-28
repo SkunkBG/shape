@@ -469,6 +469,23 @@ MSG = {
         "h_metrics": "метрики в формате Prometheus",
         "h_met_out": "записать в файл для node_exporter (*.prom)",
         "met_need_prom": "имя файла должно оканчиваться на .prom — так его ищет node_exporter",
+        "met_bad_url": "адрес отправки — это http:// или https:// с именем хоста",
+        "met_need_https": "наружу только https: по http токен уйдёт открытым текстом",
+        "met_push_off": "отправка выключена: адрес не задан",
+        "met_push_ok": "метрики отправлены: {n} строк на {u}",
+        "met_push_fail": "отправить не вышло: {e}",
+        "met_push_head": "Отправка метрик",
+        "met_push_url": "Адрес",
+        "met_push_token": "Токен",
+        "met_push_proxy": "Прокси",
+        "met_push_wait": "Ждать ответа",
+        "met_push_none": "не задан",
+        "met_push_set": "задан",
+        "met_sec": "с",
+        "h_met_url": "куда отправлять метрики; пустая строка выключает отправку",
+        "h_met_token": "токен для заголовка Authorization: Bearer",
+        "h_met_proxy": "socks5://… или http://… — если до сервера иначе не достучаться",
+        "h_met_timeout": "сколько секунд ждать ответа, 1..120",
         "met_written": "метрики записаны: {p} ({n} строк)",
         "pers_none": "персональных скоростей нет",
         "pers_set": "{ip}: персональная скорость {s:g} Мбит/с",
@@ -898,6 +915,23 @@ MSG = {
         "h_metrics": "metrics in Prometheus format",
         "h_met_out": "write to a file for node_exporter (*.prom)",
         "met_need_prom": "the file name must end with .prom — that is what node_exporter looks for",
+        "met_bad_url": "the push address must be http:// or https:// with a host name",
+        "met_need_https": "https only for the outside world: over http the token travels in clear text",
+        "met_push_off": "pushing is off: no address is set",
+        "met_push_ok": "metrics pushed: {n} lines to {u}",
+        "met_push_fail": "the push failed: {e}",
+        "met_push_head": "Metrics push",
+        "met_push_url": "Address",
+        "met_push_token": "Token",
+        "met_push_proxy": "Proxy",
+        "met_push_wait": "Response timeout",
+        "met_push_none": "not set",
+        "met_push_set": "set",
+        "met_sec": "s",
+        "h_met_url": "where to push metrics; an empty string turns pushing off",
+        "h_met_token": "token for the Authorization: Bearer header",
+        "h_met_proxy": "socks5://… or http://… — if the server is unreachable otherwise",
+        "h_met_timeout": "how many seconds to wait for an answer, 1..120",
         "met_written": "metrics written: {p} ({n} lines)",
         "pers_none": "no personal speeds set",
         "pers_set": "{ip}: personal speed {s:g} Mbit/s",
@@ -1353,6 +1387,25 @@ IPINFO_URL = "https://ipinfo.io/{ip}"
 
 RATIO_LIVE_MBPS = 0.05
 
+# Отправка метрик наружу.
+#
+# Ноды стоят за NAT и в странах, где WireGuard блокируют по отпечатку
+# рукопожатия. Поэтому не «сервер приходит за метриками», а «нода отправляет
+# сама»: исходящий HTTPS на обычный домен с настоящим сертификатом
+# неотличим от того, что человек открыл сайт.
+#
+# Адрес задаётся целиком, вместе с путём: привязываться к endpoint'у
+# конкретного хранилища нельзя — сегодня VictoriaMetrics, завтра что угодно,
+# а нода про это знать не должна.
+#
+# push_url пуст — отправка выключена. Это и есть выключатель.
+METRICS_DEFAULT = {
+    "push_url": "",
+    "push_token": "",
+    "push_proxy": "",
+    "push_timeout": 10,
+}
+
 # Суточные признаки и счётчик, по которому они считаются.
 #
 # Часовые окна после штрафа чистятся (hourly.pop), и человек получает
@@ -1591,9 +1644,11 @@ def load_config():
                        if str(x).strip()]
     panel["exempt_tags"] = [str(x).strip() for x in
                             (panel.get("exempt_tags") or []) if str(x).strip()]
+    met = dict(METRICS_DEFAULT)
+    met.update(cfg.get("metrics", {}))
     return {"ports": cfg.get("ports", [443]),
             "speed_mbps": float(cfg.get("speed_mbps", 0)),
-            "guard": guard, "telegram": tg, "panel": panel}
+            "guard": guard, "telegram": tg, "panel": panel, "metrics": met}
 
 
 def save_config(cfg):
@@ -3641,7 +3696,8 @@ def _get(url, proxy="", timeout=15):
         return r.read().decode("utf-8", "replace")
 
 
-def _post(url, data, proxy="", content_type="application/x-www-form-urlencoded"):
+def _post(url, data, proxy="", content_type="application/x-www-form-urlencoded",
+          headers=None):
     u = urllib.parse.urlsplit(url)
     if proxy.startswith(("socks5://", "socks5h://")):
         p = urllib.parse.urlsplit(proxy)
@@ -3651,9 +3707,10 @@ def _post(url, data, proxy="", content_type="application/x-www-form-urlencoded")
             ctx = ssl.create_default_context()
             conn = http.client.HTTPSConnection(u.hostname, 443, timeout=15, context=ctx)
             conn.sock = ctx.wrap_socket(sock, server_hostname=u.hostname)
-            conn.request("POST", u.path, body=data, headers={
-                "Host": u.hostname, "Content-Type": content_type,
-                "Content-Length": str(len(data))})
+            head = {"Host": u.hostname, "Content-Type": content_type,
+                    "Content-Length": str(len(data))}
+            head.update(headers or {})
+            conn.request("POST", u.path, body=data, headers=head)
             r = conn.getresponse()
             body = r.read()
             if r.status != 200:
@@ -3666,8 +3723,9 @@ def _post(url, data, proxy="", content_type="application/x-www-form-urlencoded")
             except Exception:
                 pass
 
-    req = urllib.request.Request(url, data=data,
-                                 headers={"Content-Type": content_type})
+    head = {"Content-Type": content_type}
+    head.update(headers or {})
+    req = urllib.request.Request(url, data=data, headers=head)
     # Открыватель строим всегда, даже без прокси. Раньше в этой ветке стоял
     # сам модуль urllib.request: у него есть urlopen, но нет open, и отправка
     # без прокси падала на AttributeError. На российских нодах прокси задан
@@ -3772,14 +3830,23 @@ def node_label(tg):
 
 
 def scrub(text, cfg=None):
-    """Убирает токен бота из текста ошибки — журнал читают не только свои."""
-    try:
-        token = (cfg or {}).get("telegram", {}).get("token", "")
-    except Exception:
-        token = ""
+    """
+    Убирает секреты из текста ошибки — журнал читают не только свои.
+
+    Список секретов один на всю программу — SECRET_PATHS. Раньше здесь был
+    зашит только токен бота, и каждый новый секрет пришлось бы вспоминать
+    отдельно в каждом месте, где печатается ошибка. Такое не вспоминают.
+    """
     s = str(text)
-    if token:
-        s = s.replace(token, "***")
+    for section, field in SECRET_PATHS:
+        try:
+            value = str((cfg or {}).get(section, {}).get(field, "") or "")
+        except Exception:
+            value = ""
+        # Короткие значения не маскируем: подстрока в два знака заменила бы
+        # пол-сообщения. Секретов такой длины не бывает.
+        if len(value) >= 8:
+            s = s.replace(value, "***")
     # На случай, если токен просочился из другого источника: /bot<цифры>:<...>
     return re.sub(r"(?<=/bot)\d+:[A-Za-z0-9_-]+", "***", s)
 
@@ -6222,6 +6289,101 @@ def build_metrics(users=None, unit_state=None, started=None, events=None):
     return "\n".join(out) + "\n"
 
 
+def cmd_metrics_show(m):
+    """Что настроено. Токен и прокси не печатаем: их читают через плечо."""
+    print()
+    print(f"  {C['b']}{t('met_push_head')}{C['r']}")
+    url = m.get("push_url") or ""
+    shown = url if url else f"{C['gry']}{t('met_push_none')}{C['r']}"
+    print(f"  {t('met_push_url'):<16}: {shown}")
+    for key, label in (("push_token", "met_push_token"),
+                       ("push_proxy", "met_push_proxy")):
+        val = t("met_push_set") if m.get(key) else t("met_push_none")
+        col = C["r"] if m.get(key) else C["gry"]
+        print(f"  {t(label):<16}: {col}{val}{C['r']}")
+    print(f"  {t('met_push_wait'):<16}: "
+          f"{int(m.get('push_timeout') or 10)} {t('met_sec')}")
+    print()
+
+
+def cmd_metrics_set(a):
+    cfg = load_config()
+    m = dict(cfg["metrics"])
+    if a.url is not None:
+        url, bad = valid_push_url(a.url)
+        if bad:
+            die(t(bad))
+        m["push_url"] = url
+    if a.token is not None:
+        m["push_token"] = a.token.strip()
+    if a.proxy is not None:
+        m["push_proxy"] = a.proxy.strip()
+    if a.timeout is not None:
+        if not 1 <= a.timeout <= 120:
+            die(t("guard_range", k="push_timeout", lo=1, hi=120))
+        m["push_timeout"] = a.timeout
+    save_config({"metrics": m})
+    log_event("config_changed", source="cli", section="metrics")
+    if not a.quiet:
+        cmd_metrics_show(m)
+
+
+def valid_push_url(url):
+    """
+    Разбирает адрес отправки. Возвращает (адрес, беда) — беда это ключ строки.
+
+    Простой http разрешён только к своим: 127.0.0.1, приватные сети. Наружу
+    он означал бы, что токен уходит открытым текстом по чужим маршрутам, и
+    поймать это глазами в конфиге невозможно — проще запретить.
+    """
+    url = str(url or "").strip()
+    if not url:
+        return "", None
+    u = urllib.parse.urlsplit(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return None, "met_bad_url"
+    if u.scheme == "http":
+        try:
+            addr = ipaddress.ip_address(u.hostname)
+            private = addr.is_private or addr.is_loopback
+        except ValueError:
+            private = u.hostname in ("localhost",)
+        if not private:
+            return None, "met_need_https"
+    return url, None
+
+
+def metrics_push(cfg, text=None):
+    """
+    Отправляет метрики на заданный адрес. Возвращает (получилось, ошибка).
+
+    Тело — тот же текст, что уходит в файл для node_exporter. Каждый ряд уже
+    несёт метку node, поэтому получателю не нужно ничего дописывать и не важно,
+    сколько нод пишет в одно хранилище.
+    """
+    m = (cfg or {}).get("metrics") or {}
+    url, bad = valid_push_url(m.get("push_url"))
+    if bad:
+        return False, t(bad)
+    if not url:
+        return False, t("met_push_off")
+    if text is None:
+        text = build_metrics()
+    token = str(m.get("push_token") or "").strip()
+    headers = {"Authorization": "Bearer " + token} if token else {}
+    try:
+        _post(url, text.encode("utf-8"), m.get("push_proxy") or "",
+              content_type="text/plain; charset=utf-8", headers=headers)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        with contextlib.suppress(Exception):
+            detail = ": " + e.read().decode("utf-8", "replace")[:200]
+        return False, scrub(f"HTTP {e.code}{detail}", {"metrics": m})
+    except Exception as e:
+        return False, scrub(str(e), {"metrics": m})
+    return True, ""
+
+
 def cmd_metrics(a):
     """
     Метрики в stdout или в файл для textfile collector node_exporter.
@@ -6229,6 +6391,23 @@ def cmd_metrics(a):
     Запись в файл — обязательно через временный и переименование: иначе
     node_exporter однажды прочитает половину файла и отдаст мусор.
     """
+    action = getattr(a, "action", None)
+    if action == "set":
+        return cmd_metrics_set(a)
+    if action == "show":
+        return cmd_metrics_show(load_config()["metrics"])
+    if action == "push":
+        cfg = load_config()
+        text = build_metrics()
+        ok, err = metrics_push(cfg, text)
+        if not ok:
+            die(t("met_push_fail", e=err))
+        if not a.quiet:
+            print(f"{C['grn']}✓ "
+                  f"{t('met_push_ok', n=text.count(chr(10)), u=cfg['metrics']['push_url'])}"
+                  f"{C['r']}")
+        return
+
     text = build_metrics()
     if not a.out:
         sys.stdout.write(text)
@@ -6440,7 +6619,8 @@ EXPORT_SECTIONS = ("config", "whitelist", "penalties", "owners", "history")
 # Поля конфига, в которых лежат секреты: токен даёт полный доступ к боту,
 # а в строке прокси почти всегда есть пароль. По умолчанию не выгружаются.
 SECRET_PATHS = (("telegram", "token"), ("telegram", "proxy"),
-                ("panel", "token"), ("panel", "proxy"))
+                ("panel", "token"), ("panel", "proxy"),
+                ("metrics", "push_token"), ("metrics", "push_proxy"))
 
 
 def _strip_secrets(cfg):
@@ -7046,7 +7226,16 @@ def build_parser():
     ow.set_defaults(func=cmd_owners)
 
     mt = sub.add_parser("metrics", help=t("h_metrics"))
+    # Действие необязательное: без него команда печатает метрики, как и
+    # печатала. Ломать вызов из таймера и из чужих скриптов нельзя.
+    mt.add_argument("action", nargs="?", choices=["show", "set", "push"],
+                    default=None)
     mt.add_argument("--out", default=None, help=t("h_met_out"))
+    mt.add_argument("--url", default=None, help=t("h_met_url"))
+    mt.add_argument("--token", default=None, help=t("h_met_token"))
+    mt.add_argument("--proxy", default=None, help=t("h_met_proxy"))
+    mt.add_argument("--timeout", type=int, default=None,
+                    help=t("h_met_timeout"))
     mt.add_argument("--quiet", action="store_true")
     mt.set_defaults(func=cmd_metrics)
 

@@ -13,6 +13,80 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.70
+
+**A node can push its metrics on its own. The first step towards a monitoring
+server.**
+
+### Why push rather than scrape
+
+The monitoring server has to see 28 nodes, some of them in Russia. WireGuard is
+blocked there by the fingerprint of its handshake, and opening an inbound port on
+every node is a bad idea in itself.
+
+So it is not "the server comes for the metrics" but **the node sends them**:
+outbound HTTPS to an ordinary domain with a real certificate is
+indistinguishable from a person opening a website. Not a single inbound port is
+opened, and NAT stops being a problem.
+
+```bash
+shaperctl metrics set --url https://metrics.example.com/api/v1/import/prometheus \
+                      --token WRITE_TOKEN
+systemctl enable --now shape-push.timer
+```
+
+Check it right away: `shaperctl metrics push` and `shaperctl metrics show`.
+
+### What is sent
+
+The same text that goes into the node_exporter file. Every series already carries
+a `node` label, so the receiver needs to add nothing and it does not matter how
+many nodes write into one storage.
+
+**The address is given in full, path included.** Binding to a particular
+storage's endpoint is wrong: today VictoriaMetrics, tomorrow anything else, and
+the node should not know about it.
+
+### Where the secrets live
+
+The token travels in an `Authorization: Bearer` header and lives in
+`/etc/shaper/config.json` — not in the systemd unit: a secret in a unit is
+visible to anyone who can read `/etc/systemd`.
+
+**Plain `http` to the outside world is refused.** The token would travel in clear
+text, and that cannot be spotted by eye in a config — easier not to allow it. To
+`127.0.0.1` and private networks it is allowed.
+
+`scrub`, which strips secrets out of error text, was rewritten along the way. It
+used to know only about the bot token: every new secret would have to be
+remembered separately in every place that prints an error. Nobody remembers that.
+It now takes the list from `SECRET_PATHS` — one place for the whole program.
+
+### Small things that matter across 28 nodes
+
+The timer fires once a minute **with a 15-second spread**: nodes updated by one
+command would otherwise arrive in the very same second and produce a neat spike
+on the server every minute.
+
+An unreachable network does not count as a service failure: `SuccessExitStatus=1`.
+Otherwise the journal would fill with red every minute while a node is offline.
+
+### Other
+
+* `grafana/README.en.md` — there was no English version of that document at all.
+* Tests: 37 new. Address parsing (https, http to self, http outward, garbage),
+  the config section and neighbouring sections surviving, pushing with and
+  without a token, the content type, a disabled push not touching the network, a
+  failure neither crashing nor leaking the token into the journal, units present
+  and free of secrets.
+* **A check on the counter inside the tests themselves.** One of the new blocks
+  said `ok, err = ...` — and `ok` is the global counter of passed checks. The
+  boolean landed in the counter, the total read 189 instead of 441, and **every
+  check was green while it happened**. `check` now verifies the counter's type at
+  every step: a silent loss of count is worse than a crash.
+
+---
+
 ## 3.69
 
 **The monitor gained a "data" column.**
