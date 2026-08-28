@@ -508,7 +508,7 @@ check("лишние поля выброшены",
                       "device_limit", "telegram_id"},
       sorted(d["1"]))
 
-# Отдельного поля под имя в панели нет: логин там «user_637181482», а имя,
+# Отдельного поля под имя в панели нет: логин там «user_100000003», а имя,
 # если оно есть, кладёт в описание бот — и формат у каждого бота свой.
 # Разбор обязан быть терпимым: не понял — вернул пусто, и останется логин.
 check("имя без ника", S.person_name("Иван") == ("Иван", ""))
@@ -540,7 +540,7 @@ check("без имени — логин",
                           "telegram_id": ""}) == "user_9")
 check("без справочника — внутренний номер", S.panel_label("97") == "#97")
 check("без telegram — только имя",
-      S.panel_label("9", {"id": "9", "name": "Елена", "telegram_id": ""}) == "Елена")
+      S.panel_label("9", {"id": "9", "name": "Ольга", "telegram_id": ""}) == "Ольга")
 check("без имени и логина — решётка с номером",
       S.panel_label("9", {"id": "9", "name": "", "telegram_id": ""}) == "#9")
 
@@ -672,9 +672,9 @@ print("\n\033[1m30. Карточка нарушителя пригодна дл�
 fresh_cache()
 drop_state()
 sent.clear(); docs.clear()
-PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_100000003",
                              "description": "Bot user: Bashou @bashou7",
-                             "telegramId": 637181482}}
+                             "telegramId": 100000003}}
 PANEL["users"] = [{"userId": 741,
                    "ips": [{"ip": "1.2.3.%d" % i,
                             "lastSeen": time.strftime(
@@ -686,18 +686,18 @@ cfg_card = {"panel": conf(action="notify"),
 S.panel_scan(cfg_card)
 card = sent[0] if sent else ""
 check("имя в карточке", "Bashou" in card, card[:200])
-check("Telegram ID в карточке", "637181482" in card, card[:200])
+check("Telegram ID в карточке", "100000003" in card, card[:200])
 check("номер в панели в карточке", "741" in card, card[:200])
 check("ник в карточке", "@bashou7" in card, card[:300])
 # Касанием копируется то, по чему человека ищут: логин панели и Telegram ID.
 # Адрес — обычным текстом: искать по нему негде, а раньше именно он и
 # перехватывал касание на себя.
 check("Telegram ID копируется касанием",
-      "<code>637181482</code>" in card, card[:300])
+      "<code>100000003</code>" in card, card[:300])
 check("логин панели копируется касанием",
-      "<code>user_637181482</code>" in card, card[:300])
+      "<code>user_100000003</code>" in card, card[:300])
 check("адрес касанием не копируется",
-      "<code>1.2.3.0</code>" not in card, card[:400])
+      "<code>203.0.113.2</code>" not in card, card[:400])
 check("сказано, что ничего не предпринято",
       "уведомление" in card or "notification" in card, card[-200:])
 
@@ -765,9 +765,9 @@ print("\n\033[1m35. Кто стоит за адресом — для сообщ�
 fresh_cache()
 drop_state()
 S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
-PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_100000003",
                              "description": "Bot user: Bashou @bashou7",
-                             "telegramId": 637181482}}
+                             "telegramId": 100000003}}
 PANEL["users"] = [{"userId": 741,
                    "ips": [{"ip": "1.2.3.4", "lastSeen": time.strftime(
                        "%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 30))}]}]
@@ -783,9 +783,9 @@ who = S.panel_owner(cfg_own, "1.2.3.4")
 check("владелец найден", bool(who), who)
 check("имя подставлено", (who or {}).get("label") == "Bashou", who)
 check("логин подставлен",
-      (who or {}).get("username") == "user_637181482", who)
+      (who or {}).get("username") == "user_100000003", who)
 check("ник подставлен", (who or {}).get("handle") == "@bashou7", who)
-check("telegram подставлен", (who or {}).get("telegram_id") == "637181482", who)
+check("telegram подставлен", (who or {}).get("telegram_id") == "100000003", who)
 check("номер в панели сохранён", (who or {}).get("user_id") == "741", who)
 card_own = "\n".join(S.offender_card(
     dict(S.TG_DEFAULT, node_name="Erebor"), who, "x"))
@@ -956,7 +956,7 @@ drop_state()
 sent.clear(); docs.clear(); PANEL["drops"] = []
 PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
                               "description": "Bot user: Илья",
-                              "telegramId": 637181482}}
+                              "telegramId": 100000003}}
 PANEL["users"] = make_users({741: 25}, age=60)
 S.read_users = lambda: {}
 _disabled = []
@@ -1018,7 +1018,7 @@ sent.clear(); docs.clear(); PANEL["drops"] = []
 applied.clear()
 PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
                               "description": "Bot user: Илья",
-                              "telegramId": 637181482}}
+                              "telegramId": 100000003}}
 PANEL["users"] = make_users({741: 25}, age=60)
 S.read_users = lambda: {"10.241.0.%d" % i: {} for i in range(25)}
 S.whitelist_ips = lambda: set()
@@ -1050,7 +1050,7 @@ check("сняты все разом", "25" in out, out)
 check("и в складе их не осталось", _store == {}, _store)
 check("нечисловой номер отвергается",
       S.t("rel_bad_user") in _release(user="abc"))
-check("решётку прощаем", S.t("rel_bad_user") not in _release(user="#741"))
+check("решётку прощаем", S.t("rel_bad_user") not in _release(user="#101"))
 check("чужой номер ничего не ломает", "0" in _release(user="999"))
 
 S.penalties_update, S.load_penalties = _stub_pu, _stub_lp
@@ -1065,7 +1065,7 @@ PANEL["directory"] = {}
 PANEL["users"] = [{"userId": 1, "ips": [
     {"ip": "1.1.1.1", "lastSeen": time.strftime(
         "%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 100))},
-    {"ip": "1.1.1.2", "lastSeen": time.strftime(
+    {"ip": "203.0.113.1", "lastSeen": time.strftime(
         "%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 900))}]}]
 S.panel_scan({"panel": conf(action="notify"),
               "telegram": dict(S.TG_DEFAULT)}, act=False)
@@ -1132,7 +1132,7 @@ drop_state()
 sent.clear(); docs.clear()
 PANEL["drops"] = []
 PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
-                              "tag": "BUSINESS", "telegramId": 637181482}}
+                              "tag": "BUSINESS", "telegramId": 100000003}}
 PANEL["users"] = make_users({741: 25}, age=60)
 S.read_users = lambda: {}
 cfg_tag = {"panel": conf(action="drop", exempt_tags=["BUSINESS"]),
@@ -1172,12 +1172,12 @@ def _panel_user(uid):
 check("нечисловой номер отвергается",
       S.t("pn_user_need_id") in _panel_user("abc"), _panel_user("abc"))
 check("решётку перед номером прощаем",
-      S.t("pn_user_need_id") not in _panel_user("#741"))
+      S.t("pn_user_need_id") not in _panel_user("#101"))
 
 fresh_cache()
 PANEL["directory"] = {"741": {"id": 741, "username": "user_741",
                               "description": "Bot user: Илья",
-                              "telegramId": 637181482}}
+                              "telegramId": 100000003}}
 PANEL["users"] = make_users({741: 3}, age=60)
 S.save_config({"ports": [443], "speed_mbps": 50,
                "guard": dict(S.GUARD_DEFAULT),
@@ -1265,7 +1265,7 @@ check("это не тот же текст, что у «панель не отв�
 check("зато сказано, чем проверить", "panel show" in never, never)
 
 # Текст в сообщении обязан отличаться: ради этого всё и делалось.
-tg_why = dict(S.TG_DEFAULT, node_name="Netherlands-3")
+tg_why = dict(S.TG_DEFAULT, node_name="Node-1")
 cards = {c: "\n".join(S.offender_card(tg_why, None, "x", (c, 300)))
          for c in ("off", "stale", "absent")}
 check("три причины — три разных текста",
@@ -1358,11 +1358,11 @@ print("\n\033[1m38. panel who: кто стоит за адресом\033[0m")
 # значит команда обязана спросить панель заново, а не отдавать пустоту.
 fresh_cache()
 S.save_config({"panel": conf(node_uuid="5d8bba03-0951-4503-a4d6-572233c3b934")})
-PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_100000003",
                              "description": "Bot user: Bashou @bashou7",
-                             "telegramId": 637181482}}
+                             "telegramId": 100000003}}
 PANEL["users"] = [{"userId": 741,
-                   "ips": [{"ip": "91.78.46.46", "lastSeen": time.strftime(
+                   "ips": [{"ip": "203.0.113.20", "lastSeen": time.strftime(
                        "%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 30))}]}]
 
 def _who(ip):
@@ -1378,12 +1378,12 @@ def _who(ip):
 
 S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
 PANEL["starts"] = 0
-out = _who("91.78.46.46")
+out = _who("203.0.113.20")
 check("панель спрошена заново, а не взята из памяти", PANEL["starts"] == 1,
       PANEL["starts"])
-check("адрес найден", "91.78.46.46" in out and "741" in out, out)
+check("адрес найден", "203.0.113.20" in out and "741" in out, out)
 check("имя показано", "Bashou" in out, out)
-check("telegram показан", "637181482" in out, out)
+check("telegram показан", "100000003" in out, out)
 check("время последнего появления показано", "последний раз" in out or "last saw" in out)
 
 out = _who("9.9.9.9")
@@ -1396,7 +1396,7 @@ out = _who("не адрес")
 check("мусор вместо адреса отбит", "IP" in out or "адрес" in out, out)
 
 PANEL["users_code"] = 403
-out = _who("91.78.46.46")
+out = _who("203.0.113.20")
 PANEL["users_code"] = 0
 check("без права на пользователей адрес всё равно находится",
       "741" in out, out)
@@ -1420,9 +1420,9 @@ drop_state()
 fresh_cache()
 sent.clear(); docs.clear()
 PANEL["drops"] = []
-PANEL["directory"] = {"741": {"id": 741, "username": "user_637181482",
+PANEL["directory"] = {"741": {"id": 741, "username": "user_100000003",
                              "description": "Bot user: Bashou @bashou7",
-                             "telegramId": 637181482}}
+                             "telegramId": 100000003}}
 PANEL["users"] = make_users({741: 25}, age=60)
 S.read_users = lambda: {}
 cfg_silent = {"panel": conf(action="drop"),
@@ -1436,34 +1436,34 @@ check("и номер в панели", any("741" in x for x in sent), sent)
 print("\n\033[1m40. Карточка одинакова для раздачи и для штрафа\033[0m")
 # Поводы разные, вопрос у читающего один: кто и за что. Значит и шапка одна.
 who = {"label": "Bashou", "handle": "@bashou7",
-       "username": "user_637181482", "telegram_id": "637181482",
+       "username": "user_100000003", "telegram_id": "100000003",
        "user_id": "741"}
 tg_cfg = dict(S.TG_DEFAULT, enabled=True, events=True, node_name="Erebor")
 sent.clear()
-S.tg_penalty({"telegram": tg_cfg}, "91.78.46.46", 1, 60, ["ratio"], who)
+S.tg_penalty({"telegram": tg_cfg}, "203.0.113.20", 1, 60, ["ratio"], who)
 pen = sent[-1]
 share = "\n".join(S.offender_card(tg_cfg, who, S.t("pn_msg_head")))
-for part in ("Bashou", "637181482", "741", "Erebor"):
+for part in ("Bashou", "100000003", "741", "Erebor"):
     check(f"в обоих есть {part}", part in pen and part in share, (pen, share))
-check("в штрафе указан адрес", "91.78.46.46" in pen, pen)
+check("в штрафе указан адрес", "203.0.113.20" in pen, pen)
 check("в штрафе указана скорость и срок", "1 Мбит" in pen or "1 Mbit" in pen, pen)
 check("в штрафе указана причина", S.t("why_ratio") in pen, pen)
 check("идентификаторы копируются касанием",
-      "<code>637181482</code>" in pen
-      and "<code>user_637181482</code>" in pen, pen)
+      "<code>100000003</code>" in pen
+      and "<code>user_100000003</code>" in pen, pen)
 check("адрес касанием не копируется",
-      "<code>91.78.46.46</code>" not in pen, pen)
+      "<code>203.0.113.20</code>" not in pen, pen)
 check("имя ведёт в переписку",
-      '<a href="tg://user?id=637181482">Bashou</a>' in pen, pen)
+      '<a href="tg://user?id=100000003">Bashou</a>' in pen, pen)
 
 # Нода без панели: сообщение обязано сказать, что личность неизвестна, а не
 # выглядеть так, будто мы просто забыли имя.
 sent.clear()
-S.tg_penalty({"telegram": tg_cfg}, "91.78.46.46", 1, 60, ["hourly"])
+S.tg_penalty({"telegram": tg_cfg}, "203.0.113.20", 1, 60, ["hourly"])
 check("без панели сказано, что кто это — неизвестно",
       S.t("pn_card_unknown") in sent[-1], sent[-1])
 check("но адрес и причина на месте",
-      "91.78.46.46" in sent[-1] and S.t("why_hourly") in sent[-1], sent[-1])
+      "203.0.113.20" in sent[-1] and S.t("why_hourly") in sent[-1], sent[-1])
 
 srv.shutdown()
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")

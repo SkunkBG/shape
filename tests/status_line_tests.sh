@@ -39,11 +39,11 @@ run_status() {   # $1 — json конфига
 
 echo -e "\n\033[1mСтрока состояния: всё включено\033[0m"
 ON='{"ports":[443],"speed_mbps":50,"guard":{"enabled":false},
- "telegram":{"enabled":true,"token":"1:AA","chat_id":"-100","node_name":"NL-3"},
+ "telegram":{"enabled":true,"token":"1:AA","chat_id":"-100","node_name":"Node-1"},
  "panel":{"enabled":true,"token":"t","node_uuid":"u","disable_after_min":60}}'
 OUT="$(run_status "$ON")"
 check "Telegram показан включённым"  '[[ "$OUT" == *"Telegram"* && "$OUT" == *"включён"* ]]'
-check "и с подписью ноды"            '[[ "$OUT" == *"NL-3"* ]]'
+check "и с подписью ноды"            '[[ "$OUT" == *"Node-1"* ]]'
 check "панель показана подключённой" '[[ "$OUT" == *"подключена"* ]]'
 check "и отсрочка отключения видна"  '[[ "$OUT" == *"60"* ]]'
 check "API показан"                  '[[ "$OUT" == *"API"* ]]'

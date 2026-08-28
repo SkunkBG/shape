@@ -13,6 +13,73 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.71
+
+**Real people's data removed from the repository. And a check added so it does
+not come back.**
+
+### What it was
+
+Examples in the documentation were written from life: you take a real card from
+a node, paste it into the README — and along with it go the customer's name,
+their Telegram handle, subscription number, address and server name.
+
+The public repository held **46 real addresses in 155 places**, four handles,
+eight Telegram identifiers and the names of five nodes. This cannot be spotted by
+eye: in a hundred pages of text such a line stands out in no way, and documents
+live for years.
+
+### What it is now
+
+Addresses were replaced with the ranges reserved for documentation (RFC 5737):
+`203.0.113.0/24`, `198.51.100.0/24`, `192.0.2.0/24`. They are not routed on the
+internet and cannot belong to anyone.
+
+Names, handles, identifiers and node names were replaced with examples: `Ivan`,
+`@ivan_k`, `100000001`, `Node-1`. The replacement is consistent — the same person
+stayed the same person across all documents, otherwise the examples would stop
+reading.
+
+The edits touched the README in both languages, both changelogs, the code and the
+tests.
+
+### `tests/privacy_scan.py`
+
+The point here is not the cleanup but that it will not be needed a second time.
+
+```
+$ python3 tests/privacy_scan.py
+  ✓ данных живых людей не найдено
+```
+
+The check walks the repository and fails on any public address outside the
+documentation ranges, on any handle outside a short list of examples, and on any
+number standing next to `Telegram:`, `user_` or `tg://user?id=`.
+
+**The allowlist is explicit and short.** A new address or handle has to be put
+there by hand — and at that moment you ask yourself where it came from.
+
+### Checking the check
+
+A green scanner that finds nothing is worse than none. So 22 checks try it on
+planted data: a real address is found, a documentation one stays silent,
+resolvers stay silent, a customer handle is found, `@BotFather` stays silent, a
+Python decorator does not count as a handle while a Markdown line starting with
+one does, an identifier is found in three different spellings, the `123456789`
+placeholder stays silent, and a number of bytes is not an identifier.
+
+The samples for those checks **are assembled from pieces**: written out in full
+they would sit in the same file and the scanner would find itself. Exactly the
+trap it guards against — "but this data is for a good reason".
+
+### An honest caveat
+
+The check catches addresses, handles and identifiers. **It cannot catch a
+person's name** — "Darya" is indistinguishable from "Maria". There only attention
+helps: examples get invented names.
+
+---
+
 ## 3.70
 
 **A node can push its metrics on its own. The first step towards a monitoring
@@ -93,10 +160,10 @@ Otherwise the journal would fill with red every minute while a node is offline.
 
 ```
    IP                       now  upload  packet     data     avg    total holding  share of limit
- ▪ 91.78.14.164            12.4     3.1    1420      79%     8.2  82.0 MB   5 min  ███·········
- ▪ 80.115.217.88            4.2     0.6     209       1%     3.9 212.0 MB       —  █···········
- ▪ 176.192.194.127          0.4     0.9    1508      95%     0.5 578.0 MB  15 min  ▏···········
- ▪ 5.166.135.241           22.0     0.4      88        —    18.1   3.2 GB   1 min  █████▍······
+ ▪ 203.0.113.19            12.4     3.1    1420      79%     8.2  82.0 MB   5 min  ███·········
+ ▪ 203.0.113.11            4.2     0.6     209       1%     3.9 212.0 MB       —  █···········
+ ▪ 203.0.113.39          0.4     0.9    1508      95%     0.5 578.0 MB  15 min  ▏···········
+ ▪ 203.0.113.6           22.0     0.4      88        —    18.1   3.2 GB   1 min  █████▍······
 ```
 
 ### Why, when "packet" is already right there
@@ -394,7 +461,7 @@ we asked:
 
 ```
 shaperctl panel user 1377
-  78.155.183.248    ↓ 1.8 GB · ↑ 1.2 GB (66%)
+  203.0.113.9    ↓ 1.8 GB · ↑ 1.2 GB (66%)
                     data 67% · packet 801 B · max 2357 · sent data for 0.0 h
 ```
 
@@ -609,7 +676,7 @@ walking into the section.
   🔌  Port      443
   🚦  Auto-limit on        both ways ↓5 ↑1.5 Mbit/s 10 min → 1 Mbit/s for 60 min
       or 11.2 GB an hour · 150 GB a day · upload over 50%
-  ✉️   Telegram   on         node label: Netherlands-3
+  ✉️   Telegram   on         node label: Node-1
   🛰  Panel      connected  disables the subscription after 60 min
   🔑  API        running
 ```
@@ -748,11 +815,11 @@ with it.
 It existed before but did not say plainly who had done it. Now it does:
 
 ```
-⛔ Subscription disabled · Netherlands-3
+⛔ Subscription disabled · Node-1
 
 👤 Ilya · @ilya
-🆔 Telegram: 1063858404
-🔑 Panel login: user_1063858404 · #741
+🆔 Telegram: 100000001
+🔑 Panel login: user_100000001 · #101
 
 🤖 Disabled by Shape: there were 146 addresses and no reaction for 30 min.
 
@@ -1026,9 +1093,9 @@ So the signal arrives as a notice and the decision stays with the owner:
 🔔 Long upload · Italy
 
 👤 Chopiks
-🔑 Panel login: user_8520840224 · #6085
+🔑 Panel login: user_100000006 · #104
 
-📍 Address: 109.161.37.64
+📍 Address: 203.0.113.33
 Uploaded for 9.4 h in 24h — the threshold is 6 h
 📈 For the day: ↓ 4.2 GB · ↑ 11.3 GB (269%)
 
@@ -1132,12 +1199,12 @@ in its responses there is only `totalBytes`. So "123 GB in 24h" is the sum of
 both directions, and a download cannot be told from seeding by it.
 
 ```
-  Ilya · user_1063858404 (1063858404)
+  Ilya · user_100000001 (100000001)
   Addresses on the node: 2
 
-  109.161.37.64     ↓ 58.2 GB · ↑ 61.4 GB (105%)
+  203.0.113.33     ↓ 58.2 GB · ↑ 61.4 GB (105%)
                     96% as data · packet 1310 B · uploaded for 9.0 h
-  87.253.24.130     ↓ 3.1 GB · ↑ 0.1 GB (3%)
+  203.0.113.13     ↓ 3.1 GB · ↑ 0.1 GB (3%)
                     0% as data · packet 140 B
 ```
 
@@ -1269,7 +1336,7 @@ decision. Otherwise it cannot be checked, only believed.
 **A Telegram notification when a newer version appears in the repository.**
 
 ```
-⬆️ An update is available · Akenia
+⬆️ An update is available · Node-2
 
 Installed: 3.48
 In the repository: 3.49
@@ -1413,13 +1480,13 @@ shaperctl guard --upload-warn 10 --upload-day 30
 **10 GB — a notice and nothing else.** One message per address per day:
 
 ```
-🔔 Heavy upload · Netherlands-3
+🔔 Heavy upload · Node-1
 
-👤 Daria · @Trifonova_Dasha
-🆔 Telegram: 157655577
-🔑 Panel login: user_157655577 · #3710
+👤 Daria · @maria_p
+🆔 Telegram: 100000002
+🔑 Panel login: user_100000002 · #102
 
-📍 Address: 46.138.65.124
+📍 Address: 203.0.113.7
 10.5 GB uploaded in 24h — the notice threshold is 10 GB
 📈 For the day: ↓ 3.9 GB · ↑ 10.5 GB (269%)
 📦 Upload over 6.0 h: 96% as data · packet 1255 B · max 1408
@@ -1526,7 +1593,7 @@ On the first the gap fell between 39 and 73 — a threshold of 70 looked
 acceptable. On the second there was an address in the 60–70 range:
 
 ```
-193.39.160.96   150.6 MB ↓   589.7 MB ↑   ratio 392%   66% as data
+203.0.113.46   150.6 MB ↓   589.7 MB ↑   ratio 392%   66% as data
 ```
 
 It uploads four times what it downloads, mostly as data. That is seeding, and a
@@ -1661,9 +1728,9 @@ The owner of an address is now remembered for **twelve hours**. The card states
 plainly which poll the name came from:
 
 ```
-👤 Elena Podshibiakina · @elena_podshibiakina
-🆔 Telegram: 82560969
-🔑 Panel login: user_82560969 · #2891
+👤 Olga Podshibiakina · @olga_v
+🆔 Telegram: 100000004
+🔑 Panel login: user_100000004 · #103
 the panel does not see it now — name from the 20:18 poll
 ```
 
@@ -1833,9 +1900,9 @@ The maximum packet size added in 3.39 answered the question on its first day:
 
 | Address | Ratio | Average packet | Daily maximum |
 | --- | --- | --- | --- |
-| 176.193.214.172 | 38% | 538 B | **697** |
-| 176.62.109.20 | 100% | 267 B | **349** |
-| 5.35.115.136 | 55% | 368 B | **399** |
+| 203.0.113.40 | 38% | 538 B | **697** |
+| 203.0.113.38 | 100% | 267 B | **349** |
+| 203.0.113.5 | 55% | 368 B | **399** |
 
 Not one came near 1300 over a whole day. A torrent uploading pieces would have
 reached the segment limit at least once — a peer's chunk is always filled to the
@@ -2094,7 +2161,7 @@ All the numbers needed are in the watchdog's hands at the moment of the penalty.
 Now they are in the message:
 
 ```
-📍 Address: 176.15.128.93
+📍 Address: 203.0.113.36
 🐌 Speed reduced to 1 Mbit/s for 12 h
 Reason: uploaded disproportionately much in 24h
 📈 For the day: ↓ 2.1 GB · ↑ 3.4 GB (162%) · upload packet 1310 B
@@ -2147,11 +2214,11 @@ is not set up" message no longer lies.**
 Home nodes were sending cards like this:
 
 ```
-🚦 Limited · Netherlands-3
+🚦 Limited · Node-1
 
 identity unknown: the panel link is not set up on this node
 
-📍 Address: 109.120.19.228
+📍 Address: 203.0.113.32
 Reason: uploaded disproportionately much in 24h
 ```
 
@@ -2306,7 +2373,7 @@ again.
 
 ```
 🚦 Limited · Erebor
-Limited user_6825740098 · 91.78.46.46 → 1 Mbit/s for 12 h
+Limited user_100000005 · 203.0.113.20 → 1 Mbit/s for 12 h
 ```
 
 Tapping such a message put the address in the clipboard — and there is nowhere
@@ -2319,10 +2386,10 @@ Now:
 🚦 Limited · Erebor
 
 👤 Ivan · @ivan_k
-🆔 Telegram: 637181482
-🔑 Panel login: user_637181482 · #741
+🆔 Telegram: 100000003
+🔑 Panel login: user_100000003 · #101
 
-📍 Address: 91.78.46.46
+📍 Address: 203.0.113.20
 🐌 Speed reduced to 1 Mbit/s for 12 h
 Reason: uploaded disproportionately much in 24h
 ```
@@ -2333,7 +2400,7 @@ there for the eye, not for the clipboard.
 
 ### The name
 
-The name line used to hold the login: `user_6825740098`. The panel has no field
+The name line used to hold the login: `user_100000005`. The panel has no field
 for a name — the name, if it exists at all, is written into the account
 description by a bot, usually as a line like `Bot user: Ivan @ivan_k`.
 
@@ -2348,7 +2415,7 @@ chat, and it works even for people without a username.
 ### Node report
 
 The label in the report and in the address-list file now carries both the name
-and the login: `Ivan · user_637181482 (637181482)`. It used to carry the login
+and the login: `Ivan · user_100000003 (100000003)`. It used to carry the login
 alone. The login stays even when the name is known — the report is opened
 precisely in order to find the person in the panel.
 
@@ -2521,10 +2588,10 @@ There used to be two different messages. Now both start the same way:
 🚦 Limited · Erebor
 
 👤 Bashou
-🆔 Telegram: 637181482
+🆔 Telegram: 100000003
 🔑 Panel ID: 741
 
-📍 Address: 91.78.46.46
+📍 Address: 203.0.113.20
 🐌 Speed cut to 1 Mbit/s for 1.0 h
 Reason: uploaded disproportionately much in 24h
 ```
@@ -2533,7 +2600,7 @@ Reason: uploaded disproportionately much in 24h
 🔎 Looks like a shared subscription · Erebor
 
 👤 Bashou
-🆔 Telegram: 637181482
+🆔 Telegram: 100000003
 🔑 Panel ID: 741
 
 Simultaneous addresses: 287 over the last 10 min
@@ -2571,7 +2638,7 @@ panel the message says plainly that the identity is unknown. 1074 in total.
 
 **The switch that silently disables penalty messages is now visible.**
 
-The ratio signal fired on a node: `95.32.199.197` limited, present in the
+The ratio signal fired on a node: `203.0.113.30` limited, present in the
 "Limited addresses" list, reason stated. And silence in Telegram.
 
 The cause is a separate `events` switch. It governs penalty messages, and when
@@ -2629,14 +2696,14 @@ who is that. Until now it meant going to the panel and searching by hand — and
 if the name had not made it into the message, guessing why.
 
 ```bash
-shaperctl.py panel who 91.78.46.46
+shaperctl.py panel who 203.0.113.20
 ```
 
 ```
-✓ address 91.78.46.46 belongs to:
+✓ address 203.0.113.20 belongs to:
     Panel ID: 741
     Name: Bashou
-    Telegram: 637181482
+    Telegram: 100000003
     the panel last saw it at 2026-08-26 14:41
 ```
 
@@ -2766,7 +2833,7 @@ A message arrived:
 
 ```
 🚦 Erebor
-Limited 91.78.46.46 → 1 Mbit/s for 1.0 h
+Limited 203.0.113.20 → 1 Mbit/s for 1.0 h
 uploaded disproportionately much in 24h
 ```
 
@@ -2779,10 +2846,10 @@ number. The first two were shown, the third was not — even though it is almost
 always available: the number arrives with the connections list, before Shape
 asks for the user's card at all.
 
-So with names disabled, or without the `users:read` scope, we knew `#741` and
+So with names disabled, or without the `users:read` scope, we knew `#101` and
 printed a bare address.
 
-Now such a case reads `#741 · 91.78.46.46` — the number finds the person in the
+Now such a case reads `#101 · 203.0.113.20` — the number finds the person in the
 panel just as well as a name does.
 
 ### Also fixed
@@ -2822,10 +2889,10 @@ Fresh statistics from two servers. One was clean — nobody above 22%. The other
 had three:
 
 ```
-95.32.199.197    857 MB ↓   756 MB ↑   = 88%
-176.59.54.33    1015 MB ↓   489 MB ↑   = 48%   ← the 50% threshold missed it
-95.26.73.25      1.1 GB ↓   500 MB ↑   = 45%   ← and this one
-188.66.34.198    1.1 GB ↓   280 MB ↑   = 25%
+203.0.113.30    857 MB ↓   756 MB ↑   = 88%
+203.0.113.37    1015 MB ↓   489 MB ↑   = 48%   ← the 50% threshold missed it
+203.0.113.28      1.1 GB ↓   500 MB ↑   = 45%   ← and this one
+203.0.113.44    1.1 GB ↓   280 MB ↑   = 25%
 …everyone else                           2-17%
 ```
 
@@ -2855,8 +2922,8 @@ addresses with at least 100 MB uploaded: 17
   75-100  ███ 1
 
 Highest by ratio:
-  95.32.199.197      857.2 MB ↓   756.3 MB ↑    88%
-  176.59.54.33      1014.7 MB ↓   489.1 MB ↑    48%
+  203.0.113.30      857.2 MB ↓   756.3 MB ↑    88%
+  203.0.113.37      1014.7 MB ↓   489.1 MB ↑    48%
   ...
 ```
 
@@ -2891,8 +2958,8 @@ and hunting the address down there.
 
 ```
 IP                       now  upload packet     avg    total holding  share of limit
-109.248.47.99           10.1     0.1    140     3.1  12.4 GB  12 min  ████████████ 101%
-91.79.15.94              1.4     2.7   1310     1.7  22.8 GB       —  █▊··········  14%
+203.0.113.34           10.1     0.1    140     3.1  12.4 GB  12 min  ████████████ 101%
+203.0.113.22              1.4     2.7   1310     1.7  22.8 GB       —  █▊··········  14%
 ```
 
 Counted down and up together, since the engine loaded — the same figure as in
@@ -2918,8 +2985,8 @@ being recomputed, the label is translated, and the table width grew with it.
 From the live statistics of a node with 6143 addresses:
 
 ```
-91.78.14.134   downloaded 379 MB   uploaded 916 MB   ← 2.4× more up than down
-91.78.46.46    downloaded 785 MB   uploaded 461 MB   ← 59%
+203.0.113.18   downloaded 379 MB   uploaded 916 MB   ← 2.4× more up than down
+203.0.113.20    downloaded 785 MB   uploaded 461 MB   ← 59%
 …everyone else                                          5-15%
 ```
 
@@ -2969,7 +3036,7 @@ whole state, or settings from another one would linger inside it.
 
 ### A column in the statistics
 
-`91.78.14.134` sat sixteenth among six thousand addresses — the list is sorted
+`203.0.113.18` sat sixteenth among six thousand addresses — the list is sorted
 by volume, and a seeder downloads little by definition. Spotting it by eye was
 nearly impossible.
 
@@ -3241,7 +3308,7 @@ Two fixes that came out of running this on live nodes.
 ### The report arrived in two shapes
 
 A short report was sent as a message, a long one as an attachment. On Narnia
-with 61 users it was text in the chat; on Hogwarts with 76 it was a file. The
+with 61 users it was text in the chat; on Node-3 with 76 it was a file. The
 same report looked different on neighbouring nodes, comparing them was awkward,
 and on a node that grew the shape changed by itself.
 
@@ -3274,7 +3341,7 @@ report arrives as an attachment regardless of size. 916 in total.
 
 **Blocking an offender, and a card you can act on straight away.**
 
-Finding a reseller is not enough — an internal `#741` tells you nothing about
+Finding a reseller is not enough — an internal `#101` tells you nothing about
 who to write to. The message now carries everything needed to sort it out, and
 access to the node can be cut off on the spot.
 
@@ -3284,7 +3351,7 @@ access to the node can be cut off on the spot.
 🔎 Looks like a shared subscription · FRONT-3
 
 👤 Bashou
-🆔 Telegram: 637181482
+🆔 Telegram: 100000003
 🔑 Panel ID: 741
 
 Simultaneous addresses: 437 over the last 10 min
@@ -3296,7 +3363,7 @@ The Telegram ID and the panel ID are on their own lines and wrapped in `<code>`:
 in Telegram that copies with a single tap. You will be searching by them anyway,
 and nobody should retype nine digits off a screen.
 
-A Telegram handle like `@bashoyy` is not stored by the panel — there is no such
+A Telegram handle like `@petr_s` is not stored by the panel — there is no such
 field on its user card, so there is none on ours. The name and the numeric
 Telegram ID are there.
 
@@ -3365,7 +3432,7 @@ connected and from which addresses.**
 In the connections reply the panel returns only a user number — 97, 346. That
 tells you nothing about who to write to. The name and Telegram ID live in the
 user's card, and Shape now asks for them separately: the message says
-`Elena (851400228)`.
+`Olga (100000008)`.
 
 This needs the **Users → Read** scope on the token. Without it everything keeps
 working, just with numbers; `--resolve off` turns it off entirely.
@@ -3384,10 +3451,10 @@ Node report FRONT-3 · 2026-08-23 09:00
 Users connected: 138
 Addresses in total: 412
 
-Nikita (7288183505) — 437  ⚠
+Nikita (100000007) — 437  ⚠
     1.2.3.4
     …
-Elena (851400228) — 2
+Olga (100000008) — 2
 ```
 
 Sorted by simultaneous address count; anyone above the threshold is marked. The
@@ -3601,8 +3668,8 @@ highlighted:
 
 ```
 IP                       now  upload packet     avg holding  share of limit
-88.135.124.138          37.9     4.6   1280    23.4     4 s  █████████▏··  76%
-89.109.51.149           13.9     0.8    150     5.1       —  ███▍········  28%
+203.0.113.14          37.9     4.6   1280    23.4     4 s  █████████▏··  76%
+203.0.113.15           13.9     0.8    150     5.1       —  ███▍········  28%
 ```
 
 The difference is immediate: 1280 bytes for the seeder against 150 for the

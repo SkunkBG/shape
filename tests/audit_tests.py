@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Проверки после аудита Shape. Запускать из песочницы, не на ноде."""
-import json, os, re, subprocess, sys, tempfile, time, importlib.util
+import json, os, re, shutil, subprocess, sys, tempfile, time, importlib.util
 
 import os as _os
 # Корень проекта: каталог над tests/. Так набор работает и локально, и в CI.
@@ -340,13 +340,13 @@ def _card(subject):
 
 
 check("имя и telegram — ссылка на человека",
-      "tg://user?id=637181482" in _card({"label": "Bashou",
-                                         "telegram_id": "637181482"}))
+      "tg://user?id=100000003" in _card({"label": "Bashou",
+                                         "telegram_id": "100000003"}))
 check("только имя — имя на месте, ссылки нет",
       "Bashou" in _card({"label": "Bashou"})
       and "tg://user" not in _card({"label": "Bashou"}),
       _card({"label": "Bashou"}))
-check("только telegram", "637181482" in _card({"telegram_id": 637181482}))
+check("только telegram", "100000003" in _card({"telegram_id": 100000003}))
 check("логин панели копируется касанием",
       "<code>user_741</code>" in _card({"username": "user_741"}),
       _card({"username": "user_741"}))
@@ -379,22 +379,22 @@ print("\n\033[1mРаспределение отношения отдачи\033[0
 # разрыв отчёт и обязан показывать.
 _MB, _GB = 1e6, 1e9
 NODE1 = {
-    "178.178.197.245": {"down": 7.6 * _GB, "up": 113.8 * _MB},
-    "95.167.210.34":   {"down": 6.5 * _GB, "up": 1.1 * _GB},
-    "80.115.192.57":   {"down": 2.0 * _GB, "up": 205 * _MB},
-    "94.77.22.209":    {"down": 1.8 * _GB, "up": 251.5 * _MB},
-    "188.66.34.198":   {"down": 1.1 * _GB, "up": 280.5 * _MB},
-    "95.26.73.25":     {"down": 1.1 * _GB, "up": 500.5 * _MB},
-    "176.59.54.33":    {"down": 1014.7 * _MB, "up": 489.1 * _MB},
-    "95.32.199.197":   {"down": 857.2 * _MB, "up": 756.3 * _MB},
+    "203.0.113.41": {"down": 7.6 * _GB, "up": 113.8 * _MB},
+    "203.0.113.31":   {"down": 6.5 * _GB, "up": 1.1 * _GB},
+    "203.0.113.10":   {"down": 2.0 * _GB, "up": 205 * _MB},
+    "203.0.113.27":    {"down": 1.8 * _GB, "up": 251.5 * _MB},
+    "203.0.113.44":   {"down": 1.1 * _GB, "up": 280.5 * _MB},
+    "203.0.113.28":     {"down": 1.1 * _GB, "up": 500.5 * _MB},
+    "203.0.113.37":    {"down": 1014.7 * _MB, "up": 489.1 * _MB},
+    "203.0.113.30":   {"down": 857.2 * _MB, "up": 756.3 * _MB},
     "шум":             {"down": 10 * _MB, "up": 8 * _MB},
 }
 _rows, _counts = S.ratio_report(NODE1, 100 * _MB, 35)
 check("шум с мелкой отдачей отсеян", len(_rows) == 8, len(_rows))
 check("верхний — раздающий с 88 процентами",
-      _rows[0][0] == "95.32.199.197", _rows[0][0])
+      _rows[0][0] == "203.0.113.30", _rows[0][0])
 check("порядок по убыванию отношения",
-      [r[0] for r in _rows[:3]] == ["95.32.199.197", "176.59.54.33", "95.26.73.25"],
+      [r[0] for r in _rows[:3]] == ["203.0.113.30", "203.0.113.37", "203.0.113.28"],
       [r[0] for r in _rows[:3]])
 
 _bucket = dict(zip(["0-10", "10-20", "20-30", "30-40", "40-50", "50-75",
@@ -407,11 +407,11 @@ check("сумма по корзинам сходится с числом адр�
 
 # Вторая нода была чистой: там никого выше 22%.
 NODE2 = {
-    "188.162.143.41": {"down": 3.3 * _GB, "up": 99.2 * _MB},
-    "85.26.234.65":   {"down": 2.3 * _GB, "up": 281.1 * _MB},
-    "92.36.126.226":  {"down": 1.6 * _GB, "up": 254.2 * _MB},
-    "95.167.210.34":  {"down": 1.2 * _GB, "up": 258 * _MB},
-    "95.27.163.73":   {"down": 1.0 * _GB, "up": 167 * _MB},
+    "203.0.113.45": {"down": 3.3 * _GB, "up": 99.2 * _MB},
+    "203.0.113.12":   {"down": 2.3 * _GB, "up": 281.1 * _MB},
+    "203.0.113.26":  {"down": 1.6 * _GB, "up": 254.2 * _MB},
+    "203.0.113.31":  {"down": 1.2 * _GB, "up": 258 * _MB},
+    "203.0.113.29":   {"down": 1.0 * _GB, "up": 167 * _MB},
 }
 _rows2, _counts2 = S.ratio_report(NODE2, 100 * _MB, 35)
 check("на чистой ноде никого выше порога",
@@ -637,7 +637,7 @@ check("звонок с одним вложением: максимум 1539, н�
 # Живые точки, по которым порог и поставлен. Видеосвязь идёт пакетами под
 # тысячу, поэтому доля у неё не единицы процентов, а треть — первый порог в
 # тридцать процентов она прошла с запасом в два пункта.
-check("Елена: 660% отношения, данными 100% — раздача",
+check("Ольга: 660% отношения, данными 100% — раздача",
       rnp(157.1e6, 1.0e9, 100, top=1384) == ["ratio"])
 check("Николай: 100% отношения, данными 32% — видеозвонок",
       rnp(361.5e6, 361.5e6, 32, top=1354) == [],
@@ -654,9 +654,9 @@ check("порог в середине разрыва между 39 и 66",
 check("сидер на 66% при отношении 392% ловится",
       rnp(150.6e6, 589.7e6, 66) == ["ratio"])
 check("честный на 39% — нет", rnp(1.0e9, 400e6, 39) == [])
-for _name, _d, _u, _b in (("128.71.30.213", 524.7e6, 454.3e6, 1),
-                          ("77.222.115.190", 266.9e6, 400e6, 2),
-                          ("185.108.22.159", 346.1e6, 400e6, 6)):
+for _name, _d, _u, _b in (("203.0.113.35", 524.7e6, 454.3e6, 1),
+                          ("203.0.113.8", 266.9e6, 400e6, 2),
+                          ("203.0.113.43", 346.1e6, 400e6, 6)):
     check(f"звонок {_name} проходит мимо", rnp(_d, _u, _b) == [])
 check("ровно на пороге доли — ловим",
       rnp(379e6, 916e6, S.RATIO_BULK_PERCENT) == ["ratio"])
@@ -885,6 +885,66 @@ for _mb in (300, 500, 1000, 3000, S.GUARD_DEFAULT["upload_ratio_min_mb"]):
     check(f"порог {_mb} МБ показан без потери величины",
           abs(_bytes_back(_shown) - _floor) <= _floor * 0.01,
           f"{_shown} -> {_bytes_back(_shown):.0f}, ждали {_floor:.0f}")
+
+print("\n\033[1mДанные живых людей в репозитории\033[0m")
+# Примеры пишутся с натуры: берёшь карточку с ноды, вставляешь в README, и
+# вместе с ней уезжают имя клиента, ник, номер подписки и адрес. Глазами в
+# документе на сотню страниц такое не ловится. Проверка должна ловить —
+# поэтому здесь проверяется сама проверка, на подложенных данных.
+_pspec = importlib.util.spec_from_file_location(
+    "PS", os.path.join(SRC, "tests", "privacy_scan.py"))
+PS = importlib.util.module_from_spec(_pspec); _pspec.loader.exec_module(PS)
+
+_pdir = tempfile.mkdtemp(prefix="shape-privacy-")
+
+
+def planted(text, name="doc.md"):
+    for old in os.listdir(_pdir):
+        os.remove(os.path.join(_pdir, old))
+    with open(os.path.join(_pdir, name), "w") as f:
+        f.write(text)
+    return PS.scan(_pdir)
+
+
+# Образцы собираются из кусков: написанные целиком, они лежали бы в этом же
+# файле и проверка нашла бы саму себя. Ровно та ловушка, от которой она и
+# защищает — «данные ведь для дела».
+_IP = "46." + "138.65." + "124"
+_NICK = "@" + "Trifonova_Dasha"
+_ID = "1576" + "55577"
+
+check("настоящий адрес найден", planted(f"клиент {_IP} качает\n"))
+check("и назван адресом", planted(_IP + "\n")[0][2] == "адрес")
+check("документационный адрес не тревога", not planted("203.0.113.7\n"))
+check("приватный адрес не тревога", not planted("10.100.0.2 и 192.168.1.1\n"))
+check("резолвер не тревога", not planted("1.1.1.1 8.8.8.8 9.9.9.9\n"))
+
+check("ник клиента найден", planted(f"👤 Мария · {_NICK}\n"))
+check("и назван ником", planted(_NICK + "\n")[0][2] == "ник")
+check("разрешённый ник молчит", not planted("👤 Иван · @ivan_k\n"))
+check("@BotFather молчит", not planted("возьми токен у @BotFather\n"))
+check("декоратор python не ник",
+      not planted("@" + "contextlib.contextmanager\ndef f(): pass\n", "x.py"))
+check("а в markdown строка с ника — ник",
+      planted(_NICK + " держит канал\n")[0][2] == "ник")
+
+check("telegram id найден", planted(f"🆔 Telegram: {_ID}\n"))
+check("и назван идентификатором",
+      planted(f"Telegram: {_ID}\n")[0][2] == "идентификатор")
+check("логин панели найден", planted(f"В панели: user_{_ID}\n"))
+check("ссылка tg://user найдена", planted(f'href="tg://user?id={_ID}"\n'))
+check("заглушка 123456789 молчит", not planted("Telegram: 123456789\n"))
+check("гигабайты в байтах — не идентификатор",
+      not planted("порог 5368709120 байт\n"))
+
+check("строка и вид беды в отчёте", planted(f"ок\nещё\n{_IP}\n")[0][1] == 3)
+check("файлы не тех расширений пропускаются",
+      not planted(_IP + "\n", "notes.txt"))
+check("проверка не жалуется сама на себя",
+      not [x for x in PS.scan(SRC) if x[0].endswith("privacy_scan.py")])
+check("на самом репозитории проверка чистая", not PS.scan(SRC),
+      str(PS.scan(SRC)[:3]))
+shutil.rmtree(_pdir, ignore_errors=True)
 
 print("\n\033[1mОтправка метрик наружу\033[0m")
 # Ноды стоят за NAT и в странах, где WireGuard блокируют по отпечатку.
@@ -1192,7 +1252,7 @@ _ups = []
 S.tg_send = lambda m, c=None: (_ups.append(m), (True, ""))[1]
 S.shape_version = lambda: "3.48"
 S.update_fetch = lambda p="": "3.49"
-_cfg = {"telegram": dict(S.TG_DEFAULT, enabled=True, node_name="Akenia")}
+_cfg = {"telegram": dict(S.TG_DEFAULT, enabled=True, node_name="Node-2")}
 _st = {}
 check("в первый раз сообщаем", S.update_due(_cfg, _st, T0) is True)
 check("и запоминаем, о чём", _st.get("seen") == "3.49", _st)
@@ -1338,10 +1398,10 @@ S.tg_send = lambda m, c=None: (_sent.append(m), (True, ""))[1]
 S.tg_upload_notice(
     {"telegram": dict(S.TG_DEFAULT, enabled=True, events=True, node_name="N"),
      "guard": UP_G}, "1.2.3.4",
-    subject={"label": "Дарья", "user_id": "3710"},
+    subject={"label": "Мария", "user_id": "3710"},
     day={"down": 4.2e9, "up": 11.3e9})
 S.tg_send = _real
-check("в предупреждении есть имя", "Дарья" in _sent[-1], _sent[-1])
+check("в предупреждении есть имя", "Мария" in _sent[-1], _sent[-1])
 check("и объём отдачи", "11.3" in _sent[-1], _sent[-1])
 check("и сказано, что ограничения нет",
       S.t("tg_up_note", n="30") in _sent[-1], _sent[-1])
@@ -1411,16 +1471,16 @@ print("\n\033[1mПамять сторожа переживает перезап�
 # Второй случай тем же вечером: кулдаун в шесть часов не сработал, потому что
 # жил в памяти, а владелец ноды обновлялся по пять раз за вечер.
 CACHE_T = 2_000_000.0
-WHO = {"label": "Елена", "username": "user_82560969",
-       "telegram_id": "82560969", "user_id": "2891"}
+WHO = {"label": "Ольга", "username": "user_100000004",
+       "telegram_id": "100000004", "user_id": "2891"}
 cache = {}
-S.owner_remember(cache, "91.245.140.152", WHO, CACHE_T)
-recalled, at = S.owner_recall(cache, "91.245.140.152", CACHE_T + 16 * 60)
+S.owner_remember(cache, "203.0.113.25", WHO, CACHE_T)
+recalled, at = S.owner_recall(cache, "203.0.113.25", CACHE_T + 16 * 60)
 check("через шестнадцать минут владелец ещё помнится",
-      (recalled or {}).get("label") == "Елена", recalled)
+      (recalled or {}).get("label") == "Ольга", recalled)
 check("и время опознания вернулось", at == CACHE_T, at)
 check("через двенадцать часов забываем",
-      S.owner_recall(cache, "91.245.140.152",
+      S.owner_recall(cache, "203.0.113.25",
                      CACHE_T + S.OWNER_CACHE_TTL + 1) == (None, 0.0))
 check("чужой адрес не помним",
       S.owner_recall(cache, "9.9.9.9", CACHE_T) == (None, 0.0))
@@ -1444,17 +1504,17 @@ check("и выбрасывает самое старое",
 
 # В карточке несвежие сведения обязаны быть помечены: за адресом мог
 # оказаться уже другой человек.
-TGC = dict(S.TG_DEFAULT, node_name="Akenia")
+TGC = dict(S.TG_DEFAULT, node_name="Node-2")
 fresh_card = "\n".join(S.offender_card(TGC, WHO, "x"))
 stale_card = "\n".join(S.offender_card(TGC, dict(WHO, seen_at=CACHE_T), "x"))
 check("свежая карточка без оговорки", "20:" not in fresh_card, fresh_card)
 check("несвежая — с оговоркой", stale_card != fresh_card
-      and "Елена" in stale_card, stale_card)
+      and "Ольга" in stale_card, stale_card)
 check("метка без личности ничего не печатает",
       S.t("pn_card_unknown") in "\n".join(
           S.offender_card(TGC, {"seen_at": CACHE_T}, "x")))
 check("битая метка не роняет карточку",
-      "Елена" in "\n".join(S.offender_card(TGC, dict(WHO, seen_at="вчера"),
+      "Ольга" in "\n".join(S.offender_card(TGC, dict(WHO, seen_at="вчера"),
                                            "x")))
 
 print("\n\033[1mПовторные уведомления об одном адресе\033[0m")

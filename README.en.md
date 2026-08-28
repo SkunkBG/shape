@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.70-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.71-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.70
+# Shape v3.71
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -129,7 +129,7 @@ shaper
   🔌  Port      443
   🚦  Auto-limit on        both ways ↓5 ↑1.5 Mbit/s 10 min → 1 Mbit/s for 60 min
       or 11.2 GB an hour · 150 GB a day · upload over 50%
-  ✉️   Telegram   on         node label: Netherlands-3
+  ✉️   Telegram   on         node label: Node-1
   🛰  Remnawave  connected  disables the subscription after 60 min
   🔑  API        running
   ────────────────────────────────────────────────────────────
@@ -161,12 +161,12 @@ address has been holding the load:
    Limit per address  10 Mbit/s   for every IP    loading 58 of 377
   ────────────────────────────────────────────────────────────────────────────
    IP                       now  upload packet     data     avg    total holding  share of limit
- ▪ 109.248.47.99           10.1     0.1    140       2%     3.1  12.4 GB  12 min  ████████████
- ▪ 91.78.0.72               9.8     0.2    150       1%     9.6   8.1 GB  44 min  ███████████▉
-   91.79.7.124              6.4     0.2    130       3%     1.1   1.2 GB       —  ███████▊····
+ ▪ 203.0.113.34           10.1     0.1    140       2%     3.1  12.4 GB  12 min  ████████████
+ ▪ 203.0.113.17               9.8     0.2    150       1%     9.6   8.1 GB  44 min  ███████████▉
+   203.0.113.21              6.4     0.2    130       3%     1.1   1.2 GB       —  ███████▊····
  ✓ 203.0.113.40             5.1     0.4    160       4%     4.8   3.0 GB   5 min  ██████▏·····
-   91.79.15.94              1.4     2.7   1310      91%     1.7  22.8 GB       —  █▊··········
- ⊘ 89.253.46.46             1.0     0.0    120        —     4.3  412 MB        —  █▎··········
+   203.0.113.22              1.4     2.7   1310      91%     1.7  22.8 GB       —  █▊··········
+ ⊘ 203.0.113.16             1.0     0.0    120        —     4.3  412 MB        —  █▎··········
   ────────────────────────────────────────────────────────────────────────────
    showing 20 of 68   ▪ holding over 30 s   ✓ whitelisted   ⊘ limited
    packet — average upload size in bytes; from 600 it is data, not acknowledgements
@@ -178,12 +178,12 @@ The **packet** column is the average upload packet size. That is the figure
 which tells seeding apart from an ordinary download, and it does not depend on
 the channel speed: acknowledgements take 100–170 bytes, data takes over a
 thousand. In the sample above everyone sits around a hundred and fifty, and
-only 91.79.15.94 shows 1310.
+only 203.0.113.22 shows 1310.
 
 **Row colour is the share of the limit:** grey up to 20%, green to half, yellow
 to 80%, red above. The upload column has its own scale: mobile carriers give a
 narrow uplink, so noticeable upload is the first sign of seeding. In the sample
-above 91.79.15.94 downloads only 1.4 Mbit/s but uploads 2.7 — that is what a
+above 203.0.113.22 downloads only 1.4 Mbit/s but uploads 2.7 — that is what a
 torrent looks like.
 
 The **data** column answers the same question over a day rather than a moment.
@@ -201,7 +201,7 @@ The **total** column is how much the address has transferred since the engine
 loaded, down and up together. Speed shows the present moment, and "0.1 Mbit"
 looks the same for someone who moved twenty gigabytes today as for someone who
 just connected. It turns yellow from 5 GB and red from 20. In the sample above
-91.79.15.94 downloads only 1.4 Mbit/s but has already moved 22.8 GB.
+203.0.113.22 downloads only 1.4 Mbit/s but has already moved 22.8 GB.
 
 The **avg** column is the average speed over roughly a minute, **holding** is
 how long the address has stayed above half the limit. Together they separate a
@@ -400,13 +400,13 @@ shaperctl guard --upload-warn 10 --upload-day 30
 message per address per day.
 
 ```
-🔔 Heavy upload · Netherlands-3
+🔔 Heavy upload · Node-1
 
-👤 Daria · @Trifonova_Dasha
-🆔 Telegram: 157655577
-🔑 Panel login: user_157655577 · #3710
+👤 Daria · @maria_p
+🆔 Telegram: 100000002
+🔑 Panel login: user_100000002 · #102
 
-📍 Address: 46.138.65.124
+📍 Address: 203.0.113.7
 10.5 GB uploaded in 24h — the notice threshold is 10 GB
 📈 For the day: ↓ 3.9 GB · ↑ 10.5 GB (269%)
 📦 Upload over 6.0 h: 96% as data · packet 1255 B · max 1408
@@ -725,8 +725,8 @@ The limited list shows exactly which signals caught the person:
 ```
   IP                         at    remaining   why
   ────────────────────────────────────────────────────────────
-  91.79.27.87             20:48       11.1 h   downloaded gigabytes within an hour
-  185.12.34.56            20:33       46 min   sends real data, not just ACKs,
+  203.0.113.23             20:48       11.1 h   downloaded gigabytes within an hour
+  203.0.113.42            20:33       46 min   sends real data, not just ACKs,
                                                holds the download ceiling
 ```
 
@@ -823,7 +823,7 @@ shaperctl guard --both-dl 50 --both-ul 15 --packet 600
 shaperctl guard --hours 4 --upload-gb 2 --penalty-mbps 1 --penalty-min 60
 shaperctl guard --disable
 shaperctl limited                       # who is limited right now
-shaperctl release 185.12.34.56          # release one
+shaperctl release 203.0.113.42          # release one
 shaperctl release --all                 # release everybody
 
 shaperctl export --out /root/node.json  # back up node state
@@ -845,14 +845,14 @@ shaperctl panel set --threshold 20 --window 10 --exempt 97,346
 shaperctl panel report                   # send the node report now
 shaperctl panel set --report on --report-at 09:00 --report-thread 777
 shaperctl panel set --resolve off        # do not resolve names
-shaperctl panel who 91.78.46.46            # whose address is this, per the panel
+shaperctl panel who 203.0.113.20            # whose address is this, per the panel
 ```
 
 The `status --json` format:
 
 ```json
 {
-  "ip": "185.12.34.56",
+  "ip": "203.0.113.42",
   "downloaded_bytes": 5368709120,
   "uploaded_bytes": 419430400,
   "download_mbps": 14.8,
@@ -888,10 +888,10 @@ the reason. Once a day — a digest for the day that just ended. That comes out 
 🚦 Limited · RU Moscow
 
 👤 Ivan · @ivan_k
-🆔 Telegram: 637181482
-🔑 Panel login: user_637181482 · #741
+🆔 Telegram: 100000003
+🔑 Panel login: user_100000003 · #101
 
-📍 Address: 185.12.34.56        ← a link to ipinfo.io
+📍 Address: 203.0.113.42        ← a link to ipinfo.io
 🐌 Speed reduced to 1 Mbit/s for 4 h
 Reason: downloaded gigabytes within an hour
 📈 For the day: ↓ 40.0 GB · ↑ 409.6 MB (1%)
@@ -1020,14 +1020,14 @@ Traffic: ↓ 352.1 GB · ↑ 31.4 GB
 Addresses: 137
 
 Top downloaders:
-1. 185.12.34.56 — 24.8 GB
-2. 91.234.12.7 — 19.2 GB
+1. 203.0.113.42 — 24.8 GB
+2. 203.0.113.24 — 19.2 GB
 ```
 
 ### Update notification
 
 ```
-⬆️ An update is available · Akenia
+⬆️ An update is available · Node-2
 
 Installed: 3.48
 In the repository: 3.49
@@ -1221,7 +1221,7 @@ plainly — rather than passing zeros off as the truth.
 {
   "items": [
     {
-      "ip": "185.12.34.56",
+      "ip": "203.0.113.42",
       "download_mbps": 79.8,
       "upload_mbps": 0.4,
       "download_bytes": 11000000,
@@ -1344,13 +1344,13 @@ shaperctl panel user 6085
 ```
 
 ```
-  Ilya · user_1063858404 (1063858404)
-  Panel login: user_1063858404
+  Ilya · user_100000001 (100000001)
+  Panel login: user_100000001
   Addresses on the node: 2
 
-  109.161.37.64     ↓ 58.2 GB · ↑ 61.4 GB (105%)
+  203.0.113.33     ↓ 58.2 GB · ↑ 61.4 GB (105%)
                     96% as data · packet 1310 B · uploaded for 9.0 h
-  87.253.24.130     ↓ 3.1 GB · ↑ 0.1 GB (3%)
+  203.0.113.13     ↓ 3.1 GB · ↑ 0.1 GB (3%)
                     0% as data · packet 140 B
 ```
 
@@ -1555,8 +1555,8 @@ existing penalties are left alone.
 🔎 Looks like a shared subscription · FRONT-3
 
 👤 Ivan · @ivan_k
-🆔 Telegram: 637181482
-🔑 Panel login: user_637181482 · #741
+🆔 Telegram: 100000003
+🔑 Panel login: user_100000003 · #101
 
 Simultaneous addresses: 437 over the last 10 min
 🚫 Access to the node cut off for 60 min, addresses: 412
@@ -1583,7 +1583,7 @@ The name is tappable: behind it sits a `tg://user?id=…` link that opens the
 chat, and it works even for people without a username.
 
 **Where the name comes from.** The panel has no field for it: the login there
-looks like `user_637181482`, and the name, if it exists at all, is written into
+looks like `user_100000003`, and the name, if it exists at all, is written into
 the account description by a bot — usually as a line like
 `Bot user: Ivan @ivan_k`. Shape parses that description into a name and a
 handle, and does so cautiously: every bot has its own format, and if the parse
@@ -1651,7 +1651,7 @@ shaperctl panel set --exempt 97,346
 
 In the connections reply the panel returns only the internal user number — 97,
 346. The name and Telegram ID live in the user's card, so Shape asks the panel
-separately and writes `Elena (851400228)` instead of `#346`.
+separately and writes `Olga (100000008)` instead of `#346`.
 
 That needs the **Users → Read** scope. Without it everything still works, just
 with numbers. To turn it off entirely:
@@ -1683,11 +1683,11 @@ Users connected: 138
 Addresses in total: 412
 Window: 10 min
 
-Nikita (7288183505) — 437  ⚠
+Nikita (100000007) — 437  ⚠
     1.2.3.4
     5.6.7.8
     …
-Elena (851400228) — 2
+Olga (100000008) — 2
     …
 ```
 
@@ -1823,11 +1823,11 @@ in a message though, so there is an owner map at
 `/var/lib/shape/owners.json`:
 
 ```json
-{"91.79.27.87": {"label": "Ivan", "telegram_id": 123456789,
+{"203.0.113.23": {"label": "Ivan", "telegram_id": 123456789,
                  "user_id": "42", "shared": false}}
 ```
 
-Filled in by hand (`shaperctl owners set 91.79.27.87 --label Ivan
+Filled in by hand (`shaperctl owners set 203.0.113.23 --label Ivan
 --telegram-id 123456789`) or in bulk through `PUT /api/v1/owners` — that is
 where a panel resolver will write once it exists. Shape itself never goes
 looking for this data, and it should not.
@@ -1842,7 +1842,7 @@ person disconnects and the link is lost. Notifications then carry a name with a
 👤 Ivan
 🆔 Telegram: 123456789
 
-📍 Address: 91.79.27.87
+📍 Address: 203.0.113.23
 🐌 Speed reduced to 1 Mbit/s for 4 h
 Reason: downloaded gigabytes within an hour
 ```
