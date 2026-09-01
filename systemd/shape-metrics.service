@@ -1,0 +1,20 @@
+[Unit]
+Description=Shape — write Prometheus metrics for node_exporter
+Documentation=https://github.com/SkunkBG/shape
+After=shaper.service
+
+[Service]
+Type=oneshot
+# Каталог у разных сборок node_exporter свой, поэтому путь не зашит в юнит,
+# а лежит в файле, который пишет мастер мониторинга из меню.
+EnvironmentFile=/etc/shaper/metrics.env
+ExecStart=/opt/shaper/shaperctl.py metrics --quiet --out ${SHAPE_TEXTFILE}
+
+# Каталог node_exporter живёт в /var, а ProtectSystem=full закрывает только
+# /usr, /boot и /etc — писать в /var это не мешает.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes

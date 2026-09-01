@@ -1,0 +1,15 @@
+[Unit]
+Description=Shape — push metrics every minute
+
+[Timer]
+# Та же минута, что и у файла для node_exporter: скорость канала считается
+# по разнице между замерами, и более редкие замеры сгладили бы всплески.
+OnBootSec=45s
+OnUnitActiveSec=60s
+# Разброс: 28 нод, стартовавших от одного обновления, иначе придут в одну
+# секунду и создадут ровный пик на сервере каждую минуту.
+RandomizedDelaySec=15s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

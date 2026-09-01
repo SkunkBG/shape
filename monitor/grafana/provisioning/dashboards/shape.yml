@@ -1,0 +1,13 @@
+# Дашборд Shape подкладывается из каталога grafana/ рядом с кодом ноды.
+# Копии не делаем намеренно: две копии одного файла разъезжаются, и
+# разъезжается всегда та, что не под рукой.
+apiVersion: 1
+
+providers:
+  - name: Shape
+    folder: ''
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
