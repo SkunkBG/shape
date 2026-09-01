@@ -1,0 +1,16 @@
+# сборка eBPF
+*.o
+bpf/*.o
+
+# python
+__pycache__/
+*.pyc
+
+# macOS — Finder заводит их в каждой открытой папке
+.DS_Store
+._*
+
+# локальное
+*.zip
+*.tar.gz
+.active_iface
