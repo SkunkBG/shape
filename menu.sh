@@ -409,7 +409,7 @@ guard_preset() {
                    --upload-warn 0 --upload-hours 6 --upload-hours-mbps 0.05 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 20 --window 10 \
-                   --limit-min 60 --action-set block >/dev/null 2>&1 || true
+                   --minutes 60 --per-device 4 --action-set block >/dev/null || true
                echo -e "  ${G}✓ ${T[gp_done]}${N}"
                pause; return ;;
 
@@ -464,13 +464,19 @@ guard_preset() {
                    --upload-gbh 0 --upload-day 30 \
                    --upload-warn 10 --upload-hours 6 --upload-hours-mbps 0.05 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
+               # --per-device 4 защищает офисы: пятнадцать проданных устройств
+               # дают порог 60, и легальная контора на одной ноде под правило не
+               # попадает. Семье с пятью устройствами он ничего не меняет —
+               # 5*4 = 20, то есть базовый порог. Раздающему он тоже не помогает:
+               # у него тариф на пять устройств, а адресов сотня.
+               #
                # Двадцать, а не десять: домашняя нода это не только вайфай,
                # с мобильного заходят на любую. У оператора адрес меняется
                # при переподключении, и семья из пяти телефонов за десять
                # минут легко даёт полтора-два десятка адресов. Настоящие
                # перепродавцы при этом дают 146 и 230 — запас десятикратный.
                "$CTL" panel set --threshold 20 --window 10 \
-                   --limit-min 60 --action-set block >/dev/null 2>&1 || true
+                   --minutes 60 --per-device 4 --action-set block >/dev/null || true
                echo -e "  ${G}✓ ${T[gp_done]}${N}"
                pause; return ;;
             0|"") return ;;

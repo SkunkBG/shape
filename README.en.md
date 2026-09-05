@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.81-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.82-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.81
+# Shape v3.82
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -1568,7 +1568,8 @@ Both lists are set whole, not appended to. To check: `panel show`, the
 
 These users fall under **neither sharing detection nor the auto-limiter** — no
 penalty, no drop, no notification. The trigger is still written to the event log
-as `guard_exempt`, so it can be looked at if wanted.
+as `panel_exempt` for sharing detection and as `guard_exempt` for
+auto-limiting, so it can be looked at if wanted.
 
 The number of exceptions is shown on the auto-limit screen too: the setting lives
 in the panel section but affects both rules.
@@ -1709,7 +1710,7 @@ mobile address moves to another subscriber within minutes, and they inherited
 someone else's 0.05 Mbit/s for half a day.
 
 **If disabling the subscription is off** and the night still needs covering,
-raise the cut-off by hand: `panel set --limit-min 720`. The old drawback comes
+raise the cut-off by hand: `panel set --minutes 720`. The old drawback comes
 back with it.
 
 **It can be lifted earlier, and not address by address.** A reseller has a
@@ -1808,11 +1809,14 @@ history of addresses and should not.
 | `interval` | `300` | how often to ask, seconds |
 | `window_min` | `10` | simultaneity window, minutes |
 | `ip_threshold` | `20` | addresses above which it is sharing |
-| `action` | `notify` | `notify`, `limit`, `drop`, or a combination |
+| `action` | `notify` | `notify`, `limit`, `block`, `drop`, or a combination |
 | `limit_mbps` | `1` | megabits to throttle down to |
 | `limit_min` | `60` | for how many minutes |
 | `cooldown_min` | `360` | pause between alerts about one person |
 | `exempt` | `[]` | who is allowed to share |
+| `exempt_tags` | `[]` | the same, but by tag from the panel |
+| `per_device` | `0` | threshold multiplier from the plan; 0 — ignore |
+| `disable_after_min` | `0` | minutes before disabling the subscription; 0 — never |
 | `resolve` | `true` | use the name and Telegram ID instead of the number |
 | `report` | `false` | send the node report |
 | `report_at` | `09:00` | when to send the report |

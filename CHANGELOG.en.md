@@ -13,6 +13,26 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.82
+
+**Presets applied no sharing-detection settings at all — on any node.**
+
+Both presets called `panel set` with a `--limit-min` flag that does not exist: minutes are set with `--minutes`. Argument parsing rejected **the whole line**, and the error was swallowed by `2>/dev/null || true`. You picked a preset, saw "done", and kept the old settings: no threshold, no window, no `block` action. Checked on two live nodes — both sat on `notify`, meaning Shape would have seen sharing and said nothing.
+
+The error is no longer swallowed: if the command ever breaks again, it will show rather than hide. The same non-existent flag was in the README.
+
+**Presets now also set the plan-based threshold — `--per-device 4`.** It protects offices: fifteen devices sold give a threshold of 60, so a legitimate company sitting on one node stays out of the rule. For a family with five devices nothing changes — 5 × 4 = 20, the base threshold. It does not help a reseller either: his plan is five devices and his addresses are a hundred.
+
+**Tag exemption did not protect against disabling a subscription.** It worked for limiting and dropping, but the grace path received only the user id, without the tag: the card had not been fetched by that point. A business account tagged in the panel could be disabled automatically — contrary to what the documentation promised. The tag is now checked where the card is already in hand, so not a single extra request is spent.
+
+**The `shape_panel_sharing_found` metric measured something else than promised.** It returned the number of cooldown records, and those live up to two days: after a single hit the graph held one for forty-eight hours. It is now offenders on the last poll.
+
+**Seven panel events were written to the journal as errors.** Their types were never declared, and the journal replaces an unknown type with `error`: telling a refused disable from a real error was impossible, and in `shape_events_24h` all of it poured into the `type="error"` series. Now declared: `panel_exempt`, `panel_under_tariff`, `panel_disabled`, `panel_disable_refused`, `panel_disable_failed`, `panel_user_enable`, `panel_user_disable`.
+
+**On update** settings and state files are untouched. A preset does not touch values you set by hand — it applies only when you pick it yourself.
+
+---
+
 ## 3.81
 
 **Clients behind a CDN no longer run unlimited after an update.**

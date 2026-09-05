@@ -117,7 +117,7 @@ check "оба настраивают раздачу" \
 # секунду. Останавливает block — минимальная скорость на все его адреса плюс
 # обрыв, то есть час подписка не работает ни у кого из покупателей.
 check "раздача перекрывает доступ, а не только рвёт" \
-      '[[ $(grep -c -- "--action-set block >/dev/null 2>&1" "$SRC/menu.sh") -eq 2 ]]'
+      '[[ $(grep -c -- "--action-set block >/dev/null" "$SRC/menu.sh") -eq 2 ]]'
 check "голого drop в пресетах не осталось" \
       '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "--action-set drop"'
 
@@ -126,9 +126,18 @@ check "голого drop в пресетах не осталось" \
 # закрывали, но задевали посторонних: мобильный адрес переходит к другому
 # абоненту за минуты, и тот наследовал чужие 0.05 Мбит на полсуток.
 check "перекрытие держится час, а не полсуток" \
-      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--limit-min 60") -eq 2 ]]'
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--minutes 60") -eq 2 ]]'
 check "и полсуток в пресетах не осталось" \
-      '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "--limit-min 720"'
+      '! sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -q -- "--minutes 720"'
+# Флага --limit-min не существует: argparse отвергал ВСЮ строку, а ошибка
+# гасилась через 2>/dev/null || true. Пресет молча не выставлял ни порог,
+# ни окно, ни block — человек выбирал пресет и оставался с прежним.
+check "пресеты не зовут несуществующий --limit-min" \
+      '! grep -q -- "--limit-min" "$SRC/menu.sh"'
+check "ошибка панельной настройки в пресетах больше не глушится" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "panel set .*2>/dev/null") -eq 0 ]]'
+check "офис защищён порогом от тарифа" \
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c -- "--minutes 60 --per-device 4") -eq 2 ]]'
 check "снять со всех адресов пользователя можно из меню" \
       'grep -q "lm_release_user" "$SRC/menu.sh" && grep -q -- "release --user" "$SRC/menu.sh"'
 check "нумерация в ограниченных адресах не разъехалась" \

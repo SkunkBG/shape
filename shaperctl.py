@@ -2515,7 +2515,18 @@ EVENT_TYPES = {
     "engine_stopped",    # движок выгружен
     "api_action",        # действие через API
     "sharing_found",     # панель показала раздачу подписки
-    "error",             # ошибка
+    # Ниже — панельные события, которые не были объявлены и потому писались
+    # типом "error": log_event заменяет неизвестный тип. Отличить отказ
+    # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
+    # это лилось в серию type="error".
+    "panel_exempt",          # исключён по тегу или номеру
+    "panel_under_tariff",    # адресов меньше, чем разрешает его тариф
+    "panel_disabled",        # подписка отключена по отсрочке
+    "panel_disable_refused", # за проход набралось больше потолка — не трогаем
+    "panel_disable_failed",  # панель не приняла отключение
+    "panel_user_enable",     # подписку включили обратно
+    "panel_user_disable",    # подписку отключили руками
+    "error",                 # ошибка
 }
 EVENT_MAX_BYTES = 4 * 1024 * 1024      # больше — половина уезжает в .1
 
@@ -5514,6 +5525,12 @@ def panel_scan(cfg, now=None, act=True):
     found = panel_offenders(users, p, now)
     res = {"ok": True, "error": "", "code": 0,
            "users": len(users), "offenders": found}
+    # Сколько нарушителей на ЭТОМ опросе. Метрика раньше отдавала len(seen), а
+    # seen — учёт пауз между сигналами, записи в нём живут до двух суток: после
+    # единственного срабатывания график держал единицу двое суток.
+    st_found = panel_state()
+    st_found["last_found"] = len(found)
+    panel_state_save(st_found)
     if not act:
         return res
 
@@ -5545,6 +5562,22 @@ def panel_scan(cfg, now=None, act=True):
         for uid in due:
             rec = next((r for r in live if str(r["user_id"]) == uid), None)
             person = panel_user(p, uid)
+            # Тег проверяем здесь, а не при наборе `live`: тег живёт в карточке,
+            # а её до этого места не запрашивали — иначе на каждом проходе ушёл
+            # бы запрос за каждого кандидата. Без этой проверки исключение по
+            # тегу защищало от ограничения и обрыва, но НЕ от отключения
+            # подписки: в guard_exempt выше уходит только номер, без тега.
+            # Отключение — самое дорогое действие, и деловой аккаунт, помеченный
+            # в панели, обязан быть защищён и от него.
+            if guard_exempt(cfg, {"user_id": uid,
+                                  "tag": (person or {}).get("tag")}):
+                pend.pop(uid, None)
+                state["pending"] = pend
+                panel_state_save(state)
+                if rec is not None:
+                    rec["skipped"] = True
+                log_event("panel_exempt", user_id=uid, stage="disable")
+                continue
             try:
                 panel_user_disable(p, uid)
             except PanelError as e:
@@ -6539,7 +6572,7 @@ def build_metrics(users=None, unit_state=None, started=None, events=None):
                 int(exp - time.time()))
         add("shape_panel_sharing_found", "gauge",
             "Users flagged as sharing on the last poll",
-            len(st.get("seen") or {}))
+            int(st.get("last_found") or 0))
 
     return "\n".join(out) + "\n"
 
