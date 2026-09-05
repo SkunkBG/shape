@@ -1,0 +1,32 @@
+[Unit]
+Description=Watchman — сторож тишины для парка нод Remnawave
+Documentation=https://github.com/SkunkBG/shape
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=watchman
+Group=watchman
+ExecStart=/opt/watchman/watchman.py
+
+# Сеть недоступна минутами — это не повод шуметь в журнале каждую минуту.
+# Таймер придёт снова, а о слепоте дольше трёх минут watchman скажет сам.
+SuccessExitStatus=1
+
+# В памяти процесса два токена, и раз в минуту он ходит наружу. Поэтому
+# всё, что ему не нужно, закрыто: пишет он ровно в свой каталог.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/watchman
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

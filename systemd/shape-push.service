@@ -1,0 +1,22 @@
+[Unit]
+Description=Shape — push Prometheus metrics to the monitoring server
+Documentation=https://github.com/SkunkBG/shape
+After=network-online.target shaper.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Адрес и токен лежат в /etc/shaper/config.json, а не в юните: секрет в
+# systemd-юните виден всякому, кто может читать /etc/systemd.
+ExecStart=/opt/shaper/shaperctl.py metrics push --quiet
+
+# Сеть может быть недоступна минутами — это не повод шуметь в журнале
+# каждую минуту. Таймер придёт снова, следующая попытка через минуту.
+SuccessExitStatus=1
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes

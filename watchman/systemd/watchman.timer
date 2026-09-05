@@ -1,0 +1,13 @@
+[Unit]
+Description=Watchman — опрос панели раз в минуту
+
+[Timer]
+# Минута — компромисс: чаще незачем, а реже растянуло бы подтверждение
+# тревоги (три прохода подряд) до неприличных величин.
+OnBootSec=60s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

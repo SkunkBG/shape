@@ -1,0 +1,34 @@
+[Unit]
+Description=Shape watchdog — auto-limits heavy users
+After=shaper.service
+Requires=shaper.service
+
+[Service]
+Type=simple
+ExecStart=/opt/shaper/shaperctl.py watch
+Restart=always
+RestartSec=15
+# Потолок на перезапуски. Без него любая повторяющаяся ошибка — переполненная
+# карта штрафов, сбой bpftool — давала бесконечный цикл раз в пятнадцать
+# секунд, и сервис выглядел то активным, то поднимающимся.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+# Сторож ничего не монтирует и никуда не ходит по файловой системе, кроме
+# /etc/shaper и карт в /sys/fs/bpf. Поэтому ему можно закрыть заметно больше,
+# чем движку. ProtectSystem=full делает /etc только для чтения — свой каталог
+# возвращаем отдельной строкой, иначе сторож не сохранит штрафы и сводку.
+# ProtectKernelTunables здесь нет намеренно: он перемонтирует /sys только для
+# чтения, а карты BPF живут именно там.
+NoNewPrivileges=yes
+ProtectSystem=full
+ReadWritePaths=/etc/shaper
+ProtectHome=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+LockPersonality=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

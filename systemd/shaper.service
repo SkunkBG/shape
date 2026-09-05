@@ -1,0 +1,25 @@
+[Unit]
+Description=Shape — eBPF traffic shaper (per-IP speed limits in Mbit/s)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/shaper/engine.sh load
+ExecStop=/opt/shaper/engine.sh unload
+TimeoutStartSec=180
+
+# Здесь намеренно нет ProtectHome, PrivateTmp и ProtectSystem: каждая из этих
+# опций заводит юниту собственное пространство монтирования, а engine.sh при
+# первом запуске монтирует /sys/fs/bpf. Внутри своего пространства монтирование
+# не дошло бы до системы, и карты стали бы не видны ни меню, ни сторожу —
+# шейпер выглядел бы запущенным, не ограничивая никого.
+# Остаётся то, что не трогает пространство имён.
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

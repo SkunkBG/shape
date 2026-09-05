@@ -1,0 +1,37 @@
+[Unit]
+Description=Shape Node API — local HTTP control interface
+Documentation=https://github.com/SkunkBG/shape
+# After, но НЕ Requires и не BindsTo: API — необязательный интерфейс.
+# Жёсткая связь означала бы, что остановка шейпера тянет за собой API,
+# а падение API однажды окажется поводом тронуть шейпер. Здесь связи нет
+# ни в одну сторону: API сам сообщает клиенту 503, если движок не поднят.
+After=network.target shaper.service
+
+[Service]
+Type=simple
+ExecStart=/opt/shaper/api/server.py
+Restart=always
+RestartSec=5
+# Флуд запросами не должен превратиться в бесконечный перезапуск.
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+# Права root нужны только для чтения и записи карт BPF через bpftool.
+# Всё остальное закрываем. Своего пространства монтирования это не мешает
+# создавать: API, в отличие от движка, ничего не монтирует.
+NoNewPrivileges=yes
+ProtectSystem=full
+ReadWritePaths=/etc/shaper /var/lib/shape
+ProtectHome=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# Потолки на случай, если кто-то всё же дотянется до сокета снаружи.
+MemoryMax=192M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

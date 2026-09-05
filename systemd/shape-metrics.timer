@@ -1,0 +1,14 @@
+[Unit]
+Description=Shape — refresh Prometheus metrics every minute
+
+[Timer]
+# Первый запуск через полминуты после загрузки, дальше раз в минуту.
+# Минута — компромисс: скорость канала считается по разнице между замерами,
+# и слишком редкие замеры сгладили бы всплески до неузнаваемости.
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+# Источник данных подкладывается сам: дашборд на 28 нод, который при импорте
+# спрашивает, куда смотреть, — это лишний шаг, на котором ошибаются.
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 60s
