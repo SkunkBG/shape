@@ -1913,5 +1913,82 @@ check("флаги едут значением, а не именем",
 _eng = open(os.path.join(SRC, "engine.sh")).read()
 check("движок делает trusted sync при запуске", "trusted sync" in _eng)
 
+
+# ── Смена релея CDN ───────────────────────────────────────────────────
+# 05.09 край CDN переехал на другой адрес, он перестал быть доверенным,
+# заголовок PROXY разбираться перестал — и все клиенты за CDN оказались на
+# одном лимите. В журнале при этом было пусто. Проверка ловит это по своим
+# же счётчикам, никуда не обращаясь.
+print("\n\033[1mСмена релея CDN\033[0m")
+
+check("адрес IPv4 из /proc разбирается", S._hex_ip("0100007F") == "127.0.0.1",
+      S._hex_ip("0100007F"))
+check("адрес IPv4 в обёртке IPv6 разбирается",
+      S._hex_ip("0000000000000000FFFF0000" + "9B7100CB") == "203.0.113.155",
+      S._hex_ip("0000000000000000FFFF00009B7100CB"))
+check("мусор не роняет разбор", S._hex_ip("нет") == "" and S._hex_ip("00") == "")
+
+_gs = {}
+S.guard_state = lambda: dict(_gs)
+S.guard_state_save = lambda st: _gs.update(st)
+_sent = []
+S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
+S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
+S.proc_peers = lambda ports: {"10.0.0.9": 40, "10.0.0.1": 1}
+_stats = {"pp_resolved": 0, "pp_unresolved": 0}
+S.read_stats = lambda: dict(_stats)
+_cfg = {"proxy_ports": [443], "telegram": dict(S.TG_DEFAULT, node_name="Нода")}
+
+# Первый проход только запоминает счётчики: сравнивать не с чем.
+check("первый проход молчит", S.relay_watch(_cfg, now=1000.0) == "", _sent)
+
+# Заголовки разбираются — тишина, даже если неразрешённых заметная доля.
+_stats.update({"pp_resolved": 9000, "pp_unresolved": 1000})
+check("здоровая доля тревоги не даёт",
+      S.relay_watch(_cfg, now=1000.0 + S.RELAY_CHECK_EVERY) == "", _sent)
+
+# Разбор прекратился: весь прирост ушёл в неразрешённые.
+_stats.update({"pp_resolved": 9000, "pp_unresolved": 41000})
+got = S.relay_watch(_cfg, now=1000.0 + 2 * S.RELAY_CHECK_EVERY)
+check("смена релея замечена", got == "10.0.0.9", got)
+check("названо ровно то, у кого соединений больше",
+      _sent and "10.0.0.9" in _sent[-1], _sent[-1][:200] if _sent else "")
+check("в сообщении есть готовая команда",
+      _sent and "trusted add 10.0.0.9 --relay" in _sent[-1],
+      _sent[-1][:200] if _sent else "")
+check("доверенный адрес в подозреваемые не попал",
+      _sent and "10.0.0.1</code>" not in _sent[-1], _sent[-1][:200] if _sent else "")
+
+# Повтор в пределах паузы сообщение не шлёт.
+_was = len(_sent)
+_stats.update({"pp_resolved": 9000, "pp_unresolved": 81000})
+S.relay_watch(_cfg, now=1000.0 + 3 * S.RELAY_CHECK_EVERY)
+check("второй раз подряд не пишем", len(_sent) == _was, len(_sent))
+
+# Перезагрузка движка обнуляет счётчики — это не повод для тревоги.
+_was = len(_sent)
+_stats.update({"pp_resolved": 0, "pp_unresolved": 0})
+S.relay_watch(_cfg, now=1000.0 + 10 * S.RELAY_CHECK_EVERY)
+check("сброс счётчиков тревоги не даёт", len(_sent) == _was, len(_sent))
+
+# Малая выборка ничего не значит.
+_gs.clear(); _sent.clear()
+_stats.update({"pp_resolved": 0, "pp_unresolved": 0})
+S.relay_watch(_cfg, now=2000.0)
+_stats.update({"pp_resolved": 0, "pp_unresolved": 100})
+S.relay_watch(_cfg, now=2000.0 + S.RELAY_CHECK_EVERY)
+check("на сотне пакетов не срабатываем", _sent == [], _sent)
+
+# Где CDN не используется, проверка не работает вовсе.
+check("без портов PROXY проверка молчит",
+      S.relay_watch({"proxy_ports": [], "telegram": {}}, now=9e9) == "")
+S.trusted_sources = lambda: {}
+check("без доверенных релеев проверка молчит",
+      S.relay_watch(_cfg, now=9e9) == "")
+
+check("порог доли отделяет здоровую ноду от сломанной",
+      0.9 <= S.RELAY_BAD_SHARE < 1.0, S.RELAY_BAD_SHARE)
+check("событие объявлено", "relay_changed" in S.EVENT_TYPES)
+
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

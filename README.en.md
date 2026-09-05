@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.83-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.84-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.83
+# Shape v3.84
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -841,6 +841,29 @@ one to the node. At the packet level the sender is the relay, so **every client
 behind it shares a single limit**. The real address arrives in the PROXY
 protocol header — the first bytes of the stream, the same ones Xray reads with
 `acceptProxyProtocol`.
+
+### When the relay changes address
+
+One day the CDN moves to another node. The new address is not in the trusted
+list, the PROXY header from it is not parsed — and every client behind the CDN
+lands on **one shared limit**. From outside it looks like "the internet is
+gone", while the node stays silent: processes run, no errors, an empty journal.
+
+Shape notices this on its own, asking nobody. While headers are parsed the
+resolved counter grows; once they are not, the whole increase goes to
+unresolved and resolved stands still. A healthy unresolved share on a live node
+is 8–10% — handshakes of new connections and the relay's own service traffic —
+so a 95% threshold with a stalled counter is not noise.
+
+Having noticed it, the node looks at who holds connections on its PROXY ports,
+drops the trusted ones and sends the address to Telegram with a ready command:
+`shaperctl trusted add <address> --relay`.
+
+Shape will not add the address by itself: a trusted source can claim any client
+address, and that decision belongs to a person. A repeat about the same address
+comes no more than once every six hours. The check runs every five minutes,
+costs zero outside requests and does not apply to nodes without a CDN — it only
+switches on where PROXY ports are configured.
 
 ### Why a list, not a switch
 

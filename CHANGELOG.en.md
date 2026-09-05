@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.84
+
+**A node now notices on its own that the CDN relay changed address.**
+
+The failure this was built for looks like this. The CDN moves to another node. The new address is not in the trusted list, the PROXY header from it is not parsed — and real client addresses stop being recognised. All traffic behind the CDN collapses into one address, so a hundred people share **one limit between them**. From outside it is "the internet is gone", while the node stays silent: processes run, no errors, an empty journal. That is exactly what happened on 5 September, and it was found by accident while looking into something else.
+
+The signal turned out to be the node's own, with nobody to ask. While headers are parsed the resolved packet counter grows; once they are not, the whole increase goes to unresolved and resolved stands still. A healthy unresolved share on a live node is 8–10%: handshakes of new connections and the relay's own service traffic. So a 95% threshold with a stalled counter is not noise.
+
+Having noticed it, the node looks at who holds connections on its PROXY ports, drops the trusted ones, and sends the new relay's address to Telegram together with a ready `trusted add` command. It will not add the address itself: a trusted source can claim any client address, and that decision belongs to a person.
+
+The check runs every five minutes, costs **zero outside requests**, repeats about one address no more than once every six hours, and switches on only where PROXY ports are configured. On nodes without a CDN it does nothing.
+
+**On update** settings are unchanged and nothing needs turning on.
+
+---
+
 ## 3.83
 
 **Disabling a subscription for sharing never fired — the block itself reset the countdown.**

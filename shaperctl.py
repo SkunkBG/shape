@@ -310,6 +310,7 @@ MSG = {
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
         "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b>",
+        "relay_msg": "⚠️ <b>{node} — похоже, релей CDN сменил адрес</b>\n\nЗа последние минуты <b>{share}%</b> трафика на портах {ports} пришло без разбора заголовка PROXY. Настоящие адреса клиентов не распознаются, и все они делят <b>один лимит на всех</b>.\n\nБольше всего соединений с <code>{ip}</code> — их {n}.\n\nЕсли это ваш новый релей, добавьте его:\n<code>shaperctl trusted add {ip} --relay</code>",
         "pn_off_head": "⛔ <b>Подписка отключена</b>",
         "pn_off_why": "🤖 Отключил Shape: адресов было {n}, реакции не было {m} мин.",
         "pn_off_how": "<i>Включить обратно: <code>shaperctl panel enable {id}</code> или в панели.</i>",
@@ -775,6 +776,7 @@ MSG = {
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
         "pn_msg_head": "🔎 <b>Looks like a shared subscription</b>",
+        "relay_msg": "⚠️ <b>{node} — the CDN relay seems to have changed address</b>\n\nOver the last minutes <b>{share}%</b> of the traffic on ports {ports} arrived without the PROXY header being parsed. Real client addresses are not recognised, so they all share <b>one limit between them</b>.\n\nMost connections come from <code>{ip}</code> — {n} of them.\n\nIf this is your new relay, add it:\n<code>shaperctl trusted add {ip} --relay</code>",
         "pn_off_head": "⛔ <b>Subscription disabled</b>",
         "pn_off_why": "🤖 Disabled by Shape: there were {n} addresses and no reaction for {m} min.",
         "pn_off_how": "<i>To turn it back on: <code>shaperctl panel enable {id}</code> or in the panel.</i>",
@@ -2517,6 +2519,7 @@ EVENT_TYPES = {
     "engine_stopped",    # движок выгружен
     "api_action",        # действие через API
     "sharing_found",     # панель показала раздачу подписки
+    "relay_changed",     # релей CDN сменил адрес и перестал быть доверенным
     # Ниже — панельные события, которые не были объявлены и потому писались
     # типом "error": log_event заменяет неизвестный тип. Отличить отказ
     # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
@@ -3517,6 +3520,12 @@ def cmd_watch(a):
             # не влияет: они измеряются минутами, а не проходами.
             panel_due(cfg)
             panel_report_due(cfg)
+            # Смена релея CDN. Наружу не ходит, ошибок не выпускает, стоит
+            # ноль запросов: сверяет свои же счётчики раз в пять минут.
+            try:
+                relay_watch(cfg)
+            except Exception:
+                pass
 
             # Персональные скорости живут в ядре с далёким, но конечным
             # сроком. Продлеваем раз в час, чтобы они не истекли молча.
@@ -5188,6 +5197,135 @@ def panel_report(cfg, now=None, force=False):
                        mime="text/plain; charset=utf-8")
 
 
+# ── Смена релея CDN ────────────────────────────────────────────────────
+#
+# Край CDN однажды переезжает на другой адрес — провайдер меняет узел, и
+# предупредить об этом забывает. Новый адрес не значится в trusted.txt, а заголовок
+# PROXY разбирается ТОЛЬКО для доверенных источников. Дальше происходит вот
+# что: настоящие адреса клиентов не распознаются, весь трафик за CDN
+# складывается в один адрес — сам релей, — и сотня человек делит один лимит
+# на всех. Снаружи это выглядит как «интернет пропал», а в журнале тишина:
+# нода здорова, Xray работает, ошибок нет.
+#
+# Признак чисто локальный, наружу нода не ходит. Заголовки разбираются —
+# растёт pp_resolved. Перестали — весь прирост уходит в pp_unresolved, а
+# pp_resolved стоит. Здоровая доля неразрешённых на живой ноде 8-10% (это
+# рукопожатия новых соединений и служебный трафик релея), так что порог в
+# 95% при остановившемся pp_resolved шумом не берётся.
+RELAY_CHECK_EVERY = 300         # как часто сверяем, секунд
+RELAY_MIN_PACKETS = 2000        # меньше — выборка ничего не значит
+RELAY_BAD_SHARE = 0.95          # доля неразрешённых, выше которой это не шум
+RELAY_ALERT_EVERY = 6 * 3600    # не чаще раза в шесть часов на один адрес
+
+
+def _hex_ip(h):
+    """Адрес из /proc/net/tcp. IPv4 — 8 знаков, IPv6 — 32, порядок обратный."""
+    try:
+        b = bytes.fromhex(h)
+    except ValueError:
+        return ""
+    if len(b) == 4:
+        return socket.inet_ntop(socket.AF_INET, b[::-1])
+    if len(b) == 16:
+        # Ядро хранит адрес четвёрками байт, каждая в обратном порядке.
+        w = b"".join(b[i:i + 4][::-1] for i in range(0, 16, 4))
+        if w[:12] == b"\x00" * 10 + b"\xff\xff":
+            return socket.inet_ntop(socket.AF_INET, w[12:])
+        return socket.inet_ntop(socket.AF_INET6, w)
+    return ""
+
+
+def proc_peers(ports):
+    """Кто держит соединения на эти порты прямо сейчас: {адрес: сколько}."""
+    out = {}
+    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(path) as f:
+                next(f, None)
+                for line in f:
+                    p = line.split()
+                    if len(p) < 4 or p[3] != "01":      # 01 — ESTABLISHED
+                        continue
+                    try:
+                        if int(p[1].rsplit(":", 1)[1], 16) not in ports:
+                            continue
+                        ip = _hex_ip(p[2].rsplit(":", 1)[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if ip:
+                        out[ip] = out.get(ip, 0) + 1
+        except OSError:
+            continue
+    return out
+
+
+def relay_watch(cfg, now=None):
+    """
+    Не сменился ли релей CDN. Возвращает адрес-подозреваемый или пустую строку.
+
+    Наружу не ходит и ошибок не выпускает: это сторожевая проверка, она не
+    имеет права уронить цикл. Работает только там, где CDN вообще есть, —
+    то есть заданы порты с заголовком PROXY и хотя бы один доверенный релей.
+    """
+    now = now if now is not None else time.time()
+    ports = {int(x) for x in (cfg.get("proxy_ports") or []) if str(x).isdigit()}
+    if not ports:
+        return ""
+    trusted = {ip for ip, fl in trusted_sources().items() if fl & TRUST_RELAY}
+    if not trusted:
+        return ""
+
+    st = read_stats()
+    if not st:
+        return ""
+
+    state = guard_state()
+    prev = state.get("relay") or {}
+    at = float(prev.get("at") or 0)
+    if now - at < RELAY_CHECK_EVERY:
+        return ""
+
+    dr = st["pp_resolved"] - int(prev.get("resolved") or 0)
+    du = st["pp_unresolved"] - int(prev.get("unresolved") or 0)
+    prev.update({"at": now, "resolved": st["pp_resolved"],
+                 "unresolved": st["pp_unresolved"]})
+    state["relay"] = prev
+    guard_state_save(state)
+
+    # Движок перезагрузили — счётчики начались заново, сравнивать нечего.
+    if dr < 0 or du < 0 or dr + du < RELAY_MIN_PACKETS:
+        return ""
+    if du / float(dr + du) < RELAY_BAD_SHARE:
+        return ""
+
+    # Заголовки не разбираются. Кто же тогда к нам ходит на эти порты.
+    unknown = {ip: n for ip, n in proc_peers(ports).items() if ip not in trusted}
+    if not unknown:
+        return ""
+    ip = max(unknown, key=lambda k: unknown[k])
+
+    # Про адрес, о котором ещё не писали, сообщаем сразу: сравнивать «сейчас
+    # минус ноль» с паузой нельзя — это верно только потому, что время
+    # большое число, и разваливается на любом другом отсчёте времени.
+    alerted = prev.get("alerted") or {}
+    last = alerted.get(ip)
+    if last is not None and now - float(last) < RELAY_ALERT_EVERY:
+        return ip
+    alerted = {k: v for k, v in alerted.items()
+               if now - float(v or 0) < RELAY_ALERT_EVERY * 4}
+    alerted[ip] = now
+    prev["alerted"] = alerted
+    state["relay"] = prev
+    guard_state_save(state)
+
+    share = int(round(100 * du / float(dr + du)))
+    log_event("relay_changed", ip=ip, share=share, conns=unknown[ip])
+    tg_send(t("relay_msg", node=node_label(cfg["telegram"]), share=share,
+              ports=", ".join(str(p) for p in sorted(ports)),
+              ip=html.escape(ip), n=unknown[ip]), cfg)
+    return ip
+
+
 def panel_report_due(cfg, now=None):
     """
     Раз в цикл сторожа: не пора ли отправить отчёт по ноде.
@@ -5675,9 +5813,10 @@ def panel_scan(cfg, now=None, act=True):
             continue
 
         # Блокировка старше обычного ограничения: если задано и то и другое,
-        # выигрывает более строгое. Обрыв к ней прилагается сам — без него
-        # уже установленные соединения просто стали бы медленными, а человек
-        # остался бы «в сети» до того, как они отвалятся по таймауту.
+        # выигрывает более строгое. Обрыв к ней НЕ прилагается: лимит лежит в
+        # карте ядра по адресу и придавливает уже открытые соединения сразу,
+        # а обрыв стёр бы сессии из панели — владелец, пришедший по
+        # уведомлению, увидел бы пустую карточку вместо адресов и нод.
         if "block" in actions:
             rec["blocked"] = True
             rec["limited"] = panel_limit(p, rec["ips"], PANEL_BLOCK_MBPS,
