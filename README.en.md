@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.86-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.87-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.86
+# Shape v3.87
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -905,8 +905,39 @@ penalties touch this path: the node stays self-sufficient.
 The address may be entered with or without the trailing `/v1` — both forms are
 understood, and a trailing slash makes no difference.
 
-The paths follow an API shaped like `/v1/resources/{id}`. If your provider's
-differ, simply leave the section off — the node notices the collapse without it.
+### When traffic or money runs out
+
+The node's own traffic is already in the daily digest. This is about something
+else — the account at the CDN provider, which the node cannot know about and
+which runs out just as suddenly for every client at once.
+
+Two warnings arrive, each with its own memory so one never silences the other:
+
+**The package is running out.** Fewer than the configured number of gigabytes
+left. Default 100.
+
+**The balance is running out.** Less money left than configured. Default 100 as
+well.
+
+And separately, loudly: **service suspended**. That is no longer a warning but
+the reason clients are about to lose access.
+
+Repeats no more than once every twelve hours while the cause holds. Thresholds
+are set from the menu or with:
+
+```bash
+shaperctl cdn set --low-gb 100 --low-balance 100
+```
+
+Zero turns the matching warning off.
+
+To look at any moment, use the **"Traffic and package left"** menu item or
+`shaperctl cdn usage`: consumption for the day, the package remainder and the
+balance.
+
+The account at the provider covers the whole dashboard rather than one node, so
+the section is worth keeping on **a single node** — otherwise the same warning
+arrives from every one of them.
 
 ### Why a list, not a switch
 

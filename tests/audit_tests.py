@@ -1998,7 +1998,9 @@ print("\n\033[1mОбвал клиентов и вердикт CDN\033[0m")
 
 import http.server, threading, urllib.parse as _up
 
-CDN = {"status": "active", "top_ips": [], "requests": 0, "code": 0, "hits": 0}
+CDN = {"status": "active", "top_ips": [], "requests": 0, "code": 0, "hits": 0,
+       "out": 5 * 1024 ** 3, "in": 1024 ** 3, "left": 100.0, "stop": False,
+       "bal": 500.0}
 
 
 class _CdnH(http.server.BaseHTTPRequestHandler):
@@ -2011,6 +2013,15 @@ class _CdnH(http.server.BaseHTTPRequestHandler):
             return self._send(401, {"error": "нет ключа"})
         if CDN["code"]:
             return self._send(CDN["code"], {"error": "провайдер молчит"})
+        if self.path.startswith("/v1/usage"):
+            return self._send(200, {"hours": 24, "resources": [], "totals": {
+                "bytes_in": CDN["in"], "bytes_out": CDN["out"],
+                "requests": 10}})
+        if self.path.endswith("/account"):
+            return self._send(200, {"billing_mode": "package",
+                                    "balance": CDN["bal"],
+                                    "package_gb_left": CDN["left"],
+                                    "billing_suspended": CDN["stop"]})
         if self.path.endswith("/audience"):
             return self._send(200, {"top_ips": CDN["top_ips"],
                                     "top_locations": [], "top_upstreams": []})
@@ -2136,6 +2147,68 @@ now = 50000.0
 for i in range(S.ONLINE_KEEP + 2):
     S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
 check("маленькую ноду не судим", _sent2 == [], _sent2)
+
+# ── Трафик и остаток пакета у провайдера ──────────────────────────────
+# Кончившийся трафик кладёт всех клиентов разом. Предупреждаем заранее.
+u = S.cdn_usage(_cfg_cdn())
+check("потребление читается", u and u["out"] == 5 * 1024 ** 3, u)
+check("остаток пакета читается", u and u["left_gb"] == 100.0, u)
+check("баланс и режим тоже", u and u["balance"] == 500.0 and u["mode"] == "package", u)
+check("выключенный раздел потребления не даёт",
+      S.cdn_usage(_cfg_cdn(enabled=False)) is None)
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 100.0, "stop": False, "bal": 500.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=100), now=100000.0)
+check("полный пакет тревоги не даёт", _sent2 == [], _sent2)
+
+_gs2.clear()
+CDN.update({"left": 3.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=200000.0)
+check("остаток ниже порога — предупреждение",
+      len(_sent2) == 1 and "3.0" in _sent2[0], _sent2[-1][:120] if _sent2 else "")
+
+_was3 = len(_sent2)
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=200000.0 + S.CDN_QUOTA_EVERY)
+check("второй раз в пределах паузы не пишем", len(_sent2) == _was3, len(_sent2))
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 100.0, "stop": True})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=300000.0)
+check("приостановленное обслуживание — отдельная тревога",
+      len(_sent2) == 1 and ("приостановлено" in _sent2[0] or "suspended" in _sent2[0]),
+      _sent2[-1][:120] if _sent2 else "")
+CDN.update({"stop": False})
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 3.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=0, low_balance=0), now=400000.0)
+check("порог 0 выключает предупреждение", _sent2 == [], _sent2)
+CDN.update({"left": 100.0})
+
+# Баланс — отдельный повод и отдельная память: предупреждение о гигабайтах не
+# должно проглотить предупреждение о деньгах, действия по ним разные.
+_gs2.clear(); _sent2.clear()
+CDN.update({"bal": 40.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=0, low_balance=100), now=500000.0)
+check("баланс ниже порога — предупреждение",
+      len(_sent2) == 1 and "40" in _sent2[0], _sent2[-1][:120] if _sent2 else "")
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 3.0, "bal": 40.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=100), now=600000.0)
+check("кончились и гигабайты, и деньги — придут оба",
+      len(_sent2) == 2, [x[:40] for x in _sent2])
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"bal": 500.0, "left": 100.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=700000.0)
+check("порог баланса 0 выключает предупреждение о деньгах", _sent2 == [], _sent2)
+
+check("умолчания порогов — сто гигабайт и сотня на балансе",
+      S.CDN_DEFAULT["low_gb"] == 100 and S.CDN_DEFAULT["low_balance"] == 100,
+      (S.CDN_DEFAULT["low_gb"], S.CDN_DEFAULT["low_balance"]))
+check("событие объявлено", "cdn_quota_low" in S.EVENT_TYPES)
 
 check("порог обвала — заметная доля нормы", 0 < S.ONLINE_COLLAPSE <= 0.5,
       S.ONLINE_COLLAPSE)

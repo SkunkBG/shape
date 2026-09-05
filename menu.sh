@@ -991,7 +991,7 @@ sys.exit(0 if d.get('enabled') else 1)" 2>/dev/null
 # Читаем одним заходом, как и остальные экраны: дёргать shaperctl по разу на
 # каждое поле — это лишние запуски питона на отрисовку.
 cdn_read() {
-    python3 - <<PY 2>/dev/null || echo "0|-|-|-"
+    python3 - <<PY 2>/dev/null || echo "0|-|-|-|100|100"
 import json
 try:
     d = json.load(open("$ETC_DIR/config.json")).get("cdn", {})
@@ -1003,14 +1003,16 @@ print("|".join([
     d.get("url") or "-",
     str(d.get("resource_id") or "-"),
     (tok[:6] + "\u2026") if tok else "-",
+    "%g" % float(d.get("low_gb") or 0),
+    "%g" % float(d.get("low_balance") or 0),
 ]))
 PY
 }
 
 screen_cdn() {
-    local on url res tok v
+    local on url res tok low lowb v
     while :; do
-        IFS='|' read -r on url res tok <<< "$(cdn_read)"
+        IFS='|' read -r on url res tok low lowb <<< "$(cdn_read)"
         title "${T[cdn_title]}"
         echo -e "  ${D}${T[cdn_h1]}${N}"
         echo -e "  ${D}${T[cdn_h2]}${N}"
@@ -1030,6 +1032,9 @@ screen_cdn() {
         echo "  [4] ${T[cdn_set_res]}"
         echo "  [5] ${T[cdn_test]}"
         echo "  [6] ${T[cdn_list]}"
+        echo "  [7] ${T[cdn_usage]}"
+        echo "  [8] ${T[cdn_set_low]}: ${B}${low}${N}"
+        echo "  [9] ${T[cdn_set_lowbal]}: ${B}${lowb}${N}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -1046,6 +1051,11 @@ screen_cdn() {
                [[ -n "$v" ]] && { "$CTL" cdn set --resource-id "$v" >/dev/null || pause; } ;;
             5) "$CTL" cdn test; pause ;;
             6) "$CTL" cdn list; pause ;;
+            7) "$CTL" cdn usage; pause ;;
+            8) v="$(ask "${T[cdn_set_low]}" "$low")"
+               [[ -n "$v" ]] && "$CTL" cdn set --low-gb "$v" >/dev/null ;;
+            9) v="$(ask "${T[cdn_set_lowbal]}" "$lowb")"
+               [[ -n "$v" ]] && "$CTL" cdn set --low-balance "$v" >/dev/null ;;
             0|"") return ;;
         esac
     done

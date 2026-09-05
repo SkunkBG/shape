@@ -326,6 +326,18 @@ MSG = {
         "cdn_bad_key": "ключ не принят: возьмите его в личном кабинете, раздел API",
         "cdn_no_res": "связь есть, но ресурс не отвечает — проверьте его номер",
         "cdn_no_list": "у ключа нет ни одного ресурса",
+        "cdn_d_traffic": "Через CDN: ↓ {out} · ↑ {inb}",
+        "cdn_d_left": "осталось {g} ГБ",
+        "cdn_d_stop": "🛑 <b>Обслуживание у провайдера CDN приостановлено.</b>",
+        "cdn_u_none": "провайдер не ответил или раздел выключен",
+        "cdn_q_low": "⚠️ <b>{node} — у провайдера CDN кончается пакет</b>\n\nОсталось {g} ГБ. За сутки через CDN прошло {out}.",
+        "cdn_q_stop": "🛑 <b>{node} — обслуживание у провайдера CDN приостановлено</b>\n\nКлиенты потеряют доступ, как только край перестанет их принимать.",
+        "cdn_q_money": "⚠️ <b>{node} — заканчивается баланс у провайдера CDN</b>\n\nОсталось {b}. Когда деньги кончатся, обслуживание приостановят и клиенты потеряют доступ.",
+        "cdn_usage_t": "За сутки через CDN",
+        "cdn_left_t": "Остаток пакета",
+        "cdn_balance_t": "Баланс",
+        "h_cdn_low": "предупредить, когда в пакете останется меньше стольких ГБ; 0 — не предупреждать",
+        "h_cdn_lowbal": "предупредить, когда на балансе останется меньше этого; 0 — не предупреждать",
         "cdn_p_alive": "✅ Связь есть. До края CDN доходят запросы: {r} за последние минуты.",
         "cdn_p_empty": "⚠️ Связь есть, ресурс активен, но до края CDN не доходит ни один запрос.",
         "cdn_quiet": "Ответа нет: проверьте адрес, ключ и номер ресурса.",
@@ -813,6 +825,18 @@ MSG = {
         "cdn_bad_key": "the key was rejected: take it from the dashboard, API section",
         "cdn_no_res": "the link works, but the resource does not answer — check its id",
         "cdn_no_list": "the key has no resources",
+        "cdn_d_traffic": "Through the CDN: ↓ {out} · ↑ {inb}",
+        "cdn_d_left": "{g} GB left",
+        "cdn_d_stop": "🛑 <b>Service at the CDN provider is suspended.</b>",
+        "cdn_u_none": "the provider did not answer, or the section is off",
+        "cdn_q_low": "⚠️ <b>{node} — the CDN package is running out</b>\n\n{g} GB left. {out} went through the CDN in the last day.",
+        "cdn_q_stop": "🛑 <b>{node} — service at the CDN provider is suspended</b>\n\nClients will lose access as soon as the edge stops taking them.",
+        "cdn_q_money": "⚠️ <b>{node} — the balance at the CDN provider is running out</b>\n\n{b} left. When the money runs out, service is suspended and clients lose access.",
+        "cdn_usage_t": "Through the CDN in a day",
+        "cdn_left_t": "Package left",
+        "cdn_balance_t": "Balance",
+        "h_cdn_low": "warn when fewer than this many GB are left; 0 — never warn",
+        "h_cdn_lowbal": "warn when the balance falls below this; 0 — never warn",
         "cdn_p_alive": "✅ The link works. Requests do reach the CDN edge: {r} in the last minutes.",
         "cdn_p_empty": "⚠️ The link works and the resource is active, but not a single request reaches the CDN edge.",
         "cdn_quiet": "No answer: check the address, the key and the resource id.",
@@ -2566,6 +2590,7 @@ EVENT_TYPES = {
     "sharing_found",     # панель показала раздачу подписки
     "relay_changed",     # релей CDN сменил адрес и перестал быть доверенным
     "clients_gone",      # клиенты пропали, хотя нода жива
+    "cdn_quota_low",     # у провайдера CDN кончается пакет
     # Ниже — панельные события, которые не были объявлены и потому писались
     # типом "error": log_event заменяет неизвестный тип. Отличить отказ
     # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
@@ -3576,6 +3601,11 @@ def cmd_watch(a):
             # раздел включён, и кладёт вердикт в то же сообщение.
             try:
                 clients_watch(cfg)
+            except Exception:
+                pass
+            # Остаток пакета у провайдера CDN. Заглядываем раз в шесть часов.
+            try:
+                cdn_quota_watch(cfg)
             except Exception:
                 pass
 
@@ -4696,6 +4726,8 @@ CDN_DEFAULT = {
     "url": "",            # база API провайдера, например https://api.example.com
     "token": "",          # ключ из личного кабинета провайдера
     "resource_id": "",    # номер ресурса, за которым стоит эта нода
+    "low_gb": 100,        # предупредить, когда в пакете осталось меньше ГБ
+    "low_balance": 100,   # и когда на балансе осталось меньше этого
     "proxy": "",          # http(s)-прокси; socks5 здесь не поддержан
 }
 
@@ -5346,6 +5378,40 @@ ONLINE_COLLAPSE = 0.2           # доля от нормы, ниже котор�
 ONLINE_ALERT_EVERY = 3600       # не чаще раза в час
 
 
+def cdn_usage(cfg, hours=24):
+    """
+    Сколько прошло через CDN и сколько осталось. Возвращает словарь или None.
+
+    Наружу не выпускает ничего: это строка в сводке, а не условие её отправки.
+    Ключи: out, inb, requests — за окно; left_gb, balance, mode, suspended —
+    из профиля, если провайдер их отдаёт.
+    """
+    c = cfg.get("cdn") or {}
+    if not c.get("enabled"):
+        return None
+    out = {}
+    try:
+        u = cdn_call(c, "/v1/usage?hours=%d" % max(1, int(hours))) or {}
+        tot = u.get("totals") or {}
+        out["out"] = int(tot.get("bytes_out") or 0)
+        out["inb"] = int(tot.get("bytes_in") or 0)
+        out["requests"] = int(tot.get("requests") or 0)
+    except Exception:
+        return None
+    try:
+        a = cdn_call(c, "/v1/account") or {}
+        acc = a.get("account") if isinstance(a.get("account"), dict) else a
+        if acc.get("package_gb_left") is not None:
+            out["left_gb"] = float(acc.get("package_gb_left") or 0)
+        if acc.get("balance") is not None:
+            out["balance"] = float(acc.get("balance") or 0)
+        out["mode"] = str(acc.get("billing_mode") or "")
+        out["suspended"] = bool(acc.get("billing_suspended"))
+    except Exception:
+        pass
+    return out
+
+
 def cdn_verdict(cfg, collapsed=True):
     """
     Спросить провайдера, доходят ли до его края запросы.
@@ -5392,6 +5458,66 @@ def cdn_verdict(cfg, collapsed=True):
     if not reqs and not seen:
         return t("cdn_v_empty")
     return t("cdn_v_alive", r=reqs)
+
+
+CDN_QUOTA_EVERY = 6 * 3600      # как часто заглядываем в остаток
+CDN_QUOTA_ALERT_EVERY = 12 * 3600   # и не чаще чем раз в полсуток пишем
+
+
+def cdn_quota_watch(cfg, now=None):
+    """
+    Не кончается ли пакет у провайдера CDN. Возвращает остаток или None.
+
+    Кончившийся трафик кладёт всех клиентов разом, а узнать об этом задним
+    числом — значит разбирать аварию с нуля. Предупреждаем заранее, но редко:
+    раз в полсуток, пока остаток ниже порога.
+    """
+    c = cfg.get("cdn") or {}
+    if not c.get("enabled"):
+        return None
+    now = now if now is not None else time.time()
+    state = guard_state()
+    prev = state.get("cdnq") or {}
+    if now - float(prev.get("at") or 0) < CDN_QUOTA_EVERY:
+        return None
+    prev["at"] = now
+    state["cdnq"] = prev
+    guard_state_save(state)
+
+    got = cdn_usage(cfg, hours=24)
+    if not got:
+        return None
+    left = got.get("left_gb")
+    bal = got.get("balance")
+    low_gb = float(c.get("low_gb") or 0)
+    low_bal = float(c.get("low_balance") or 0)
+
+    # Три повода, и у каждого своя память: предупреждение о гигабайтах не
+    # должно проглотить предупреждение о деньгах. Кончится и то и другое —
+    # придут оба сообщения, потому что действия по ним разные.
+    said = prev.get("said") or {}
+    if not isinstance(said, dict):
+        said = {}
+    node = node_label(cfg["telegram"])
+    todo = []
+    if got.get("suspended"):
+        todo.append(("stop", t("cdn_q_stop", node=node)))
+    if left is not None and low_gb > 0 and left < low_gb:
+        todo.append(("gb", t("cdn_q_low", node=node, g="%.1f" % left,
+                             out=fmt_bytes(got.get("out", 0)))))
+    if bal is not None and low_bal > 0 and bal < low_bal:
+        todo.append(("bal", t("cdn_q_money", node=node, b="%g" % bal)))
+
+    for kind, text in todo:
+        if now - float(said.get(kind) or 0) < CDN_QUOTA_ALERT_EVERY:
+            continue
+        said[kind] = now
+        log_event("cdn_quota_low", kind=kind, left_gb=left, balance=bal)
+        tg_send(text, cfg)
+    prev["said"] = said
+    state["cdnq"] = prev
+    guard_state_save(state)
+    return left
 
 
 def clients_watch(cfg, now=None):
@@ -7344,6 +7470,10 @@ def cmd_cdn(a):
             c["resource_id"] = r
         if a.proxy is not None:
             c["proxy"] = a.proxy.strip()
+        if a.low_gb is not None:
+            c["low_gb"] = max(0.0, float(a.low_gb))
+        if a.low_balance is not None:
+            c["low_balance"] = max(0.0, float(a.low_balance))
         if a.enable:
             c["enabled"] = True
         if a.disable:
@@ -7351,6 +7481,23 @@ def cmd_cdn(a):
         cfg["cdn"] = c
         save_config(cfg)
         log_event("config_changed", section="cdn", source="cli")
+
+    if a.action == "usage":
+        got = cdn_usage(cfg, hours=24)
+        print()
+        if not got:
+            print(f"  {C['yel']}{t('cdn_u_none')}{C['r']}\n")
+            return
+        print(f"  {t('cdn_usage_t')} : ↓ {fmt_bytes(got.get('out', 0))}"
+              f" · ↑ {fmt_bytes(got.get('inb', 0))}")
+        if got.get("left_gb") is not None:
+            print(f"  {t('cdn_left_t')}   : {C['b']}{got['left_gb']:.1f} GB{C['r']}")
+        if got.get("balance") is not None:
+            print(f"  {t('cdn_balance_t')}         : {got['balance']:g}")
+        if got.get("suspended"):
+            print(f"  {C['red']}{t('cdn_d_stop')}{C['r']}")
+        print()
+        return
 
     if a.action == "list":
         # Чтобы номер ресурса не приходилось искать в личном кабинете руками.
@@ -8139,12 +8286,16 @@ def build_parser():
 
     cd = sub.add_parser("cdn", help=t("h_cdn"))
     cd.add_argument("action", nargs="?",
-                    choices=["show", "set", "test", "list"],
+                    choices=["show", "set", "test", "list", "usage"],
                     default="show")
     cd.add_argument("--url", default=None, help=t("h_cdn_url"))
     cd.add_argument("--token", default=None, help=t("h_cdn_token"))
     cd.add_argument("--resource-id", dest="resource_id", default=None,
                     help=t("h_cdn_res"))
+    cd.add_argument("--low-gb", dest="low_gb", type=float, default=None,
+                    help=t("h_cdn_low"))
+    cd.add_argument("--low-balance", dest="low_balance", type=float,
+                    default=None, help=t("h_cdn_lowbal"))
     cd.add_argument("--proxy", default=None, help=t("h_met_proxy"))
     cd.add_argument("--enable", action="store_true")
     cd.add_argument("--disable", action="store_true")

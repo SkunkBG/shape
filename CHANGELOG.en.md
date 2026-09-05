@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.87
+
+**A warning when the CDN provider runs out of traffic or money.**
+
+The node's own traffic is already in the daily digest. The account at the provider is another matter: the node cannot know about it, and it runs out just as suddenly and for every client at once.
+
+Two warnings now arrive. **The package is running out** — fewer than the configured number of gigabytes left, 100 by default. **The balance is running out** — less money than configured, also 100 by default. Each has its own memory, so one never silences the other: if both run out, both messages come, because the actions they call for differ.
+
+Suspended service at the provider is reported separately and loudly. That is no longer a warning but the reason clients are about to lose access — and precisely the one that would otherwise take hours to find, investigating an outage from scratch.
+
+Repeats no more than once every twelve hours while the cause holds. Thresholds are set from the menu or with `shaperctl cdn set --low-gb 100 --low-balance 100`; zero turns the matching warning off. To look at any moment, use the "Traffic and package left" item or `shaperctl cdn usage`.
+
+The account at the provider covers the whole dashboard rather than one node, so the section is worth keeping on a single node — otherwise the same warning arrives from every one of them.
+
+**On update** settings are unchanged. The warnings work only where the `cdn` section is on.
+
+---
+
 ## 3.86
 
 **The "Ask the provider now" button no longer draws conclusions it has no grounds for.**
