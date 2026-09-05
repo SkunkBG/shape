@@ -1024,15 +1024,12 @@ screen_cdn() {
         echo -e "  ${T[cdn_l_res]}: ${B}${res}${N}"
         echo -e "  ${T[cdn_l_token]}: ${D}${tok}${N}"
         echo
-        if [[ "$on" == "1" ]]; then
-            echo -e "  [1] ${T[tg_off]}"
-        else
-            echo -e "  [1] ${T[tg_on]}"
-        fi
+        echo "  [1] ${T[g_toggle]}"
         echo "  [2] ${T[cdn_set_url]}"
         echo "  [3] ${T[cdn_set_token]}"
         echo "  [4] ${T[cdn_set_res]}"
         echo "  [5] ${T[cdn_test]}"
+        echo "  [6] ${T[cdn_list]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -1048,6 +1045,7 @@ screen_cdn() {
                v="$(ask "${T[cdn_set_res]}" "$res")"
                [[ -n "$v" ]] && { "$CTL" cdn set --resource-id "$v" >/dev/null || pause; } ;;
             5) "$CTL" cdn test; pause ;;
+            6) "$CTL" cdn list; pause ;;
             0|"") return ;;
         esac
     done

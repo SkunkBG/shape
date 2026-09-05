@@ -313,8 +313,8 @@ MSG = {
         "cdn_no_url": "адрес API провайдера CDN не задан",
         "cdn_no_token": "ключ API провайдера CDN не задан",
         "cdn_v_off": "🛑 Ресурс у провайдера CDN в состоянии «{s}» — он выключен, а не сломан.",
-        "cdn_v_empty": "🛑 <b>До края CDN не доходит ни один клиент.</b> Это провайдер: у него пусто и по адресам, и по запросам.",
-        "cdn_v_alive": "✅ У края CDN клиенты есть: адресов {n}, запросов за последние минуты {r}. Значит они не доезжают до ноды — смотреть здесь.",
+        "cdn_v_empty": "🛑 <b>До края CDN не доходит ни один запрос.</b> Это провайдер: у него пусто и по запросам, и по адресам. Нода тут ни при чём.",
+        "cdn_v_alive": "✅ До края CDN запросы доходят: {r} за последние минуты. Значит клиенты не доезжают уже до ноды — смотреть здесь.",
         "clients_msg": "🟠 <b>{node} — клиенты пропали</b>\n\nСейчас {n}, обычно около {norm}. Нода жива: процессы работают, ошибок нет.",
         "cdn_state": "Связь с CDN",
         "h_cdn": "связь с API провайдера CDN: чья беда, когда клиенты пропали",
@@ -323,6 +323,9 @@ MSG = {
         "h_cdn_res": "номер ресурса, за которым стоит эта нода",
         "cdn_ask": "Спрашиваю провайдера…",
         "cdn_bad_res": "номер ресурса — это число",
+        "cdn_bad_key": "ключ не принят: возьмите его в личном кабинете, раздел API",
+        "cdn_no_res": "связь есть, но ресурс не отвечает — проверьте его номер",
+        "cdn_no_list": "у ключа нет ни одного ресурса",
         "cdn_quiet": "Ответа нет: проверьте адрес, ключ и номер ресурса.",
         "cdn_url": "Адрес API",
         "cdn_res": "Номер ресурса",
@@ -795,8 +798,8 @@ MSG = {
         "cdn_no_url": "the CDN provider API address is not set",
         "cdn_no_token": "the CDN provider API key is not set",
         "cdn_v_off": "🛑 The resource at the CDN provider is in state {s} — switched off, not broken.",
-        "cdn_v_empty": "🛑 <b>Not a single client reaches the CDN edge.</b> This is the provider: empty both by addresses and by requests.",
-        "cdn_v_alive": "✅ The CDN edge does have clients: {n} addresses, {r} requests in the last minutes. So they are not reaching the node — look here.",
+        "cdn_v_empty": "🛑 <b>Not a single request reaches the CDN edge.</b> This is the provider: empty both by requests and by addresses. The node has nothing to do with it.",
+        "cdn_v_alive": "✅ Requests do reach the CDN edge: {r} in the last minutes. So clients are failing to reach the node itself — look here.",
         "clients_msg": "🟠 <b>{node} — clients are gone</b>\n\nNow {n}, usually about {norm}. The node is alive: processes running, no errors.",
         "cdn_state": "CDN link",
         "h_cdn": "link to the CDN provider API: whose fault it is when clients vanish",
@@ -805,6 +808,9 @@ MSG = {
         "h_cdn_res": "id of the resource this node sits behind",
         "cdn_ask": "Asking the provider…",
         "cdn_bad_res": "the resource id is a number",
+        "cdn_bad_key": "the key was rejected: take it from the dashboard, API section",
+        "cdn_no_res": "the link works, but the resource does not answer — check its id",
+        "cdn_no_list": "the key has no resources",
         "cdn_quiet": "No answer: check the address, the key and the resource id.",
         "cdn_url": "API address",
         "cdn_res": "Resource id",
@@ -5368,9 +5374,12 @@ def cdn_verdict(cfg):
     except Exception:
         return ""
 
-    if not seen and not reqs:
+    # Опираемся на запросы, а не на список адресов: у ресурсов типа TCP
+    # провайдер адреса не ведёт вовсе, и там всегда пусто. Сказать «клиентов
+    # нет» на основании пустого списка означало бы врать при живом трафике.
+    if not reqs and not seen:
         return t("cdn_v_empty")
-    return t("cdn_v_alive", n=seen, r=reqs)
+    return t("cdn_v_alive", r=reqs)
 
 
 def clients_watch(cfg, now=None):
@@ -7331,11 +7340,42 @@ def cmd_cdn(a):
         save_config(cfg)
         log_event("config_changed", section="cdn", source="cli")
 
+    if a.action == "list":
+        # Чтобы номер ресурса не приходилось искать в личном кабинете руками.
+        try:
+            got = cdn_call(c, "/v1/resources")
+        except CdnError as e:
+            die(str(e))
+        rows = got.get("resources") or []
+        print()
+        if not rows:
+            print(f"  {C['gry']}{t('cdn_no_list')}{C['r']}\n")
+            return
+        for r in rows:
+            mark = C["grn"] if str(r.get("status")) == "active" else C["gry"]
+            print(f"  {C['b']}{r.get('id')}{C['r']}  {r.get('domain') or '—'}"
+                  f"  {mark}{r.get('status')}{C['r']}")
+        print()
+        return
+
     if a.action == "test":
         print(f"\n  {C['gry']}{t('cdn_ask')}{C['r']}")
+        # Сначала простой запрос: он называет причину отказа. Вердикт молчит
+        # обо всех ошибках намеренно — это украшение уведомления, — но здесь
+        # человек как раз и хочет знать, почему не отвечает.
+        try:
+            cdn_call(c, "/v1/ping")
+        except CdnError as e:
+            print(f"  {C['red']}✗ {e}{C['r']}")
+            if getattr(e, "code", 0) in (401, 403):
+                print(f"  {C['gry']}{t('cdn_bad_key')}{C['r']}")
+            print()
+            return
         got = cdn_verdict(cfg)
-        print(f"  {got}\n" if got else
-              f"  {C['yel']}{t('cdn_quiet')}{C['r']}\n")
+        if got:
+            print(f"  {got}\n")
+        else:
+            print(f"  {C['yel']}{t('cdn_no_res')}{C['r']}\n")
         return
 
     print()
@@ -8086,7 +8126,8 @@ def build_parser():
     w.set_defaults(func=cmd_whitelist)
 
     cd = sub.add_parser("cdn", help=t("h_cdn"))
-    cd.add_argument("action", nargs="?", choices=["show", "set", "test"],
+    cd.add_argument("action", nargs="?",
+                    choices=["show", "set", "test", "list"],
                     default="show")
     cd.add_argument("--url", default=None, help=t("h_cdn_url"))
     cd.add_argument("--token", default=None, help=t("h_cdn_token"))
