@@ -13,6 +13,30 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.83
+
+**Disabling a subscription for sharing never fired — the block itself reset the countdown.**
+
+The design was this: sharing found, access cut off, and you get half an hour to step in; if you do not, the subscription is disabled entirely, on every node at once. Disabling through the API worked, the countdown worked, and together they did not.
+
+The reason is that a block removes the offender from view. At 0.05 Mbit/s the handshake never completes, connections are dropped, traffic stops — so `lastSeen` on his addresses stops updating and within `window_min` they fall out of the window. He stops counting as an offender, and cancellation is written as "gone from the list means the owner sorted it out". The countdown reset on every pass.
+
+Measured on two live nodes: addresses go stale in about ten minutes, and out of 243 addresses only four were older than ten minutes. With a thirty-minute grace and a ten-minute window, disabling could not happen at all — only an endless cycle of hourly blocks.
+
+The pending entry now survives while **our own** sharing penalty is alive: it carries `source=panel`, `reason=sharing` and the user id, so "vanished because of us" is told apart from "the owner sorted it out" precisely. Cancellation still works where it was meant to: clear the penalty with `release --user`, revoke the subscription, and the countdown stops.
+
+Hence a new rule that `panel show` warns about: **the grace period must be shorter than the block**. The countdown lives while the penalty lives, and that lasts `limit_min` minutes — 60 against 30 by default, a twofold margin.
+
+**A block no longer drops connections.**
+
+`block` used to pull a drop along with it. The drop was not needed — the limit lives in the kernel map by address and applies to already open connections at once — and it did harm: sessions vanished from the panel, so the owner, coming in on a notification to see who this is and from which nodes, found an empty card instead of addresses. It was also what reset the countdown to disabling the subscription.
+
+A drop now happens only when asked for explicitly: `--action-set block,drop`.
+
+**On update** settings are unchanged. If you have the disable grace turned on, it will start seeing things through for the first time.
+
+---
+
 ## 3.82
 
 **Presets applied no sharing-detection settings at all — on any node.**

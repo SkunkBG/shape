@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.82-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.83-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.82
+# Shape v3.83
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -1510,6 +1510,17 @@ shaperctl panel set --disable-after 30
 9:00   shaperctl panel enable 741 — once you have looked into it
 ```
 
+**A block does not cancel the countdown.** By itself it removes the offender
+from view: traffic stops, `lastSeen` stops updating, and within `window_min` his
+addresses fall out of the window. The countdown used to reset there, so the
+subscription was never disabled: with a thirty-minute grace and a ten-minute
+window it could not happen at all. The pending entry now survives while our own
+sharing penalty is alive.
+
+Hence the rule: **the grace period must be shorter than the block**
+(`limit_min`, 60 minutes by default), or the penalty expires first. `panel show`
+warns about it.
+
 **The countdown cancels itself.** If you disabled or revoked the subscription in
 time, the buyers vanish from the connection list, at the next check the person is
 no longer an offender, and Shape does nothing. There is nothing to wait for or
@@ -1616,7 +1627,7 @@ own UUIDs, and those will not work here.
 | --- | --- |
 | `notify` | a Telegram card: who, how many addresses, examples. **Always on** |
 | `limit` | a local penalty on the addresses this node can see itself |
-| `block` | cut off access to the node: minimal speed plus a connection drop |
+| `block` | cut off access to the node: minimal speed, connections are kept |
 | `drop` | drop connections through the panel — by address, on this node only |
 
 Combine them with commas:

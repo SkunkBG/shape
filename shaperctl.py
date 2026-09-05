@@ -336,6 +336,7 @@ MSG = {
         "pn_msg_blocked": "🚫 Доступ к ноде перекрыт на {m} мин, адресов: {n}",
         "pn_msg_nothing": "Ничего не предпринято: включено только уведомление.",
         "pn_msg_ips": "Адресов одновременно: <b>{n}</b> за последние {w} мин",
+        "pn_grace_long": "отсрочка длиннее перекрытия ({m} мин) — штраф истечёт раньше срока, и отсчёт оборвётся",
         "pn_msg_tariff": "<i>Порог для его тарифа: {t} — продано устройств {d}</i>",
         "h_pn_per_device": "во сколько раз порог адресов больше числа устройств в тарифе, 0 = один порог на всех",
         "pn_per_device": "Порог от тарифа",
@@ -800,6 +801,7 @@ MSG = {
         "pn_msg_blocked": "🚫 Access to the node cut off for {m} min, addresses: {n}",
         "pn_msg_nothing": "Nothing was done: only notification is enabled.",
         "pn_msg_ips": "Simultaneous addresses: <b>{n}</b> over the last {w} min",
+        "pn_grace_long": "the grace period is longer than the block ({m} min) — the penalty expires first and the countdown breaks",
         "pn_msg_tariff": "<i>Threshold for his plan: {t} — devices sold: {d}</i>",
         "h_pn_per_device": "how many times the address threshold exceeds the plan's device count, 0 = one threshold for all",
         "pn_per_device": "Threshold from the plan",
@@ -5253,7 +5255,41 @@ def panel_user_enable(p, uid):
     panel_call(p, "POST", "/api/users/%s/actions/enable" % uid)
 
 
-def panel_pending(state, offenders, now, grace_sec):
+def panel_sharing_held(now=None):
+    """
+    Номера тех, кого прямо сейчас держит наше же перекрытие за раздачу.
+
+    Нужно ровно для одного. Перекрытие само убирает нарушителя из видимости:
+    трафика нет, lastSeen не обновляется, и за window_min его адреса выпадают
+    из окна. Он перестаёт числиться нарушителем — и отсчёт до отключения
+    подписки обнулялся, не доходя до конца НИКОГДА. Замерено 05.09: адреса
+    стареют за десять минут, отсрочка в тридцать не наступала ни разу.
+
+    Отмена отсчёта задумана для другого случая — когда владелец разобрался
+    сам. Его и оставляем: снял штраф через `release --user`, переиздал
+    подписку — запись уходит. А пока штраф жив, исчезновение из списка
+    объясняется нами, и отсчёт продолжается.
+    """
+    now = now if now is not None else time.time()
+    out = set()
+    for _ip, e in (load_penalties() or {}).items():
+        if not isinstance(e, dict):
+            continue
+        if e.get("source") != "panel" or e.get("reason") != "sharing":
+            continue
+        try:
+            if float(e.get("until") or 0) <= now:
+                continue
+        except (TypeError, ValueError):
+            continue
+        uid = str(e.get("user_id")
+                  or (e.get("subject") or {}).get("user_id") or "")
+        if uid:
+            out.add(uid)
+    return out
+
+
+def panel_pending(state, offenders, now, grace_sec, keep=()):
     """
     Кого пора отключать, и обновлённый список ожидающих.
 
@@ -5263,11 +5299,16 @@ def panel_pending(state, offenders, now, grace_sec):
 
     Из ожидания выпадают те, кто нарушителем больше не числится. Это и есть
     отмена: успел владелец — отсчёт прекращается сам.
+
+    Кроме тех, кто в `keep`: их держит наше собственное перекрытие, и их
+    исчезновение из списка ничего про владельца не говорит. Новых записей
+    для них не заводим — только не даём стереть уже начатый отсчёт.
     """
     live = {str(r["user_id"]) for r in offenders}
+    held = {str(x) for x in keep}
     pend = {k: float(v) for k, v in (state.get("pending") or {}).items()
             if isinstance(v, (int, float, str)) and str(v).replace(".", "", 1)
-            .replace("-", "", 1).isdigit() and k in live}
+            .replace("-", "", 1).isdigit() and (k in live or k in held)}
     for uid in live:
         pend.setdefault(uid, now)
     due = sorted(uid for uid, at in pend.items() if now - at >= grace_sec)
@@ -5547,7 +5588,8 @@ def panel_scan(cfg, now=None, act=True):
         # Исключённых в ожидание не берём вовсе.
         live = [r for r in found
                 if not guard_exempt(cfg, {"user_id": r["user_id"]})]
-        due, pend = panel_pending(state, live, now, grace)
+        due, pend = panel_pending(state, live, now, grace,
+                                  keep=panel_sharing_held(now))
         state["pending"] = pend
         panel_state_save(state)
 
@@ -5650,7 +5692,15 @@ def panel_scan(cfg, now=None, act=True):
         pens_now = load_penalties()
         rec["limited_now"] = sum(1 for ip in rec["ips"] if ip in pens_now)
 
-        if "drop" in actions or "block" in actions:
+        # Обрыв — только по явному указанию. Раньше его тянуло за собой
+        # перекрытие, и это вредило дважды. Во-первых, он не нужен: лимит
+        # лежит в карте ядра по адресу и действует на уже открытые соединения
+        # немедленно, рвать их незачем. Во-вторых, он стирает картину: сессии
+        # пропадают из панели, и владелец, открыв карточку человека, видит
+        # пустоту вместо адресов и нод. А смотреть он идёт именно тогда, когда
+        # пришло уведомление. Заодно исчезновение адресов обнуляло отсчёт до
+        # отключения подписки.
+        if "drop" in actions:
             try:
                 panel_drop(p, rec["ips"])
                 rec["dropped"] = list(rec["ips"])
@@ -5754,6 +5804,12 @@ def cmd_panel(a):
         if p.get("disable_after_min"):
             print(f"  {t('pn_disable_after')} : "
                   f"{C['red']}{p['disable_after_min']:g} {t('pn_min')}{C['r']}")
+            # Отсчёт держится, пока жив наш штраф: перекрытие само убирает
+            # нарушителя из видимости. Отсрочка длиннее перекрытия означает,
+            # что штраф истечёт раньше срока и отсчёт оборвётся молча.
+            if float(p["disable_after_min"]) >= float(p.get("limit_min") or 60):
+                print(f"    {C['yel']}"
+                      f"{t('pn_grace_long', m=p.get('limit_min', 60))}{C['r']}")
         print(f"  {t('pn_last')} : " + (time.strftime("%Y-%m-%d %H:%M",
               time.localtime(last)) if last else t("pn_never")))
         if last:
