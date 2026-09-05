@@ -2056,6 +2056,19 @@ v = S.cdn_verdict(_cfg_cdn())
 check("клиенты у края есть — вердикт «смотреть здесь»",
       "12" in v and ("смотреть" in v or "look" in v), v)
 
+# По кнопке в меню обвала нет — вывод «клиенты не доезжают» был бы ложью
+# при живых клиентах. Там только факты.
+CDN.update({"top_ips": [], "requests": 8433})
+v = S.cdn_verdict(_cfg_cdn(), collapsed=False)
+check("по кнопке — факты, без вывода про ноду",
+      "8433" in v and "не доезжают" not in v and "look here" not in v, v)
+v = S.cdn_verdict(_cfg_cdn())
+check("а при обвале вывод остаётся", "не доезжают" in v or "look here" in v, v)
+CDN.update({"requests": 0})
+v = S.cdn_verdict(_cfg_cdn(), collapsed=False)
+check("по кнопке при пустом крае — предупреждение, а не обвинение",
+      ("не доходит" in v or "not a single" in v) and "провайдер" not in v, v)
+
 CDN.update({"status": "disabled"})
 v = S.cdn_verdict(_cfg_cdn())
 check("выключенный ресурс назван отдельно", "disabled" in v, v)

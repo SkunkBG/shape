@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.85-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.86-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.85
+# Shape v3.86
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -879,11 +879,15 @@ goes out. Nodes that normally hold fewer than ten people are not checked,
 because zero proves nothing there.
 
 The message can carry a **verdict from the CDN provider**. The node asks its
-API whether the resource is active, whether clients reach the edge and whether
-there were requests in the last minutes — and says either "not a single client
-reaches the CDN edge, this is the provider" or "the edge does have clients, so
-they are not reaching the node, look here". An hour of investigation collapses
-into one line.
+API whether the resource is active and whether there were requests in the last
+minutes — and says either "not a single request reaches the CDN edge, this is
+the provider" or "requests do reach the edge, so clients are failing to reach
+the node itself, look here". An hour of investigation collapses into one line.
+
+The conclusion is drawn only where clients really did vanish. The "Ask the
+provider now" button reports facts and concludes nothing: there is no collapse
+at that moment, and "clients are not reaching the node" would simply be a lie
+while the clients are there.
 
 Set up from the menu — item **10 "CDN provider"** on the main screen — or with
 commands:

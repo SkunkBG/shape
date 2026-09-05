@@ -326,6 +326,8 @@ MSG = {
         "cdn_bad_key": "ключ не принят: возьмите его в личном кабинете, раздел API",
         "cdn_no_res": "связь есть, но ресурс не отвечает — проверьте его номер",
         "cdn_no_list": "у ключа нет ни одного ресурса",
+        "cdn_p_alive": "✅ Связь есть. До края CDN доходят запросы: {r} за последние минуты.",
+        "cdn_p_empty": "⚠️ Связь есть, ресурс активен, но до края CDN не доходит ни один запрос.",
         "cdn_quiet": "Ответа нет: проверьте адрес, ключ и номер ресурса.",
         "cdn_url": "Адрес API",
         "cdn_res": "Номер ресурса",
@@ -811,6 +813,8 @@ MSG = {
         "cdn_bad_key": "the key was rejected: take it from the dashboard, API section",
         "cdn_no_res": "the link works, but the resource does not answer — check its id",
         "cdn_no_list": "the key has no resources",
+        "cdn_p_alive": "✅ The link works. Requests do reach the CDN edge: {r} in the last minutes.",
+        "cdn_p_empty": "⚠️ The link works and the resource is active, but not a single request reaches the CDN edge.",
         "cdn_quiet": "No answer: check the address, the key and the resource id.",
         "cdn_url": "API address",
         "cdn_res": "Resource id",
@@ -5342,13 +5346,18 @@ ONLINE_COLLAPSE = 0.2           # доля от нормы, ниже котор�
 ONLINE_ALERT_EVERY = 3600       # не чаще раза в час
 
 
-def cdn_verdict(cfg):
+def cdn_verdict(cfg, collapsed=True):
     """
-    Спросить провайдера, доходят ли до его края клиенты.
+    Спросить провайдера, доходят ли до его края запросы.
 
-    Возвращает готовую строку для сообщения или пустую, если спросить не
-    вышло. Наружу не выпускает ничего: это украшение уведомления, а не
-    условие его отправки.
+    Возвращает готовую строку или пустую, если спросить не вышло. Наружу не
+    выпускает ничего: это украшение уведомления, а не условие его отправки.
+
+    `collapsed` — за чем пришли. В уведомлении об обвале уместен вывод «это
+    провайдер» или «смотреть у себя»: клиентов там действительно нет, и
+    вопрос лишь в том, чья это беда. По кнопке в меню обвала нет, и тот же
+    вывод оказался бы прямой ложью — «клиенты не доезжают» при живых
+    клиентах. Поэтому там просто факты.
     """
     c = cfg.get("cdn") or {}
     if not c.get("enabled"):
@@ -5377,6 +5386,9 @@ def cdn_verdict(cfg):
     # Опираемся на запросы, а не на список адресов: у ресурсов типа TCP
     # провайдер адреса не ведёт вовсе, и там всегда пусто. Сказать «клиентов
     # нет» на основании пустого списка означало бы врать при живом трафике.
+    if not collapsed:
+        return (t("cdn_p_alive", r=reqs) if reqs or seen
+                else t("cdn_p_empty"))
     if not reqs and not seen:
         return t("cdn_v_empty")
     return t("cdn_v_alive", r=reqs)
@@ -7371,7 +7383,7 @@ def cmd_cdn(a):
                 print(f"  {C['gry']}{t('cdn_bad_key')}{C['r']}")
             print()
             return
-        got = cdn_verdict(cfg)
+        got = cdn_verdict(cfg, collapsed=False)
         if got:
             print(f"  {got}\n")
         else:

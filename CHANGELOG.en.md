@@ -13,6 +13,16 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.86
+
+**The "Ask the provider now" button no longer draws conclusions it has no grounds for.**
+
+The verdict was written for one case: the clients are gone and you need to know whose fault it is. Pressing the button in the menu is not that case — yet the same phrase "clients are not reaching the node" was said while the clients were there, which is simply false. The button now reports facts: the link works, the resource is active, so many requests reach the edge. The conclusion stayed where it belongs — in the collapse notification.
+
+**On update** settings are unchanged.
+
+---
+
 ## 3.85
 
 **A node notices that its clients are gone and says straight away whose fault it is.**
