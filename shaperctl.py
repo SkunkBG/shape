@@ -310,6 +310,22 @@ MSG = {
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
         "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b>",
+        "cdn_no_url": "адрес API провайдера CDN не задан",
+        "cdn_no_token": "ключ API провайдера CDN не задан",
+        "cdn_v_off": "🛑 Ресурс у провайдера CDN в состоянии «{s}» — он выключен, а не сломан.",
+        "cdn_v_empty": "🛑 <b>До края CDN не доходит ни один клиент.</b> Это провайдер: у него пусто и по адресам, и по запросам.",
+        "cdn_v_alive": "✅ У края CDN клиенты есть: адресов {n}, запросов за последние минуты {r}. Значит они не доезжают до ноды — смотреть здесь.",
+        "clients_msg": "🟠 <b>{node} — клиенты пропали</b>\n\nСейчас {n}, обычно около {norm}. Нода жива: процессы работают, ошибок нет.",
+        "cdn_state": "Связь с CDN",
+        "h_cdn": "связь с API провайдера CDN: чья беда, когда клиенты пропали",
+        "h_cdn_url": "адрес API провайдера, например https://api.example.com",
+        "h_cdn_token": "ключ из личного кабинета провайдера",
+        "h_cdn_res": "номер ресурса, за которым стоит эта нода",
+        "cdn_ask": "Спрашиваю провайдера…",
+        "cdn_bad_res": "номер ресурса — это число",
+        "cdn_quiet": "Ответа нет: проверьте адрес, ключ и номер ресурса.",
+        "cdn_url": "Адрес API",
+        "cdn_res": "Номер ресурса",
         "relay_msg": "⚠️ <b>{node} — похоже, релей CDN сменил адрес</b>\n\nЗа последние минуты <b>{share}%</b> трафика на портах {ports} пришло без разбора заголовка PROXY. Настоящие адреса клиентов не распознаются, и все они делят <b>один лимит на всех</b>.\n\nБольше всего соединений с <code>{ip}</code> — их {n}.\n\nЕсли это ваш новый релей, добавьте его:\n<code>shaperctl trusted add {ip} --relay</code>",
         "pn_off_head": "⛔ <b>Подписка отключена</b>",
         "pn_off_why": "🤖 Отключил Shape: адресов было {n}, реакции не было {m} мин.",
@@ -776,6 +792,22 @@ MSG = {
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
         "pn_msg_head": "🔎 <b>Looks like a shared subscription</b>",
+        "cdn_no_url": "the CDN provider API address is not set",
+        "cdn_no_token": "the CDN provider API key is not set",
+        "cdn_v_off": "🛑 The resource at the CDN provider is in state {s} — switched off, not broken.",
+        "cdn_v_empty": "🛑 <b>Not a single client reaches the CDN edge.</b> This is the provider: empty both by addresses and by requests.",
+        "cdn_v_alive": "✅ The CDN edge does have clients: {n} addresses, {r} requests in the last minutes. So they are not reaching the node — look here.",
+        "clients_msg": "🟠 <b>{node} — clients are gone</b>\n\nNow {n}, usually about {norm}. The node is alive: processes running, no errors.",
+        "cdn_state": "CDN link",
+        "h_cdn": "link to the CDN provider API: whose fault it is when clients vanish",
+        "h_cdn_url": "provider API address, for example https://api.example.com",
+        "h_cdn_token": "key from the provider dashboard",
+        "h_cdn_res": "id of the resource this node sits behind",
+        "cdn_ask": "Asking the provider…",
+        "cdn_bad_res": "the resource id is a number",
+        "cdn_quiet": "No answer: check the address, the key and the resource id.",
+        "cdn_url": "API address",
+        "cdn_res": "Resource id",
         "relay_msg": "⚠️ <b>{node} — the CDN relay seems to have changed address</b>\n\nOver the last minutes <b>{share}%</b> of the traffic on ports {ports} arrived without the PROXY header being parsed. Real client addresses are not recognised, so they all share <b>one limit between them</b>.\n\nMost connections come from <code>{ip}</code> — {n} of them.\n\nIf this is your new relay, add it:\n<code>shaperctl trusted add {ip} --relay</code>",
         "pn_off_head": "⛔ <b>Subscription disabled</b>",
         "pn_off_why": "🤖 Disabled by Shape: there were {n} addresses and no reaction for {m} min.",
@@ -1742,6 +1774,8 @@ def load_config():
                        if str(x).strip()]
     panel["exempt_tags"] = [str(x).strip() for x in
                             (panel.get("exempt_tags") or []) if str(x).strip()]
+    cdn = dict(CDN_DEFAULT)
+    cdn.update(cfg.get("cdn", {}))
     met = dict(METRICS_DEFAULT)
     met.update(cfg.get("metrics", {}))
     # Порты, на которых заголовку PROXY верят от кого угодно. Отдельно от
@@ -1751,7 +1785,8 @@ def load_config():
     return {"ports": cfg.get("ports", [443]),
             "proxy_ports": proxy_ports,
             "speed_mbps": float(cfg.get("speed_mbps", 0)),
-            "guard": guard, "telegram": tg, "panel": panel, "metrics": met}
+            "guard": guard, "telegram": tg, "panel": panel, "metrics": met,
+            "cdn": cdn}
 
 
 def save_config(cfg):
@@ -2520,6 +2555,7 @@ EVENT_TYPES = {
     "api_action",        # действие через API
     "sharing_found",     # панель показала раздачу подписки
     "relay_changed",     # релей CDN сменил адрес и перестал быть доверенным
+    "clients_gone",      # клиенты пропали, хотя нода жива
     # Ниже — панельные события, которые не были объявлены и потому писались
     # типом "error": log_event заменяет неизвестный тип. Отличить отказ
     # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
@@ -3524,6 +3560,12 @@ def cmd_watch(a):
             # ноль запросов: сверяет свои же счётчики раз в пять минут.
             try:
                 relay_watch(cfg)
+            except Exception:
+                pass
+            # Обвал клиентов при живой ноде. Спрашивает провайдера CDN, если
+            # раздел включён, и кладёт вердикт в то же сообщение.
+            try:
+                clients_watch(cfg)
             except Exception:
                 pass
 
@@ -4623,6 +4665,82 @@ def backup_due(cfg, now=None):
 # сторож и ограничение скорости продолжают работать как ни в чём не бывало.
 # Это главное свойство: нода не должна зависеть от внешней службы.
 
+# ── Связь с API провайдера CDN ─────────────────────────────────────────
+#
+# Нужна ровно для одного: когда клиенты с ноды пропали, сказать вслух, чья
+# это беда. Нода здорова, процессы работают, ошибок нет — и по ней не понять,
+# то ли край CDN лёг, то ли что-то у нас. Разбор такого случая занимает час;
+# провайдер отвечает за две секунды, если его спросить.
+#
+# Раздел необязательный и выключен по умолчанию. Провайдер недоступен, ключ
+# протух, API у него другой — сообщение уйдёт как раньше, просто без строки
+# с вердиктом. Ни шейпер, ни сторож, ни штрафы этого пути не касаются.
+#
+# Пути соответствуют API вида `/v1/resources/{id}` — если у вашего провайдера
+# они другие, раздел просто не включайте.
+CDN_HTTP_TIMEOUT = 8            # на один запрос, секунд
+CDN_RETRY = 900                 # пауза после ошибки, чтобы не долбить
+
+CDN_DEFAULT = {
+    "enabled": False,
+    "url": "",            # база API провайдера, например https://api.example.com
+    "token": "",          # ключ из личного кабинета провайдера
+    "resource_id": "",    # номер ресурса, за которым стоит эта нода
+    "proxy": "",          # http(s)-прокси; socks5 здесь не поддержан
+}
+
+
+class CdnError(Exception):
+    """Ошибка обращения к API провайдера. code — HTTP-код, если он был."""
+
+    def __init__(self, msg, code=0):
+        super().__init__(msg)
+        self.code = code
+
+
+def cdn_scrub(text, c=None):
+    """Убирает ключ из текста ошибки — журнал читают не только свои."""
+    s = str(text)
+    token = str((c or {}).get("token") or "")
+    if len(token) > 8:
+        s = s.replace(token, "***")
+    return s
+
+
+def cdn_call(c, path):
+    """Один GET к API провайдера. Возвращает разобранный ответ словарём."""
+    base = str(c.get("url") or "").strip().rstrip("/")
+    if not base:
+        raise CdnError(t("cdn_no_url"))
+    if not base.startswith(("http://", "https://")):
+        base = "https://" + base
+    token = str(c.get("token") or "").strip()
+    if not token:
+        raise CdnError(t("cdn_no_token"))
+
+    proxy = str(c.get("proxy") or "").strip()
+    if proxy.startswith(("socks5://", "socks5h://")):
+        raise CdnError(t("pn_socks"))
+
+    req = urllib.request.Request(base + path, method="GET")
+    req.add_header("Authorization", "Bearer " + token)
+    req.add_header("Accept", "application/json")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(
+        {"http": proxy, "https": proxy} if proxy else {}))
+    try:
+        with opener.open(req, timeout=CDN_HTTP_TIMEOUT) as r:
+            raw = r.read()
+    except urllib.error.HTTPError as e:
+        raise CdnError(cdn_scrub("HTTP %d" % e.code, c), e.code) from e
+    except Exception as e:
+        raise CdnError(cdn_scrub(e, c)) from e
+    try:
+        got = json.loads(raw.decode() or "{}")
+    except ValueError:
+        raise CdnError(t("pn_bad_json")) from None
+    return got if isinstance(got, dict) else {}
+
+
 PANEL_STATE = os.path.join(VAR_DIR, "panel.state")
 PANEL_RETRY = 900           # пауза после ошибки, чтобы не долбить панель
 PANEL_JOB_DEADLINE = 20.0   # сколько всего ждём готовности задачи, секунд
@@ -5195,6 +5313,104 @@ def panel_report(cfg, now=None, force=False):
                                 time.strftime("%Y-%m-%d", time.localtime(now)))
     return tg_document(cfg, name, body.encode(), head, thread=thread,
                        mime="text/plain; charset=utf-8")
+
+
+# ── Обвал клиентов: чья это беда ───────────────────────────────────────
+#
+# Нода не может сообщить о собственной смерти, но об исчезновении клиентов —
+# вполне: она жива, а людей нет. Норму берём как медиану последнего часа,
+# исключая самые свежие отсчёты: иначе начавшийся обвал сам опускал бы планку,
+# по которой его оценивают. Маленькие ноды не проверяем — там ноль ничего не
+# доказывает.
+ONLINE_EVERY = 300              # как часто берём отсчёт, секунд
+ONLINE_KEEP = 12                # сколько отсчётов держим — час
+ONLINE_SKIP_FRESH = 2           # свежие в норму не берём
+ONLINE_MIN_NORMAL = 10          # ниже этой нормы ноду не судим
+ONLINE_COLLAPSE = 0.2           # доля от нормы, ниже которой это обвал
+ONLINE_ALERT_EVERY = 3600       # не чаще раза в час
+
+
+def cdn_verdict(cfg):
+    """
+    Спросить провайдера, доходят ли до его края клиенты.
+
+    Возвращает готовую строку для сообщения или пустую, если спросить не
+    вышло. Наружу не выпускает ничего: это украшение уведомления, а не
+    условие его отправки.
+    """
+    c = cfg.get("cdn") or {}
+    if not c.get("enabled"):
+        return ""
+    rid = str(c.get("resource_id") or "").strip()
+    if not rid:
+        return ""
+    try:
+        res = (cdn_call(c, "/v1/resources/" + rid) or {}).get("resource") or {}
+        if str(res.get("status") or "") not in ("", "active"):
+            return t("cdn_v_off", s=str(res.get("status")))
+
+        aud = cdn_call(c, "/v1/resources/" + rid + "/audience") or {}
+        seen = len(aud.get("top_ips") or [])
+
+        st = cdn_call(c, "/v1/resources/" + rid + "/stats?hours=1") or {}
+        reqs = 0
+        for p in (st.get("points") or [])[-3:]:
+            try:
+                reqs += int(p.get("requests") or 0)
+            except (TypeError, ValueError):
+                pass
+    except Exception:
+        return ""
+
+    if not seen and not reqs:
+        return t("cdn_v_empty")
+    return t("cdn_v_alive", n=seen, r=reqs)
+
+
+def clients_watch(cfg, now=None):
+    """
+    Не пропали ли клиенты. Возвращает текущее число или -1, если не судим.
+
+    Считаем по адресам, которые видит ядро: это те, кто прямо сейчас гонит
+    трафик через ноду. Ошибок наружу не выпускает.
+    """
+    now = now if now is not None else time.time()
+    state = guard_state()
+    prev = state.get("online") or {}
+    if now - float(prev.get("at") or 0) < ONLINE_EVERY:
+        return -1
+
+    n = len(read_users() or {})
+    hist = [int(x) for x in (prev.get("hist") or []) if str(x).isdigit()]
+    hist = (hist + [n])[-ONLINE_KEEP:]
+    prev.update({"at": now, "hist": hist})
+    state["online"] = prev
+    guard_state_save(state)
+
+    if len(hist) < ONLINE_KEEP:
+        return -1
+    base = sorted(hist[:-ONLINE_SKIP_FRESH])
+    norm = base[len(base) // 2]
+    if norm < ONLINE_MIN_NORMAL:
+        return -1
+
+    if n > norm * ONLINE_COLLAPSE:
+        if prev.pop("alerted", None) is not None:
+            state["online"] = prev
+            guard_state_save(state)
+        return n
+    if now - float(prev.get("alerted") or 0) < ONLINE_ALERT_EVERY:
+        return n
+
+    prev["alerted"] = now
+    state["online"] = prev
+    guard_state_save(state)
+
+    log_event("clients_gone", now=n, normal=norm)
+    tail = cdn_verdict(cfg)
+    tg_send(t("clients_msg", node=node_label(cfg["telegram"]), n=n, norm=norm)
+            + (("\n\n" + tail) if tail else ""), cfg)
+    return n
 
 
 # ── Смена релея CDN ────────────────────────────────────────────────────
@@ -7081,6 +7297,49 @@ def cmd_whitelist(a):
             print(f"  {C['gry']}{t('wl_empty')}{C['r']}")
 
 
+def cmd_cdn(a):
+    """Связь с API провайдера CDN: показать, настроить, спросить."""
+    cfg = load_config()
+    c = cfg["cdn"]
+
+    if a.action == "set":
+        if a.url is not None:
+            u = a.url.strip().rstrip("/")
+            if u and not u.startswith(("http://", "https://")):
+                die(t("pn_bad_url"))
+            c["url"] = u
+        if a.token is not None:
+            c["token"] = a.token.strip()
+        if a.resource_id is not None:
+            r = str(a.resource_id).strip()
+            if r and not r.isdigit():
+                die(t("cdn_bad_res"))
+            c["resource_id"] = r
+        if a.proxy is not None:
+            c["proxy"] = a.proxy.strip()
+        if a.enable:
+            c["enabled"] = True
+        if a.disable:
+            c["enabled"] = False
+        cfg["cdn"] = c
+        save_config(cfg)
+        log_event("config_changed", section="cdn", source="cli")
+
+    if a.action == "test":
+        print(f"\n  {C['gry']}{t('cdn_ask')}{C['r']}")
+        got = cdn_verdict(cfg)
+        print(f"  {got}\n" if got else
+              f"  {C['yel']}{t('cdn_quiet')}{C['r']}\n")
+        return
+
+    print()
+    print(f"  {t('cdn_state')} : " + (f"{C['grn']}{t('guard_on')}{C['r']}"
+          if c["enabled"] else f"{C['gry']}{t('guard_off')}{C['r']}"))
+    print(f"  {t('cdn_url')}   : {c['url'] or '—'}")
+    print(f"  {t('cdn_res')}   : {c['resource_id'] or '—'}")
+    print()
+
+
 def cmd_trusted(a):
     require_engine()
 
@@ -7819,6 +8078,18 @@ def build_parser():
     w.add_argument("action", choices=["add", "del", "sync", "list"])
     w.add_argument("ip", nargs="?", default="")
     w.set_defaults(func=cmd_whitelist)
+
+    cd = sub.add_parser("cdn", help=t("h_cdn"))
+    cd.add_argument("action", nargs="?", choices=["show", "set", "test"],
+                    default="show")
+    cd.add_argument("--url", default=None, help=t("h_cdn_url"))
+    cd.add_argument("--token", default=None, help=t("h_cdn_token"))
+    cd.add_argument("--resource-id", dest="resource_id", default=None,
+                    help=t("h_cdn_res"))
+    cd.add_argument("--proxy", default=None, help=t("h_met_proxy"))
+    cd.add_argument("--enable", action="store_true")
+    cd.add_argument("--disable", action="store_true")
+    cd.set_defaults(func=cmd_cdn)
 
     tr = sub.add_parser("trusted", help=t("h_trusted"))
     tr.add_argument("action", choices=["add", "del", "sync", "list"])

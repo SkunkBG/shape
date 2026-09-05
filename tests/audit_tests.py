@@ -1990,5 +1990,134 @@ check("порог доли отделяет здоровую ноду от сл�
       0.9 <= S.RELAY_BAD_SHARE < 1.0, S.RELAY_BAD_SHARE)
 check("событие объявлено", "relay_changed" in S.EVENT_TYPES)
 
+
+# ── Обвал клиентов и вердикт провайдера CDN ────────────────────────────
+# Нода не может сообщить о собственной смерти, но об исчезновении клиентов —
+# может: она жива, а людей нет. И сразу говорит, чья это беда.
+print("\n\033[1mОбвал клиентов и вердикт CDN\033[0m")
+
+import http.server, threading, urllib.parse as _up
+
+CDN = {"status": "active", "top_ips": [], "requests": 0, "code": 0, "hits": 0}
+
+
+class _CdnH(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        CDN["hits"] += 1
+        if self.headers.get("Authorization") != "Bearer test_key_123":
+            return self._send(401, {"error": "нет ключа"})
+        if CDN["code"]:
+            return self._send(CDN["code"], {"error": "провайдер молчит"})
+        if self.path.endswith("/audience"):
+            return self._send(200, {"top_ips": CDN["top_ips"],
+                                    "top_locations": [], "top_upstreams": []})
+        if "/stats" in self.path:
+            return self._send(200, {"bucket_sec": 300, "points": [
+                {"ts": "x", "requests": str(CDN["requests"]),
+                 "bytes_out": "0", "bytes_in": "0"}], "totals": {}})
+        return self._send(200, {"resource": {"id": 7, "status": CDN["status"]},
+                                "upstreams": [], "certs": []})
+
+    def _send(self, code, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+
+_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CdnH)
+threading.Thread(target=_srv.serve_forever, daemon=True).start()
+_CDN_URL = "http://127.0.0.1:%d" % _srv.server_address[1]
+
+
+def _cfg_cdn(**over):
+    c = dict(S.CDN_DEFAULT)
+    c.update({"enabled": True, "url": _CDN_URL, "token": "test_key_123",
+              "resource_id": "7"})
+    c.update(over)
+    return {"cdn": c, "telegram": dict(S.TG_DEFAULT, node_name="Нода")}
+
+
+check("выключенный раздел никого не спрашивает",
+      S.cdn_verdict(_cfg_cdn(enabled=False)) == "" and CDN["hits"] == 0,
+      CDN["hits"])
+
+CDN.update({"top_ips": [], "requests": 0})
+v = S.cdn_verdict(_cfg_cdn())
+check("пусто у края — вердикт «это провайдер»", "провайдер" in v or "provider" in v, v)
+
+CDN.update({"top_ips": [{"ip": "203.0.113.7"}], "requests": 12})
+v = S.cdn_verdict(_cfg_cdn())
+check("клиенты у края есть — вердикт «смотреть здесь»",
+      "12" in v and ("смотреть" in v or "look" in v), v)
+
+CDN.update({"status": "disabled"})
+v = S.cdn_verdict(_cfg_cdn())
+check("выключенный ресурс назван отдельно", "disabled" in v, v)
+CDN.update({"status": "active"})
+
+CDN.update({"code": 500})
+check("отказ провайдера вердикта не даёт и не роняет", S.cdn_verdict(_cfg_cdn()) == "")
+CDN.update({"code": 0})
+check("неверный ключ вердикта не даёт",
+      S.cdn_verdict(_cfg_cdn(token="wrong_key_456")) == "")
+check("без адреса и номера ресурса не ходим",
+      S.cdn_verdict(_cfg_cdn(url="")) == ""
+      and S.cdn_verdict(_cfg_cdn(resource_id="")) == "")
+check("ключ не утекает в текст ошибки",
+      "ключ" not in S.cdn_scrub("сбой ключ тут", {"token": "ключ12345"})
+      or S.cdn_scrub("сбой ключ12345", {"token": "ключ12345"}) == "сбой ***",
+      S.cdn_scrub("сбой ключ12345", {"token": "ключ12345"}))
+
+# Обвал клиентов.
+_gs2 = {}
+S.guard_state = lambda: dict(_gs2)
+S.guard_state_save = lambda st: _gs2.update(st)
+_sent2 = []
+S.tg_send = lambda text, cfg=None, **kw: (_sent2.append(text), (True, ""))[1]
+_users = {"10.0.0.%d" % i: {} for i in range(40)}
+S.read_users = lambda: dict(_users)
+CDN.update({"top_ips": [], "requests": 0})
+
+now = 10000.0
+for i in range(S.ONLINE_KEEP):
+    S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
+check("пока клиенты на месте — молчим", _sent2 == [], _sent2)
+
+_users = {"10.0.0.1": {}}
+S.read_users = lambda: dict(_users)
+n = S.clients_watch(_cfg_cdn(), now=now + S.ONLINE_KEEP * S.ONLINE_EVERY)
+check("обвал замечен", n == 1, n)
+check("сообщение ушло", len(_sent2) == 1, len(_sent2))
+check("в нём есть и текущее число, и норма",
+      _sent2 and "1" in _sent2[0] and "40" in _sent2[0], _sent2[0][:160] if _sent2 else "")
+check("и вердикт провайдера приложен",
+      _sent2 and ("провайдер" in _sent2[0] or "provider" in _sent2[0]),
+      _sent2[0][:200] if _sent2 else "")
+
+_was2 = len(_sent2)
+S.clients_watch(_cfg_cdn(), now=now + (S.ONLINE_KEEP + 1) * S.ONLINE_EVERY)
+check("второй раз подряд не пишем", len(_sent2) == _was2, len(_sent2))
+
+# Маленькая нода: ноль там ничего не доказывает.
+_gs2.clear(); _sent2.clear()
+_users = {"10.0.0.1": {}, "10.0.0.2": {}}
+S.read_users = lambda: dict(_users)
+now = 50000.0
+for i in range(S.ONLINE_KEEP + 2):
+    S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
+check("маленькую ноду не судим", _sent2 == [], _sent2)
+
+check("порог обвала — заметная доля нормы", 0 < S.ONLINE_COLLAPSE <= 0.5,
+      S.ONLINE_COLLAPSE)
+check("свежие отсчёты в норму не берём", S.ONLINE_SKIP_FRESH >= 1)
+check("событие объявлено", "clients_gone" in S.EVENT_TYPES)
+_srv.shutdown()
+
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

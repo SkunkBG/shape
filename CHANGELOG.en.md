@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.85
+
+**A node notices that its clients are gone and says straight away whose fault it is.**
+
+From outside, a CDN failure looks exactly like any breakage on the node: the people are gone while the node is alive — processes running, no errors, an empty journal. Telling one from the other without a hint takes an hour, and that hour had to be spent by hand.
+
+The node now watches its own client count. The normal level is the median of the last hour, with the freshest samples left out: otherwise a collapse in progress would lower the very bar it is judged against. Fewer than a fifth of the normal number left, and a message goes out. Nodes that normally hold fewer than ten people are not checked: zero proves nothing there.
+
+**The message also carries a verdict from the CDN provider.** The node asks its API whether the resource is active, whether clients reach the edge, and whether there were requests in the last minutes. Telegram then says either "not a single client reaches the edge — this is the provider" or "the edge does have clients, so they are not reaching the node, look here".
+
+The `cdn` section is optional and off by default. Set it up from the menu — item **10 "CDN provider"** on the main screen — or with `shaperctl cdn set`; check it with `shaperctl cdn test` or the "Ask the provider now" button. If the provider is unreachable, the key expired, or the paths in its API differ, the message goes out as before, just without the verdict line. Neither the shaper, nor the watchdog, nor the penalties touch this path: the node stays self-sufficient, and that property is not weakened anywhere here.
+
+The paths follow an API shaped like `/v1/resources/{id}`. Another provider's may differ — then simply leave the section off; the node notices the collapse without it.
+
+**On update** settings are unchanged and nothing needs turning on.
+
+---
+
 ## 3.84
 
 **A node now notices on its own that the CDN relay changed address.**

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.84-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.85-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.84
+# Shape v3.85
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -864,6 +864,42 @@ address, and that decision belongs to a person. A repeat about the same address
 comes no more than once every six hours. The check runs every five minutes,
 costs zero outside requests and does not apply to nodes without a CDN — it only
 switches on where PROXY ports are configured.
+
+### Clients are gone: whose fault is it
+
+A node cannot report its own death, but it can report that its clients have
+vanished: it is alive and the people are not there. That is exactly what a CDN
+failure looks like from outside, and working it out without a hint takes an
+hour.
+
+The normal level is the median of the last hour with the freshest samples
+excluded: otherwise a collapse in progress would lower the very bar it is
+judged against. If fewer than a fifth of the normal number remain, a message
+goes out. Nodes that normally hold fewer than ten people are not checked,
+because zero proves nothing there.
+
+The message can carry a **verdict from the CDN provider**. The node asks its
+API whether the resource is active, whether clients reach the edge and whether
+there were requests in the last minutes — and says either "not a single client
+reaches the CDN edge, this is the provider" or "the edge does have clients, so
+they are not reaching the node, look here". An hour of investigation collapses
+into one line.
+
+Set up from the menu — item **10 "CDN provider"** on the main screen — or with
+commands:
+
+```bash
+shaperctl cdn set --url https://api.example.com --token KEY --resource-id 7 --enable
+shaperctl cdn test
+```
+
+The section is optional and off by default. If the provider is unreachable, the
+key expired or the paths in its API differ, the message goes out as before,
+just without the verdict line. Neither the shaper, nor the watchdog, nor the
+penalties touch this path: the node stays self-sufficient.
+
+The paths follow an API shaped like `/v1/resources/{id}`. If your provider's
+differ, simply leave the section off — the node notices the collapse without it.
 
 ### Why a list, not a switch
 

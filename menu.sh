@@ -980,6 +980,79 @@ print("|".join([
 PY
 }
 
+cdn_enabled() {
+    python3 -c "
+import json,sys
+try: d = json.load(open('$ETC_DIR/config.json')).get('cdn', {})
+except Exception: d = {}
+sys.exit(0 if d.get('enabled') else 1)" 2>/dev/null
+}
+
+# Читаем одним заходом, как и остальные экраны: дёргать shaperctl по разу на
+# каждое поле — это лишние запуски питона на отрисовку.
+cdn_read() {
+    python3 - <<PY 2>/dev/null || echo "0|-|-|-"
+import json
+try:
+    d = json.load(open("$ETC_DIR/config.json")).get("cdn", {})
+except Exception:
+    d = {}
+tok = d.get("token") or ""
+print("|".join([
+    "1" if d.get("enabled") else "0",
+    d.get("url") or "-",
+    str(d.get("resource_id") or "-"),
+    (tok[:6] + "\u2026") if tok else "-",
+]))
+PY
+}
+
+screen_cdn() {
+    local on url res tok v
+    while :; do
+        IFS='|' read -r on url res tok <<< "$(cdn_read)"
+        title "${T[cdn_title]}"
+        echo -e "  ${D}${T[cdn_h1]}${N}"
+        echo -e "  ${D}${T[cdn_h2]}${N}"
+        echo
+        if [[ "$on" == "1" ]]; then
+            echo -e "  ${T[cdn_l_state]}: ${G}${T[g_on]}${N}"
+        else
+            echo -e "  ${T[cdn_l_state]}: ${D}${T[g_off]}${N}"
+        fi
+        echo -e "  ${T[cdn_l_url]}: ${B}${url}${N}"
+        echo -e "  ${T[cdn_l_res]}: ${B}${res}${N}"
+        echo -e "  ${T[cdn_l_token]}: ${D}${tok}${N}"
+        echo
+        if [[ "$on" == "1" ]]; then
+            echo -e "  [1] ${T[tg_off]}"
+        else
+            echo -e "  [1] ${T[tg_on]}"
+        fi
+        echo "  [2] ${T[cdn_set_url]}"
+        echo "  [3] ${T[cdn_set_token]}"
+        echo "  [4] ${T[cdn_set_res]}"
+        echo "  [5] ${T[cdn_test]}"
+        echo "  [0] ← ${T[m0]}"
+        echo
+        case "$(ask "${T[choice]}")" in
+            1) if [[ "$on" == "1" ]]; then "$CTL" cdn set --disable
+               else "$CTL" cdn set --enable; fi >/dev/null ;;
+            2) echo -e "  ${D}${T[cdn_hint_url]}${N}"
+               v="$(ask "${T[cdn_set_url]}")"
+               [[ -n "$v" ]] && { "$CTL" cdn set --url "$v" >/dev/null || pause; } ;;
+            3) echo -e "  ${D}${T[cdn_hint_token]}${N}"
+               v="$(ask "${T[cdn_set_token]}")"
+               [[ -n "$v" ]] && "$CTL" cdn set --token "$v" >/dev/null ;;
+            4) echo -e "  ${D}${T[cdn_hint_res]}${N}"
+               v="$(ask "${T[cdn_set_res]}" "$res")"
+               [[ -n "$v" ]] && { "$CTL" cdn set --resource-id "$v" >/dev/null || pause; } ;;
+            5) "$CTL" cdn test; pause ;;
+            0|"") return ;;
+        esac
+    done
+}
+
 screen_panel() {
     local on url uuid tok texp every win thr act act_txt cool exempt mbps lmin
     local rep rep_at names v dis etags pdev
@@ -2079,6 +2152,11 @@ while :; do
     else
         echo -e "  [9] 🛰  ${T[pn_menu]} ${D}${T[pn_menu_d]}${N}"
     fi
+    if cdn_enabled; then
+        echo -e " [10] 🌐 ${T[cdn_menu]} ${G}${T[g_on]}${N}"
+    else
+        echo -e " [10] 🌐 ${T[cdn_menu]} ${D}${T[cdn_menu_d]}${N}"
+    fi
     echo -e "  [0] 🚪 ${T[m0]}"
     hr
     # Ссылка живёт только здесь, в подвале главного экрана: на рабочих
@@ -2095,6 +2173,7 @@ while :; do
         7) screen_whitelist ;;
         8) screen_service ;;
         9) screen_panel ;;
+        10) screen_cdn ;;
         0|"") clear; exit 0 ;;
     esac
 done
