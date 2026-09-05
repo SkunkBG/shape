@@ -172,6 +172,24 @@ setup_fq() {
 # и чужой трафик пойдёт в учёт. Размеры ключа и значения сверяются ниже, но
 # перестановку полей той же длины проверка не поймает. Меняете раскладку —
 # уберите вызов pp_restore на это одно обновление.
+# Куда сбрасывается карта, когда выгрузка и загрузка — РАЗНЫЕ процессы.
+#
+# `engine.sh reload` спасает привязки сам: там pp_save и pp_restore живут в
+# одном вызове. А `systemctl restart shaper` — это ExecStop (`unload`) и
+# ExecStart (`load`) по отдельности, и к моменту загрузки карты уже нет.
+# Через неё же идёт обновление: install.sh заканчивается restart.
+# Замерено 05.09 на живом обновлении: доля трафика без привязки 10,8% → 22,8%.
+#
+# Файл в /run намеренно: он переживает перезапуск службы и умирает при
+# перезагрузке машины — а после перезагрузки восстанавливать нечего, там и
+# соединений уже нет.
+PP_SPILL_DIR="/run/shaper"
+PP_SPILL="$PP_SPILL_DIR/pp_conn.json"
+# Дамп старше этого не берём: соединений давно нет, а порт релея уже мог
+# достаться другому клиенту — вернув такую привязку, мы приписали бы ему
+# чужой трафик. Ровно та ошибка, что чинилась в fins, только другой дверью.
+PP_SPILL_MAX_AGE=120
+
 PP_PIN=""
 PP_DUMP=""
 
@@ -193,8 +211,27 @@ pp_save() {
     return 0
 }
 
+pp_adopt_spill() {
+    # Подобрать то, что оставил предыдущий процесс при выгрузке.
+    [[ -s "$PP_SPILL" && -s "$PP_SPILL.meta" ]] || return 0
+    local age now mtime
+    now="$(date +%s 2>/dev/null || echo 0)"
+    mtime="$(stat -c %Y "$PP_SPILL" 2>/dev/null || echo 0)"
+    age=$(( now - mtime ))
+    if (( age < 0 || age > PP_SPILL_MAX_AGE )); then
+        warn "привязки PROXY из прошлого запуска устарели (${age} с) — не восстанавливаю"
+        rm -f "$PP_SPILL" "$PP_SPILL.meta" 2>/dev/null || true
+        return 0
+    fi
+    PP_DUMP="$PP_SPILL"
+    return 0
+}
+
 pp_restore() {
-    [[ -n "$PP_DUMP" && -s "$PP_DUMP" ]] || { pp_forget; return 0; }
+    # В памяти пусто — значит выгрузка была отдельным процессом
+    # (systemctl restart, обновление). Берём то, что она оставила.
+    [[ -n "$PP_DUMP" && -s "$PP_DUMP" ]] || pp_adopt_spill
+    [[ -n "$PP_DUMP" && -s "$PP_DUMP" ]] || { ok "привязок PROXY не нашлось"; pp_forget; return 0; }
     local batch n
     batch="$(mktemp /run/shaper-pp.XXXXXX 2>/dev/null)" || { pp_forget; return 0; }
     chmod 600 "$batch" 2>/dev/null || true
@@ -216,6 +253,7 @@ pp_restore() {
 
 pp_forget() {
     [[ -n "$PP_DUMP" ]] && rm -f "$PP_DUMP" "$PP_DUMP.meta" 2>/dev/null || true
+    rm -f "$PP_SPILL" "$PP_SPILL.meta" 2>/dev/null || true
     PP_DUMP=""
     return 0
 }
@@ -308,7 +346,23 @@ unload_quiet() {
         tc filter del dev "$ifc" ingress 2>/dev/null || true
         tc qdisc  del dev "$ifc" clsact  2>/dev/null || true
     done
+    pp_spill
     rm -rf "$PIN_PROGS" "$PIN_MAPS" 2>/dev/null || true
+}
+
+pp_spill() {
+    # Сохранить привязки для следующего процесса. Осечка ничего не ломает:
+    # получится ровно прежнее поведение, поэтому все ветки возвращают 0.
+    local pin="$PIN_MAPS/pp_conn_map"
+    [[ -e "$pin" ]] || return 0
+    mkdir -p "$PP_SPILL_DIR" 2>/dev/null || return 0
+    chmod 700 "$PP_SPILL_DIR" 2>/dev/null || true
+    # В дампе адреса клиентов, поэтому файл создаётся сразу закрытым.
+    ( umask 077
+      bpftool map dump pinned "$pin" -j >"$PP_SPILL" 2>/dev/null &&
+      bpftool map show pinned "$pin" -j >"$PP_SPILL.meta" 2>/dev/null ) ||
+        { rm -f "$PP_SPILL" "$PP_SPILL.meta" 2>/dev/null; return 0; }
+    return 0
 }
 
 unload() {

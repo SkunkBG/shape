@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.81
+
+**Clients behind a CDN no longer run unlimited after an update.**
+
+The PROXY header arrives once, in the first bytes of a connection, and never again. From it the shaper learns the real address of a client behind the CDN and keeps the binding in kernel memory. An update restarts the service, and stopping and starting are two separate processes: the bindings map was destroyed before anything could save it. Live connections through the CDN then ran **with no limit at all**, for hours, until the client happened to reconnect.
+
+Worse than the failure was how quiet it was: an update like that left no line about bindings in the journal.
+
+Now the map is spilled to `/run/shaper/pp_conn.json` on stop and restored on start. `/run` is deliberate: it survives a service restart and disappears when the machine reboots — and after a reboot there is nothing left to restore anyway. A dump older than two minutes is refused: over a long gap the relay port goes to another client, and a restored binding would bill them for someone else's traffic.
+
+Verified on a node behind a CDN with a real service restart: 759 bindings before it, 755 restored. On the same path before the fix, zero survived.
+
+There is now always a line about bindings in the journal — "restored: N" or "none found". The silence was more dangerous than the loss itself: there was no way to tell working persistence from broken.
+
+**On update** settings and state files are untouched. This very update already keeps the bindings: the new `engine.sh` is in place before the service restarts.
+
+---
+
 ## 3.80
 
 **Watchman arrived — a silence watchdog for the node fleet.**
