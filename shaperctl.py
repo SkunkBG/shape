@@ -318,7 +318,7 @@ MSG = {
         "clients_msg": "🟠 <b>{node} — клиенты пропали</b>\n\nСейчас {n}, обычно около {norm}. Нода жива: процессы работают, ошибок нет.",
         "cdn_state": "Связь с CDN",
         "h_cdn": "связь с API провайдера CDN: чья беда, когда клиенты пропали",
-        "h_cdn_url": "адрес API провайдера, например https://api.example.com",
+        "h_cdn_url": "адрес API провайдера, например https://api.example.com/v1",
         "h_cdn_token": "ключ из личного кабинета провайдера",
         "h_cdn_res": "номер ресурса, за которым стоит эта нода",
         "cdn_ask": "Спрашиваю провайдера…",
@@ -800,7 +800,7 @@ MSG = {
         "clients_msg": "🟠 <b>{node} — clients are gone</b>\n\nNow {n}, usually about {norm}. The node is alive: processes running, no errors.",
         "cdn_state": "CDN link",
         "h_cdn": "link to the CDN provider API: whose fault it is when clients vanish",
-        "h_cdn_url": "provider API address, for example https://api.example.com",
+        "h_cdn_url": "provider API address, for example https://api.example.com/v1",
         "h_cdn_token": "key from the provider dashboard",
         "h_cdn_res": "id of the resource this node sits behind",
         "cdn_ask": "Asking the provider…",
@@ -4714,6 +4714,12 @@ def cdn_call(c, path):
         raise CdnError(t("cdn_no_url"))
     if not base.startswith(("http://", "https://")):
         base = "https://" + base
+    # Провайдер в своей документации пишет базу вместе с версией — вида
+    # https://api.example.com/v1. Пути мы строим со своим /v1, и склеилось бы
+    # /v1/v1. Понимаем обе формы: лишний хвост убираем, а человека не
+    # заставляем помнить, какую именно из них мы ждём.
+    if base.endswith("/v1"):
+        base = base[:-3]
     token = str(c.get("token") or "").strip()
     if not token:
         raise CdnError(t("cdn_no_token"))

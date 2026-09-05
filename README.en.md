@@ -889,7 +889,7 @@ Set up from the menu — item **10 "CDN provider"** on the main screen — or wi
 commands:
 
 ```bash
-shaperctl cdn set --url https://api.example.com --token KEY --resource-id 7 --enable
+shaperctl cdn set --url https://api.example.com/v1 --token KEY --resource-id 7 --enable
 shaperctl cdn test
 ```
 
@@ -897,6 +897,9 @@ The section is optional and off by default. If the provider is unreachable, the
 key expired or the paths in its API differ, the message goes out as before,
 just without the verdict line. Neither the shaper, nor the watchdog, nor the
 penalties touch this path: the node stays self-sufficient.
+
+The address may be entered with or without the trailing `/v1` — both forms are
+understood, and a trailing slash makes no difference.
 
 The paths follow an API shaped like `/v1/resources/{id}`. If your provider's
 differ, simply leave the section off — the node notices the collapse without it.

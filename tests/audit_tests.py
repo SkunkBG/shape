@@ -2066,6 +2066,17 @@ check("отказ провайдера вердикта не даёт и не р
 CDN.update({"code": 0})
 check("неверный ключ вердикта не даёт",
       S.cdn_verdict(_cfg_cdn(token="wrong_key_456")) == "")
+# Провайдер в документации пишет базу вместе с версией. Обе формы должны
+# работать: иначе получилось бы /v1/v1/resources и вечное «ответа нет».
+CDN.update({"top_ips": [{"ip": "203.0.113.7"}], "requests": 5})
+check("база с хвостом /v1 понимается так же",
+      "5" in S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1")),
+      S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1")))
+check("и с косой чертой на конце тоже",
+      "5" in S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1/")),
+      S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1/")))
+CDN.update({"top_ips": [], "requests": 0})
+
 check("без адреса и номера ресурса не ходим",
       S.cdn_verdict(_cfg_cdn(url="")) == ""
       and S.cdn_verdict(_cfg_cdn(resource_id="")) == "")
