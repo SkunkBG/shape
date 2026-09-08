@@ -30,7 +30,7 @@
  * Развёртка IPIP и разбор PROXY protocol — вклад Gy9vin (github.com/Gy9vin),
  * здесь они переработаны: порядок байт и список доверенных источников.
  *
- * SPDX-License-Identifier: GPL-2.0
+ * SPDX-License-Identifier: GPL-3.0
  */
 
 #include <linux/bpf.h>

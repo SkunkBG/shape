@@ -7,7 +7,9 @@ shaperctl — управление eBPF-шейпером через pinned BPF-�
 """
 
 import argparse
+import array
 import base64
+import bisect
 import calendar
 import contextlib
 import fcntl
@@ -334,6 +336,27 @@ MSG = {
         "cdn_q_stop": "🛑 <b>{node} — обслуживание у провайдера CDN приостановлено</b>\n\nКлиенты потеряют доступ, как только край перестанет их принимать.",
         "cdn_q_money": "⚠️ <b>{node} — заканчивается баланс у провайдера CDN</b>\n\nОсталось {b}. Когда деньги кончатся, обслуживание приостановят и клиенты потеряют доступ.",
         "cdn_usage_t": "За сутки через CDN",
+        "cen_no_table": "таблица сетей не читается: {p} ({e})",
+        "cen_bad_row": "таблица сетей: строка {n} не того вида",
+        "cen_empty": "таблица сетей пуста: {p}",
+        "cen_msg": "{node}: сеть {net} перестала доходить\nсейчас {n}, обычно {norm}",
+        "cen_tail_head": "Просели сети:",
+        "cen_tail_row": "  {net}: {n} вместо {norm}",
+        "cen_title": "Разбивка клиентов по сетям",
+        "cen_state_t": "Состояние",
+        "cen_table_t": "Таблица сетей",
+        "cen_min_t": "Порог сети",
+        "cen_on": "включена",
+        "cen_off": "выключена",
+        "cen_list_t": "Сейчас на ноде",
+        "cen_none": "ни одного адреса не видно",
+        "cen_unknown_t": "не распознано",
+        "cen_total_t": "всего адресов",
+        "cen_rows_t": "строк в таблице",
+        "cen_hint_off": "раздел выключен: censor set --enable",
+        "h_censor": "разбивка клиентов по сетям",
+        "h_cen_table": "путь к таблице «диапазон адресов → номер сети»",
+        "h_cen_min": "не судить сети, где обычно меньше стольких адресов",
         "cdn_left_t": "Остаток пакета",
         "cdn_balance_t": "Баланс",
         "h_cdn_low": "предупредить, когда в пакете останется меньше стольких ГБ; 0 — не предупреждать",
@@ -833,6 +856,27 @@ MSG = {
         "cdn_q_stop": "🛑 <b>{node} — service at the CDN provider is suspended</b>\n\nClients will lose access as soon as the edge stops taking them.",
         "cdn_q_money": "⚠️ <b>{node} — the balance at the CDN provider is running out</b>\n\n{b} left. When the money runs out, service is suspended and clients lose access.",
         "cdn_usage_t": "Through the CDN in a day",
+        "cen_no_table": "network table unreadable: {p} ({e})",
+        "cen_bad_row": "network table: row {n} is malformed",
+        "cen_empty": "network table is empty: {p}",
+        "cen_msg": "{node}: network {net} stopped reaching us\nnow {n}, usually {norm}",
+        "cen_tail_head": "Networks down:",
+        "cen_tail_row": "  {net}: {n} instead of {norm}",
+        "cen_title": "Clients by network",
+        "cen_state_t": "State",
+        "cen_table_t": "Network table",
+        "cen_min_t": "Network floor",
+        "cen_on": "on",
+        "cen_off": "off",
+        "cen_list_t": "On the node now",
+        "cen_none": "no addresses visible",
+        "cen_unknown_t": "unresolved",
+        "cen_total_t": "addresses total",
+        "cen_rows_t": "rows in table",
+        "cen_hint_off": "section is off: censor set --enable",
+        "h_censor": "clients by network",
+        "h_cen_table": "path to the address-range to network-number table",
+        "h_cen_min": "do not judge networks that normally hold fewer addresses",
         "cdn_left_t": "Package left",
         "cdn_balance_t": "Balance",
         "h_cdn_low": "warn when fewer than this many GB are left; 0 — never warn",
@@ -1810,6 +1854,8 @@ def load_config():
                             (panel.get("exempt_tags") or []) if str(x).strip()]
     cdn = dict(CDN_DEFAULT)
     cdn.update(cfg.get("cdn", {}))
+    cen = dict(CENSOR_DEFAULT)
+    cen.update(cfg.get("censor", {}))
     met = dict(METRICS_DEFAULT)
     met.update(cfg.get("metrics", {}))
     # Порты, на которых заголовку PROXY верят от кого угодно. Отдельно от
@@ -1820,7 +1866,7 @@ def load_config():
             "proxy_ports": proxy_ports,
             "speed_mbps": float(cfg.get("speed_mbps", 0)),
             "guard": guard, "telegram": tg, "panel": panel, "metrics": met,
-            "cdn": cdn}
+            "cdn": cdn, "censor": cen}
 
 
 def save_config(cfg):
@@ -2591,6 +2637,8 @@ EVENT_TYPES = {
     "relay_changed",     # релей CDN сменил адрес и перестал быть доверенным
     "clients_gone",      # клиенты пропали, хотя нода жива
     "cdn_quota_low",     # у провайдера CDN кончается пакет
+    "censor_drop",       # отдельная сеть перестала доходить до ноды
+    "censor_failed",     # таблица сетей недоступна, разбивку не считаем
     # Ниже — панельные события, которые не были объявлены и потому писались
     # типом "error": log_event заменяет неизвестный тип. Отличить отказ
     # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
@@ -3606,6 +3654,12 @@ def cmd_watch(a):
             # Остаток пакета у провайдера CDN. Заглядываем раз в шесть часов.
             try:
                 cdn_quota_watch(cfg)
+            except Exception:
+                pass
+            # Какие сети перестали доходить. Раздел необязательный: выключен —
+            # выходит первой строкой.
+            try:
+                censor_watch(cfg)
             except Exception:
                 pass
 
@@ -4721,6 +4775,15 @@ def backup_due(cfg, now=None):
 CDN_HTTP_TIMEOUT = 8            # на один запрос, секунд
 CDN_RETRY = 900                 # пауза после ошибки, чтобы не долбить
 
+CENSOR_DEFAULT = {
+    "enabled": False,
+    # Таблица «диапазон адресов → номер сети». Лежит на диске, наружу за ней
+    # нода не ходит: раздел обязан работать на узле без выхода в интернет.
+    "table": "/etc/shaper/ip2asn-v4.tsv",
+    "min_clients": 5,     # сети мельче не судим
+}
+
+
 CDN_DEFAULT = {
     "enabled": False,
     "url": "",            # база API провайдера, например https://api.example.com
@@ -5560,10 +5623,315 @@ def clients_watch(cfg, now=None):
     guard_state_save(state)
 
     log_event("clients_gone", now=n, normal=norm)
-    tail = cdn_verdict(cfg)
-    tg_send(t("clients_msg", node=node_label(cfg["telegram"]), n=n, norm=norm)
-            + (("\n\n" + tail) if tail else ""), cfg)
+    # Обвал у всех сразу и обвал у двух операторов дают одно и то же итоговое
+    # число, а означают разное. Разбивка по сетям идёт до вердикта про CDN:
+    # она говорит, что случилось, вердикт — чья это беда.
+    try:
+        nets = censor_tail(cfg)
+    except Exception:
+        nets = ""
+    parts = [t("clients_msg", node=node_label(cfg["telegram"]), n=n, norm=norm)]
+    parts += [x for x in (nets, cdn_verdict(cfg)) if x]
+    tg_send("\n\n".join(parts), cfg)
     return n
+
+
+# ── Какие сети перестали доходить ──────────────────────────────────────
+#
+# Обвал клиентов ловит clients_watch, но он видит только итог. Блокировка у
+# одного оператора итога почти не двигает: если на оператора приходится
+# седьмая часть людей, их исчезновение не дотянет до порога обвала, и нода
+# промолчит — хотя для целой сети она уже недоступна.
+#
+# Поэтому здесь то же самое считается по сетям. Адрес клиента переводится в
+# номер автономной системы по таблице на диске: наружу нода не ходит, ключей
+# не нужно. Норма у каждой сети своя — медиана её собственного часа. Сравнивать
+# сети между собой бессмысленно, у них разный размер.
+#
+# Чего этот признак не может: одна нода не отличает «наш адрес заблокирован
+# для оператора» от «у оператора авария» и от «заблокирован весь диапазон
+# провайдера». Различает это только сравнение между нодами, и живёт оно не
+# здесь. Поэтому сообщение говорит, что сеть пропала, и не говорит, почему.
+CENSOR_EVERY = 300              # как часто берём отсчёт, секунд
+CENSOR_KEEP = 12                # сколько отсчётов держим — час
+CENSOR_SKIP_FRESH = 2           # свежие в норму не берём
+CENSOR_MIN_NORMAL = 5           # сети мельче не судим: ноль там ничего не значит
+CENSOR_COLLAPSE = 0.5           # доля от нормы, ниже которой это падение
+CENSOR_ALERT_EVERY = 3600       # не чаще раза в час на сеть
+CENSOR_TOP = 8                  # сколько сетей показывать в списке
+# Клиент считается присутствующим, если ядро видело его пакет недавно. Карты
+# состояний — LRU: запись живёт до вытеснения, а не до ухода клиента. Без
+# этого отсечения отключившийся числился бы онлайн часами и скрывал падение,
+# ради обнаружения которого всё и написано.
+CENSOR_FRESH_NS = 300 * 10 ** 9
+
+# Разобранная таблица: перечитываем только когда файл на диске изменился.
+_ASN_TABLE = {"path": "", "stamp": None, "starts": None, "ends": None,
+              "nums": None, "orgs": None}
+
+
+class CensorError(Exception):
+    """Таблица сетей недоступна или непригодна."""
+
+
+def asn_open(path):
+    """Открывает таблицу, распаковывая gzip по расширению."""
+    if path.endswith(".gz"):
+        import gzip
+        return io.TextIOWrapper(gzip.open(path, "rb"), encoding="utf-8",
+                                errors="replace")
+    return open(path, encoding="utf-8", errors="replace")
+
+
+def asn_load(path):
+    """
+    Таблица «диапазон адресов → номер сети», разобранная в три массива чисел.
+
+    Почему массивы, а не список кортежей: в таблице около полумиллиона строк,
+    и кортежи заняли бы сотни мегабайт на ноде с четырьмя гигабайтами.
+
+    Замерено на синтетической таблице в 500 000 строк: разбор 1,25 с и +31 МБ
+    к процессу (6 МБ — сами массивы, остальное словарь названий), поиск 1,5 мкс.
+    Разбор платится один раз: таблица держится в памяти и перечитывается,
+    только когда файл на диске изменился.
+
+    Формат строки: начало, конец, номер AS, страна, название — через табуляцию.
+    Строка другого вида — это ошибка, а не повод пропустить: наполовину
+    прочитанная таблица припишет клиентов чужому оператору молча.
+    """
+    try:
+        stamp = os.stat(path).st_mtime_ns
+    except OSError as e:
+        raise CensorError(t("cen_no_table", p=path, e=e)) from None
+    if _ASN_TABLE["path"] == path and _ASN_TABLE["stamp"] == stamp:
+        return _ASN_TABLE
+
+    starts, ends, nums = array.array("I"), array.array("I"), array.array("I")
+    orgs = {}
+    try:
+        with asn_open(path) as f:
+            for line, row in enumerate(f, 1):
+                row = row.rstrip("\n")
+                if not row or row.startswith("#"):
+                    continue
+                p = row.split("\t")
+                if len(p) < 5:
+                    raise CensorError(t("cen_bad_row", n=line))
+                try:
+                    a = int(ipaddress.IPv4Address(p[0]))
+                    b = int(ipaddress.IPv4Address(p[1]))
+                    num = int(p[2])
+                except ValueError:
+                    raise CensorError(t("cen_bad_row", n=line)) from None
+                if b < a:
+                    raise CensorError(t("cen_bad_row", n=line))
+                starts.append(a)
+                ends.append(b)
+                nums.append(num)
+                if num and num not in orgs:
+                    orgs[num] = p[4].strip()
+    except OSError as e:
+        raise CensorError(t("cen_no_table", p=path, e=e)) from None
+    if not starts:
+        raise CensorError(t("cen_empty", p=path))
+
+    # Поиск идёт половинным делением, и на неотсортированных диапазонах он
+    # молча вернёт чужую сеть, а не ошибку. Таблица обычно приходит
+    # отсортированной, но проверить дешевле, чем однажды разбирать, почему
+    # клиенты приписаны не тому оператору.
+    if any(starts[i] < starts[i - 1] for i in range(1, len(starts))):
+        order = sorted(range(len(starts)), key=starts.__getitem__)
+        starts = array.array("I", (starts[i] for i in order))
+        ends = array.array("I", (ends[i] for i in order))
+        nums = array.array("I", (nums[i] for i in order))
+
+    _ASN_TABLE.update({"path": path, "stamp": stamp, "starts": starts,
+                       "ends": ends, "nums": nums, "orgs": orgs})
+    return _ASN_TABLE
+
+
+def asn_of(tab, ip):
+    """Номер сети для адреса или 0. IPv6 эта таблица не покрывает."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return 0
+    if addr.version != 4:
+        return 0
+    key = int(addr)
+    i = bisect.bisect_right(tab["starts"], key)
+    if i == 0 or key > tab["ends"][i - 1]:
+        return 0
+    return tab["nums"][i - 1]
+
+
+def asn_name(tab, num):
+    """«AS8359 Оператор» — как это показывают и как пишут в сообщении."""
+    org = (tab["orgs"] or {}).get(num, "")
+    return "AS%d %s" % (num, org) if org else "AS%d" % num
+
+
+def censor_relays():
+    """
+    Адреса, за которыми стоят не люди: релеи CDN и концы туннелей.
+
+    Заголовок PROXY разбирается не всегда — на нерасшифрованных соединениях
+    ключом остаётся сам релей. Считать его клиентом значит завести отдельную
+    «сеть» из одного адреса и следить за её колебаниями вместо настоящих.
+    """
+    out = set()
+    try:
+        for k, _v in map_dump("trusted_map"):
+            ip, _ = parse_ip_key(k)
+            if ip:
+                out.add(ip)
+    except Exception:
+        # Движок мог быть выгружен. Пустой список честнее выдумки: без него
+        # в разбивке появится лишняя запись, а не пропадёт настоящая.
+        pass
+    return out
+
+
+def censor_counts(cfg):
+    """
+    {номер сети: сколько адресов} по тем, кого ядро видело недавно.
+
+    Возвращает (счётчики, нераспознанных, всего). Нераспознанные считаются
+    отдельно и показываются: если их доля велика, таблица устарела, и молча
+    выдавать оставшееся за полную картину нельзя.
+    """
+    c = cfg.get("censor") or {}
+    tab = asn_load(c.get("table") or CENSOR_DEFAULT["table"])
+    relays = censor_relays()
+    now_ns = time.monotonic_ns()
+
+    counts, unknown, total = {}, 0, 0
+    for ip, st in (read_users() or {}).items():
+        if ip in relays:
+            continue
+        seen = st.get("seen") or 0
+        # seen == 0 — запись есть, отметки нет: считаем присутствующим, иначе
+        # каждая такая запись молча уменьшала бы сеть.
+        if seen and now_ns - seen > CENSOR_FRESH_NS:
+            continue
+        total += 1
+        num = asn_of(tab, ip)
+        if not num:
+            unknown += 1
+            continue
+        counts[num] = counts.get(num, 0) + 1
+    return counts, unknown, total
+
+
+def _median(xs):
+    s = sorted(xs)
+    return s[len(s) // 2] if s else 0
+
+
+def censor_watch(cfg, now=None):
+    """
+    Не пропала ли отдельная сеть. Возвращает список номеров, о которых сказали.
+
+    Ошибок наружу не выпускает: раздел необязательный, и его поломка не должна
+    мешать сторожу делать свою работу. Но и молчать о поломке нельзя — она
+    уходит в журнал событием, иначе неработающий раздел неотличим от тихого.
+    """
+    c = cfg.get("censor") or {}
+    if not c.get("enabled"):
+        return []
+    now = now if now is not None else time.time()
+    state = guard_state()
+    prev = state.get("censor") or {}
+    if now - float(prev.get("at") or 0) < CENSOR_EVERY:
+        return []
+
+    try:
+        counts, _unknown, _total = censor_counts(cfg)
+    except CensorError as e:
+        # Раз в час, чтобы сломанная таблица не залила журнал.
+        if now - float(prev.get("failed_at") or 0) >= CENSOR_ALERT_EVERY:
+            prev["failed_at"] = now
+            log_event("censor_failed", reason=str(e))
+        prev["at"] = now
+        state["censor"] = prev
+        guard_state_save(state)
+        return []
+
+    hist = [h for h in (prev.get("hist") or []) if isinstance(h, dict)]
+    hist = (hist + [{str(k): v for k, v in counts.items()}])[-CENSOR_KEEP:]
+    prev.update({"at": now, "hist": hist})
+    prev.pop("failed_at", None)
+    state["censor"] = prev
+    guard_state_save(state)
+
+    if len(hist) < CENSOR_KEEP:
+        return []
+
+    base = hist[:-CENSOR_SKIP_FRESH]
+    said = prev.get("said") or {}
+    if not isinstance(said, dict):
+        said = {}
+
+    min_norm = int(c.get("min_clients") or CENSOR_MIN_NORMAL)
+    tab = _ASN_TABLE
+    told = []
+    for key in {k for h in base for k in h}:
+        norm = _median([int(h.get(key, 0)) for h in base])
+        if norm < min_norm:
+            continue
+        cur = int(counts.get(int(key), 0))
+        if cur > norm * CENSOR_COLLAPSE:
+            said.pop(key, None)
+            continue
+        if now - float(said.get(key) or 0) < CENSOR_ALERT_EVERY:
+            continue
+        said[key] = now
+        told.append(int(key))
+        log_event("censor_drop", asn=int(key), now=cur, normal=norm)
+        tg_send(t("cen_msg", node=node_label(cfg["telegram"]),
+                  net=asn_name(tab, int(key)), n=cur, norm=norm), cfg)
+
+    prev["said"] = said
+    state["censor"] = prev
+    guard_state_save(state)
+    return told
+
+
+def censor_tail(cfg):
+    """
+    Строка для сообщения об обвале: какие сети просели и насколько.
+
+    Обвал у всех сразу и обвал у двух операторов выглядят в итоговом числе
+    одинаково, а означают разное. Здесь видно, что именно случилось.
+    """
+    c = cfg.get("censor") or {}
+    if not c.get("enabled"):
+        return ""
+    try:
+        counts, _unknown, _total = censor_counts(cfg)
+    except CensorError:
+        return ""
+    prev = (guard_state().get("censor") or {})
+    hist = [h for h in (prev.get("hist") or []) if isinstance(h, dict)]
+    if len(hist) < CENSOR_KEEP:
+        return ""
+
+    base = hist[:-CENSOR_SKIP_FRESH]
+    rows = []
+    for key in {k for h in base for k in h}:
+        norm = _median([int(h.get(key, 0)) for h in base])
+        if norm < CENSOR_MIN_NORMAL:
+            continue
+        cur = int(counts.get(int(key), 0))
+        if cur <= norm * CENSOR_COLLAPSE:
+            rows.append((norm - cur, asn_name(_ASN_TABLE, int(key)), cur, norm))
+    if not rows:
+        return ""
+    rows.sort(reverse=True)
+    lines = [t("cen_tail_head")]
+    for _d, name, cur, norm in rows[:CENSOR_TOP]:
+        lines.append(t("cen_tail_row", net=name, n=cur, norm=norm))
+    return "\n".join(lines)
 
 
 # ── Смена релея CDN ────────────────────────────────────────────────────
@@ -7450,6 +7818,56 @@ def cmd_whitelist(a):
             print(f"  {C['gry']}{t('wl_empty')}{C['r']}")
 
 
+def cmd_censor(a):
+    """Разбивка клиентов по сетям: показать, настроить, проверить таблицу."""
+    cfg = load_config()
+    c = cfg["censor"]
+
+    if a.action == "set":
+        if a.table is not None:
+            c["table"] = a.table.strip()
+        if a.min_clients is not None:
+            c["min_clients"] = max(1, int(a.min_clients))
+        if a.enable:
+            c["enabled"] = True
+        if a.disable:
+            c["enabled"] = False
+        cfg["censor"] = c
+        save_config(cfg)
+        log_event("config_changed", section="censor", source="cli")
+
+    if a.action in ("list", "test"):
+        # Только факты: сколько адресов из какой сети видно прямо сейчас.
+        # Вывод по кнопке не делает выводов — повода для них здесь нет.
+        try:
+            counts, unknown, total = censor_counts(cfg)
+        except CensorError as e:
+            die(str(e))
+        print()
+        if a.action == "test":
+            print(f"  {t('cen_rows_t')} : {len(_ASN_TABLE['starts'])}")
+        print(f"  {t('cen_total_t')} : {total}")
+        if not counts and not unknown:
+            print(f"  {C['yel']}{t('cen_none')}{C['r']}\n")
+            return
+        for num, n in sorted(counts.items(), key=lambda kv: -kv[1])[:CENSOR_TOP]:
+            print(f"  {asn_name(_ASN_TABLE, num):<34} {C['b']}{n}{C['r']}")
+        if unknown:
+            print(f"  {C['yel']}{t('cen_unknown_t')}{C['r']} : {unknown}")
+        print()
+        return
+
+    print()
+    print(f"  {C['b']}{t('cen_title')}{C['r']}")
+    state = t("cen_on") if c.get("enabled") else t("cen_off")
+    print(f"  {t('cen_state_t')} : {state}")
+    print(f"  {t('cen_table_t')} : {c.get('table') or '-'}")
+    print(f"  {t('cen_min_t')} : {c.get('min_clients')}")
+    if not c.get("enabled"):
+        print(f"  {C['yel']}{t('cen_hint_off')}{C['r']}")
+    print()
+
+
 def cmd_cdn(a):
     """Связь с API провайдера CDN: показать, настроить, спросить."""
     cfg = load_config()
@@ -8300,6 +8718,16 @@ def build_parser():
     cd.add_argument("--enable", action="store_true")
     cd.add_argument("--disable", action="store_true")
     cd.set_defaults(func=cmd_cdn)
+
+    cn = sub.add_parser("censor", help=t("h_censor"))
+    cn.add_argument("action", nargs="?",
+                    choices=["show", "set", "list", "test"], default="show")
+    cn.add_argument("--table", default=None, help=t("h_cen_table"))
+    cn.add_argument("--min-clients", dest="min_clients", type=int,
+                    default=None, help=t("h_cen_min"))
+    cn.add_argument("--enable", action="store_true")
+    cn.add_argument("--disable", action="store_true")
+    cn.set_defaults(func=cmd_censor)
 
     tr = sub.add_parser("trusted", help=t("h_trusted"))
     tr.add_argument("action", choices=["add", "del", "sync", "list"])

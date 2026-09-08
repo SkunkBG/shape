@@ -3,17 +3,17 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.87-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.88-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
-  <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
+  <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
 </p>
 
 <p align="center">
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.87
+# Shape v3.88
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -904,6 +904,40 @@ penalties touch this path: the node stays self-sufficient.
 
 The address may be entered with or without the trailing `/v1` — both forms are
 understood, and a trailing slash makes no difference.
+
+### Clients by network
+
+A collapse is judged by the total, and that is not enough. A block at a single
+operator barely moves the total: if one operator carries a seventh of the
+people, losing them will not reach the collapse threshold — and the node stays
+quiet, though it is already unreachable for a whole network.
+
+So client addresses are grouped by network. Every network is judged against its
+own normal, the median of its own hour: comparing networks with each other is
+meaningless, they differ in size. A network down to half its own normal gets a
+message of its own, and the collapse message gains a list of the networks that
+went down — a collapse everywhere and a collapse at two operators give the same
+number and mean different things.
+
+What it does not do: a single node cannot tell "our address is blocked for that
+operator" from "that operator has an outage". Only comparison across nodes can,
+and that is not here. So the message says a network is gone, and does not say
+why.
+
+It needs a file of address ranges on disk: the node does not go out for it and
+asks for no keys. While the file is missing the section stays quiet and says so
+in the log, instead of passing an empty breakdown off as the truth.
+
+Set it up from the menu — item **11 "Clients by network"** on the main screen —
+or from the command line:
+
+```bash
+shaperctl censor set --table /etc/shaper/ip2asn-v4.tsv --enable
+shaperctl censor list
+```
+
+The table is held in memory: about 30 MB and a second and a half to parse on
+first use, for half a million rows. The section is optional and off by default.
 
 ### When traffic or money runs out
 
@@ -2336,5 +2370,13 @@ for anyone else.
 
 ## License
 
-GPL-2.0. The eBPF part requires a GPL-compatible license — otherwise the kernel
-refuses to load the program.
+GPL-3.0, full text in [LICENSE](LICENSE).
+
+The eBPF part must declare a GPL-compatible license to the kernel: the line
+`char _license[] SEC("license") = "GPL"` in `bpf/shaper.bpf.c` is not
+decoration — without it the kernel denies the program the GPL-only helpers the
+whole shaper rests on.
+
+**That line must not be changed along with the license version.** The kernel
+matches it against a short list of accepted values: `"GPL"` is on it, `"GPL v3"`
+is not, and the program would simply lose the helpers and fail to load.
