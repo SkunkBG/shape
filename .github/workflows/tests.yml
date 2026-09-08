@@ -19,7 +19,9 @@ jobs:
       - name: Установить инструменты
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq shellcheck clang gcc
+          # libbpf-dev даёт bpf/bpf_helpers.h и bpf/bpf_endian.h — без них
+          # шаг сборки eBPF падает на первом же #include.
+          sudo apt-get install -y -qq shellcheck clang gcc libbpf-dev
           pip install --quiet ruff bandit
 
       - name: Синтаксис shell
