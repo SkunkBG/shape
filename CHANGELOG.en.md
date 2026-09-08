@@ -29,6 +29,8 @@ The section is optional and off by default. It needs a file on disk with address
 
 Upgrading changes nothing: the section is off, the shaper and the watchdog work as before.
 
+**The license is now consistent.** The repository carries GPL-3.0, while the badges, the License sections and the SPDX header of the eBPF filter still said GPL-2.0. All of them now say the third version. The `_license` string in the BPF code is unchanged — `"GPL"`: the kernel matches it against a short list of accepted values, and `"GPL v3"` is not on it.
+
 ---
 
 ## 3.87

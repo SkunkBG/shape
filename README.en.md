@@ -6,7 +6,7 @@
   <a href="#installation"><img src="https://img.shields.io/badge/version-3.88-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
-  <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
+  <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
 </p>
 
 <p align="center">
@@ -2370,5 +2370,13 @@ for anyone else.
 
 ## License
 
-GPL-2.0. The eBPF part requires a GPL-compatible license — otherwise the kernel
-refuses to load the program.
+GPL-3.0, full text in [LICENSE](LICENSE).
+
+The eBPF part must declare a GPL-compatible license to the kernel: the line
+`char _license[] SEC("license") = "GPL"` in `bpf/shaper.bpf.c` is not
+decoration — without it the kernel denies the program the GPL-only helpers the
+whole shaper rests on.
+
+**That line must not be changed along with the license version.** The kernel
+matches it against a short list of accepted values: `"GPL"` is on it, `"GPL v3"`
+is not, and the program would simply lose the helpers and fail to load.

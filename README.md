@@ -6,7 +6,7 @@
   <a href="#установка"><img src="https://img.shields.io/badge/версия-3.88-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
-  <img src="https://img.shields.io/badge/лицензия-GPL--2.0-8ECA43?style=flat-square" alt="лицензия">
+  <img src="https://img.shields.io/badge/лицензия-GPL--3.0-8ECA43?style=flat-square" alt="лицензия">
 </p>
 
 <p align="center">
@@ -2487,5 +2487,14 @@ notes, номер версии сверяется CI сразу в пяти фа
 
 ## Лицензия
 
-GPL-2.0. eBPF-часть требует GPL-совместимой лицензии — иначе ядро не загрузит
-программу.
+GPL-3.0, полный текст в [LICENSE](LICENSE).
+
+eBPF-часть обязана объявить ядру GPL-совместимую лицензию: строка
+`char _license[] SEC("license") = "GPL"` в `bpf/shaper.bpf.c` — не украшение,
+без неё ядро не даст программе вызывать GPL-only хелперы, а на них держится
+весь шейпер.
+
+**Эту строку при смене версии лицензии менять не нужно и нельзя.** Ядро
+сличает её с коротким списком допустимых значений, и `"GPL"` в него входит,
+а `"GPL v3"` — нет: программа просто потеряет доступ к хелперам и не
+загрузится.
