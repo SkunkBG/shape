@@ -2286,15 +2286,16 @@ _cfg["censor"].update({"enabled": True, "table": _TAB, "min_clients": 5})
 
 S.read_users = lambda: _users(20)
 _counts, _unknown, _total = S.censor_counts(_cfg)
+_N1, _N2 = "AS64496 Оператор один", "AS64497 Оператор два"
 check("клиенты разложены по сетям",
-      _counts.get(64496) == 20 and _counts.get(64497) == 8, _counts)
-check("релей не считается клиентом", 64496 in _counts and _counts[64496] == 20)
+      _counts.get(_N1) == 20 and _counts.get(_N2) == 8, _counts)
+check("релей не считается клиентом", _counts.get(_N1) == 20)
 check("адрес вне таблицы попал в нераспознанные", _unknown == 1, _unknown)
 
 S.read_users = lambda: _users(20, stale=5)
 _c2, _u2, _t2 = S.censor_counts(_cfg)
 check("протухшие записи LRU не считаются присутствующими",
-      _c2.get(64496) == 20, _c2.get(64496))
+      _c2.get(_N1) == 20, _c2.get(_N1))
 
 # ── Сработка ───────────────────────────────────────────────────────────
 _sent, _events = [], []
@@ -2318,10 +2319,10 @@ check("истории набрано ровно столько, сколько �
 
 S.read_users = lambda: _users(1)          # первая сеть пропала, остальные целы
 _told = S.censor_watch(_cfg, now=_t0 + S.CENSOR_KEEP * S.CENSOR_EVERY)
-check("падение сети замечено", _told == [64496], _told)
+check("падение сети замечено", _told == [_N1], _told)
 check("сообщение называет именно эту сеть",
       len(_sent) == 1 and "AS64496" in _sent[0], _sent)
-check("здоровая сеть не помечена", 64497 not in _told)
+check("здоровая сеть не помечена", _N2 not in _told)
 check("событие объявлено", "censor_drop" in S.EVENT_TYPES)
 check("событие записано", any(e[0] == "censor_drop" for e in _events), _events)
 
@@ -2330,7 +2331,8 @@ S.censor_watch(_cfg, now=_t0 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
 check("повтор придержан кулдауном", len(_sent) == _before, _sent)
 
 # Маленькая сеть: три адреса исчезли целиком и это ничего не доказывает.
-check("сеть ниже порога не судим", 64498 not in _told, _told)
+check("сеть ниже порога не судим",
+      "AS64498 Оператор три" not in _told, _told)
 
 _reset_state()
 _off = S.load_config()
@@ -2352,6 +2354,60 @@ check("порог падения — заметная доля нормы", 0 < 
       S.CENSOR_COLLAPSE)
 check("свежие отсчёты в норму не берём", S.CENSOR_SKIP_FRESH >= 1)
 check("раздел выключен по умолчанию", S.CENSOR_DEFAULT["enabled"] is False)
+
+
+# ── Объединение сетей одного оператора ─────────────────────────────────
+print("\n\033[1mОбъединение сетей одного оператора\033[0m")
+
+check("несколько номеров МТС дают одного оператора",
+      S.censor_operator("MTS") == S.censor_operator("MTS-PENZA-AS") == "МТС",
+      (S.censor_operator("MTS"), S.censor_operator("MTS-PENZA-AS")))
+check("МегаФон узнаётся и по MF-",
+      S.censor_operator("MF-MGSM-AS PJSC MegaFon") == "МегаФон")
+check("Tele2 узнаётся по региональному имени",
+      S.censor_operator("T2-NOVOSIBIRSK-AS T2 Russia Network") == "Tele2")
+check("чужая сеть оператором не считается",
+      S.censor_operator("CLOUDFLARENET") is None)
+
+# Бренды международные. Без сверки страны шведский Tele2 лёг бы в одну корзину
+# с российским — поймано на настоящей таблице, AS1257.
+check("шведский Tele2 — не наш Tele2",
+      S.censor_operator("SWIPNET Tele2 Sverige", "SE") is None,
+      S.censor_operator("SWIPNET Tele2 Sverige", "SE"))
+check("казахский Билайн — не наш Билайн",
+      S.censor_operator("KAR-TEL Beeline KZ", "KZ") is None)
+check("российский Tele2 при этом узнаётся",
+      S.censor_operator("T2-NOVOSIBIRSK-AS T2 Russia Network", "RU") == "Tele2")
+
+# Обе ловушки пойманы на настоящей таблице: без границ слов «yota» ловит
+# Toyota, а «k-telecom» ловит Норильск и записывает его в Крым.
+check("Toyota — это не Yota",
+      S.censor_operator("TOYOTA-MOTOR-LTD-AS") is None,
+      S.censor_operator("TOYOTA-MOTOR-LTD-AS"))
+check("TOYOTABANK — тоже не Yota",
+      S.censor_operator("TOYOTABANK-AS") is None)
+check("Норильск — это не Крым",
+      S.censor_operator("NORILSK-TELECOM-AS") is None,
+      S.censor_operator("NORILSK-TELECOM-AS"))
+check("а настоящая крымская сеть — Крым",
+      S.censor_operator("MIRANDA-AS Miranda-Media LLC") == "Крым")
+check("сеть МТС в Норильске остаётся МТС",
+      S.censor_operator("KANAL7-AS MTS PJSC, MR Sibir, Norilsk") == "МТС")
+
+# Две разные сети одного оператора должны сложиться в одну корзину: порознь
+# каждая может не дотянуть до порога, и падение оператора пройдёт незаметно.
+_TAB2 = os.path.join(TMP, "ops.tsv")
+with open(_TAB2, "w") as f:
+    f.write("203.0.113.0\t203.0.113.127\t64496\tRU\tMEGAFON-AS\n"
+            "198.51.100.0\t198.51.100.255\t64497\tRU\tMF-MGSM-AS PJSC MegaFon\n")
+_cfg2 = S.load_config()
+_cfg2["censor"].update({"enabled": True, "table": _TAB2, "min_clients": 5})
+S.map_dump = lambda name: []
+S.read_users = lambda: {**{"203.0.113.%d" % (10+i): {"seen": _now_ns} for i in range(6)},
+                        **{"198.51.100.%d" % (10+i): {"seen": _now_ns} for i in range(4)}}
+_c3, _u3, _t3 = S.censor_counts(_cfg2)
+check("два номера одного оператора сложились в одну корзину",
+      _c3 == {"МегаФон": 10}, _c3)
 
 
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")

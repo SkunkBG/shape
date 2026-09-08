@@ -13,6 +13,26 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.89
+
+**Networks of one operator are counted together.**
+
+Rostelecom lives under 52 autonomous system numbers, MTS under 18, MegaFon under 13, Tele2 under 8. Counting them apart is pointless: on a node with two hundred people an operator's users scatter into small buckets, each below the floor, and a whole operator going down passes unnoticed.
+
+Numbers are now grouped by operator. Matching goes by the network name from the table rather than by a list of numbers: a list would go stale on the first new range, while a name is picked up as soon as the file is refreshed.
+
+The country is checked too. Without it the brand glues together networks of different countries — Tele2 exists in Sweden, Beeline in Kazakhstan, MTS in Belarus — and a client from there would land in the Russian bucket. Caught on the real table: AS1257 is Tele2 Sverige.
+
+The word boundaries in the patterns are not decoration either: without them "yota" catches TOYOTA-MOTOR-LTD-AS, and "k-telecom" files NORILSK-TELECOM-AS under Crimea. Both cases are pinned by tests.
+
+What this does not give: a breakdown by region — the table carries only a country, and one network number covers all of Russia. Nor virtual operators: they ride on the host operator's network and are indistinguishable from it by address. Their own AS numbers exist, but hold corporate networks rather than subscribers.
+
+The table now also stores the country, so it takes about 40 MB instead of 30.
+
+Upgrading changes nothing: the section is still off by default.
+
+---
+
 ## 3.88
 
 **Clients by network: which of them stopped reaching the node.**

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.88-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.89-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.88
+# Shape v3.89
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -936,7 +936,20 @@ shaperctl censor set --table /etc/shaper/ip2asn-v4.tsv --enable
 shaperctl censor list
 ```
 
-The table is held in memory: about 30 MB and a second and a half to parse on
+Networks of one operator are counted together: Rostelecom has 52 of them, MTS
+18, MegaFon 13. Counted apart, an operator's users would scatter into small
+buckets, each below the floor. Matching goes by the network name and country
+from the table rather than by a list of numbers — a list would go stale on the
+first new range, while a name is picked up as soon as the file is refreshed.
+The country is required: the brands are international, and without it Tele2
+Sverige would land in the same bucket as the Russian one.
+
+What the grouping does not give: a breakdown by region — the table carries only
+a country, and one network number covers all of Russia. Nor virtual operators:
+they ride on the host operator's network and are indistinguishable from it by
+address.
+
+The table is held in memory: about 40 MB and a second and a half to parse on
 first use, for half a million rows. The section is optional and off by default.
 
 ### When traffic or money runs out

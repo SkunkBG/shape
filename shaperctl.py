@@ -5729,7 +5729,10 @@ def asn_load(path):
                 ends.append(b)
                 nums.append(num)
                 if num and num not in orgs:
-                    orgs[num] = p[4].strip()
+                    # Страна нужна не для показа, а чтобы бренд оператора не
+                    # склеивал сети разных стран: Tele2 есть и в Швеции,
+                    # Билайн в Казахстане, МТС в Белоруссии.
+                    orgs[num] = (p[3].strip(), p[4].strip())
     except OSError as e:
         raise CensorError(t("cen_no_table", p=path, e=e)) from None
     if not starts:
@@ -5765,10 +5768,78 @@ def asn_of(tab, ip):
     return tab["nums"][i - 1]
 
 
+def asn_org(tab, num):
+    """(страна, название) для номера сети или ("", "")."""
+    return (tab.get("orgs") or {}).get(num) or ("", "")
+
+
 def asn_name(tab, num):
     """«AS8359 Оператор» — как это показывают и как пишут в сообщении."""
-    org = (tab["orgs"] or {}).get(num, "")
+    _cc, org = asn_org(tab, num)
     return "AS%d %s" % (num, org) if org else "AS%d" % num
+
+
+# Один оператор живёт под десятками номеров сетей: у Ростелекома их 52, у МТС
+# 18, у МегаФона 13. Считать их порознь бессмысленно — пользователи оператора
+# рассыпаются по мелким корзинам, каждая ниже порога, и падение целого
+# оператора остаётся незамеченным.
+#
+# Сопоставляем по названию сети из таблицы, а не списком номеров: список
+# протух бы на первом же новом диапазоне, а название подхватится само при
+# следующем обновлении файла.
+#
+# Границы слов здесь не украшение. Без них «yota» ловит TOYOTA-MOTOR-LTD-AS,
+# а «k-telecom» ловит NORILSK-TELECOM-AS и записывает Норильск в Крым. Оба
+# случая пойманы на настоящей таблице и закреплены тестами.
+#
+# Чего это сопоставление не может: виртуальных операторов. СберМобайл и
+# Т-Мобайл ходят через сеть оператора-хозяина, и их абоненты по адресу
+# неотличимы от абонентов Tele2. Отдельные номера AS у этих компаний есть, но
+# за ними корпоративные сети, а не пользователи, и вписывать их сюда значило
+# бы приписывать людей не туда.
+CENSOR_OPERATORS = (
+    ("Билайн",     "RU", r"vimpelcom|beeline|corbina|\bsovam\b"),
+    ("МТС",        "RU", r"\bmts\b|\bmts-|mobile telesystems"),
+    ("Yota",       "RU", r"\byota\b|\bscartel\b"),
+    ("МегаФон",    "RU", r"megafon|\bmf-[a-z]"),
+    ("Tele2",      "RU", r"\btele ?2\b|\bt2 russia\b|\bt2-[a-z]"),
+    ("Ростелеком", "RU", r"rostelecom|\brtcomm\b|\bzsttk"),
+    ("Таттелеком", "RU", r"tattelecom"),
+    ("Крым",       "RU", r"miranda-media|\bk-telecom\b|asvolna|crimeatelecom"),
+)
+_CENSOR_OPS_RE = None
+
+
+def censor_operator(name, cc="RU"):
+    """
+    Оператор по названию сети и стране, или None.
+
+    Страна обязательна: бренды международные, и без неё Tele2 Sverige попал бы
+    в одну корзину с российским Tele2. Поймано на настоящей таблице.
+    """
+    global _CENSOR_OPS_RE
+    if _CENSOR_OPS_RE is None:
+        _CENSOR_OPS_RE = [(op, c, re.compile(rx))
+                          for op, c, rx in CENSOR_OPERATORS]
+    low = (name or "").lower()
+    cc = (cc or "").upper()
+    for op, want_cc, rx in _CENSOR_OPS_RE:
+        if cc == want_cc and rx.search(low):
+            return op
+    return None
+
+
+def censor_label(tab, num):
+    """
+    Под каким именем сеть попадает в счёт: оператор или «AS… название».
+
+    Оператор объединяет свои номера в одну корзину, всё остальное считается
+    по номеру отдельно.
+    """
+    if not num:
+        return "unrouted"
+    cc, org = asn_org(tab, num)
+    return censor_operator(org, cc) or asn_name(tab, num)
 
 
 def censor_relays():
@@ -5819,7 +5890,8 @@ def censor_counts(cfg):
         if not num:
             unknown += 1
             continue
-        counts[num] = counts.get(num, 0) + 1
+        key = censor_label(tab, num)
+        counts[key] = counts.get(key, 0) + 1
     return counts, unknown, total
 
 
@@ -5858,7 +5930,7 @@ def censor_watch(cfg, now=None):
         return []
 
     hist = [h for h in (prev.get("hist") or []) if isinstance(h, dict)]
-    hist = (hist + [{str(k): v for k, v in counts.items()}])[-CENSOR_KEEP:]
+    hist = (hist + [dict(counts)])[-CENSOR_KEEP:]
     prev.update({"at": now, "hist": hist})
     prev.pop("failed_at", None)
     state["censor"] = prev
@@ -5873,23 +5945,22 @@ def censor_watch(cfg, now=None):
         said = {}
 
     min_norm = int(c.get("min_clients") or CENSOR_MIN_NORMAL)
-    tab = _ASN_TABLE
     told = []
     for key in {k for h in base for k in h}:
         norm = _median([int(h.get(key, 0)) for h in base])
         if norm < min_norm:
             continue
-        cur = int(counts.get(int(key), 0))
+        cur = int(counts.get(key, 0))
         if cur > norm * CENSOR_COLLAPSE:
             said.pop(key, None)
             continue
         if now - float(said.get(key) or 0) < CENSOR_ALERT_EVERY:
             continue
         said[key] = now
-        told.append(int(key))
-        log_event("censor_drop", asn=int(key), now=cur, normal=norm)
+        told.append(key)
+        log_event("censor_drop", net=key, now=cur, normal=norm)
         tg_send(t("cen_msg", node=node_label(cfg["telegram"]),
-                  net=asn_name(tab, int(key)), n=cur, norm=norm), cfg)
+                  net=key, n=cur, norm=norm), cfg)
 
     prev["said"] = said
     state["censor"] = prev
@@ -5922,9 +5993,9 @@ def censor_tail(cfg):
         norm = _median([int(h.get(key, 0)) for h in base])
         if norm < CENSOR_MIN_NORMAL:
             continue
-        cur = int(counts.get(int(key), 0))
+        cur = int(counts.get(key, 0))
         if cur <= norm * CENSOR_COLLAPSE:
-            rows.append((norm - cur, asn_name(_ASN_TABLE, int(key)), cur, norm))
+            rows.append((norm - cur, key, cur, norm))
     if not rows:
         return ""
     rows.sort(reverse=True)
@@ -7850,8 +7921,8 @@ def cmd_censor(a):
         if not counts and not unknown:
             print(f"  {C['yel']}{t('cen_none')}{C['r']}\n")
             return
-        for num, n in sorted(counts.items(), key=lambda kv: -kv[1])[:CENSOR_TOP]:
-            print(f"  {asn_name(_ASN_TABLE, num):<34} {C['b']}{n}{C['r']}")
+        for key, n in sorted(counts.items(), key=lambda kv: -kv[1])[:CENSOR_TOP]:
+            print(f"  {key:<34} {C['b']}{n}{C['r']}")
         if unknown:
             print(f"  {C['yel']}{t('cen_unknown_t')}{C['r']} : {unknown}")
         print()
