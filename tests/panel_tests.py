@@ -717,9 +717,11 @@ check("урезаны все адреса, которые видит нода", 
 check("скорость выставлена блокирующая",
       applied and all(m == S.PANEL_BLOCK_MBPS for _, m in applied),
       sorted({m for _, m in applied}))
-check("соединения оборваны вместе с блокировкой",
-      len(rec["dropped"]) == 25, len(rec["dropped"]))
-check("обрыв ушёл в панель", len(PANEL["drops"]) == 1, len(PANEL["drops"]))
+# Обрыв перекрытие за собой НЕ тянет. Лимит лежит в карте ядра и действует на
+# уже открытые соединения сразу, а обрыв стирает сессии из панели: владелец,
+# пришедший по уведомлению посмотреть, кто это, увидел бы пустую карточку.
+check("перекрытие само соединения не рвёт", rec["dropped"] == [], rec["dropped"])
+check("и в панель обрыв не уходил", PANEL["drops"] == [], PANEL["drops"])
 check("в сообщении сказано про перекрытый доступ",
       sent and ("перекрыт" in sent[0] or "cut off" in sent[0]), sent[0][:400])
 check("и на сколько именно", sent and "60" in sent[0], sent[0][:400])
@@ -1285,20 +1287,20 @@ check("без причины ведём себя как раньше",
 S._PANEL_IP_OWNER.update({"at": 0.0, "map": {}})
 
 print("\n\033[1m36. UUID ноды проверяется по форме\033[0m")
-# Живой случай: в поле оказалось «5d8572233c3b934» — начало и хвост настоящего
+# Живой случай: в поле оказалось «a1b0e1f2a3b4c5d» — начало и хвост настоящего
 # UUID, середина потерялась при вводе. Панель такой запрос принимает и отвечает
 # пустым результатом: опрос числится успешным, карта адресов пустая, имена
 # молча перестают подставляться. Заметить это можно было только вручную.
 check("настоящий UUID принят",
-      S.valid_uuid("5d8bba03-0951-4503-a4d6-572233c3b934"))
+      S.valid_uuid("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"))
 check("верхний регистр тоже",
-      S.valid_uuid("5D8BBA03-0951-4503-A4D6-572233C3B934"))
-for bad in ("5d8572233c3b934", "", "не uuid", "5d8bba03-0951-4503-a4d6",
-            "5d8bba0309514503a4d6572233c3b934",
-            "5d8bba03-0951-4503-a4d6-572233c3b93z"):
+      S.valid_uuid("A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D"))
+for bad in ("a1b0e1f2a3b4c5d", "", "не uuid", "a1b2c3d4-e5f6-4a7b-8c9d",
+            "a1b2c3d4e5f64a7b8c9d0e1f2a3b4c5d",
+            "a1b2c3d4-e5f6-4a7b-8c9d-572233c3b93z"):
     check(f"отвергнут {bad[:24]!r}", not S.valid_uuid(bad))
 check("пробел на конце обрезается, а не ломает",
-      S.valid_uuid(" 5d8bba03-0951-4503-a4d6-572233c3b934 "))
+      S.valid_uuid(" a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d "))
 
 import argparse as _ap
 
@@ -1328,14 +1330,14 @@ def _dies(fn, *a):
 
 S.save_config({"panel": dict(S.PANEL_DEFAULT)})
 check("кривой UUID не сохраняется",
-      _dies(S.cmd_panel, _set(node_uuid="5d8572233c3b934")))
+      _dies(S.cmd_panel, _set(node_uuid="a1b0e1f2a3b4c5d")))
 check("и в конфиг ничего не попало",
       not S.load_config()["panel"]["node_uuid"],
       S.load_config()["panel"]["node_uuid"])
 check("правильный сохраняется",
-      not _dies(S.cmd_panel, _set(node_uuid="5d8bba03-0951-4503-a4d6-572233c3b934")))
+      not _dies(S.cmd_panel, _set(node_uuid="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")))
 check("именно он и лежит в конфиге",
-      S.load_config()["panel"]["node_uuid"] == "5d8bba03-0951-4503-a4d6-572233c3b934")
+      S.load_config()["panel"]["node_uuid"] == "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")
 
 print("\n\033[1m37. Пустой опрос виден в состоянии\033[0m")
 drop_state()
@@ -1357,7 +1359,7 @@ print("\n\033[1m38. panel who: кто стоит за адресом\033[0m")
 # чей он. В памяти сторожа карта есть, но отдельный запуск CLI её не видит —
 # значит команда обязана спросить панель заново, а не отдавать пустоту.
 fresh_cache()
-S.save_config({"panel": conf(node_uuid="5d8bba03-0951-4503-a4d6-572233c3b934")})
+S.save_config({"panel": conf(node_uuid="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")})
 PANEL["directory"] = {"741": {"id": 741, "username": "user_100000003",
                              "description": "Bot user: Bashou @bashou7",
                              "telegramId": 100000003}}
@@ -1464,6 +1466,63 @@ check("без панели сказано, что кто это — неизве
       S.t("pn_card_unknown") in sent[-1], sent[-1])
 check("но адрес и причина на месте",
       "203.0.113.20" in sent[-1] and S.t("why_hourly") in sent[-1], sent[-1])
+
+# ────────────────────────────────────────────────────────────────────
+print("\n\033[1m40. Перекрытие не должно отменять отсчёт до отключения\033[0m")
+# Перекрытие само убирает нарушителя из видимости: трафика нет, адреса
+# стареют и за window_min выпадают из окна. Раньше отсчёт на этом обнулялся,
+# и отключение подписки не наступало никогда — замерено на живых нодах.
+_pen_store = {}
+S.load_penalties = lambda: dict(_pen_store)
+now40 = 1000.0
+grace40 = 1800.0          # тридцать минут, как у хозяина
+
+def sharing_pen(uid, until):
+    return {"until": until, "mbps": 0.05, "since": now40, "source": "panel",
+            "kind": "auto", "reason": "sharing", "user_id": str(uid)}
+
+st40 = {"pending": {}}
+off40 = [{"user_id": "741"}]
+due, pend = S.panel_pending(st40, off40, now40, grace40)
+check("отсчёт начался", pend.get("741") == now40, pend)
+check("сразу никого не отключаем", due == [], due)
+
+# Перекрыли — на следующем проходе его в списке уже нет.
+_pen_store = {"10.0.0.1": sharing_pen(741, now40 + 3600)}
+st40["pending"] = pend
+held = S.panel_sharing_held(now40 + 600)
+check("наше перекрытие видно по штрафу", held == {"741"}, held)
+due, pend = S.panel_pending(st40, [], now40 + 600, grace40, keep=held)
+check("отсчёт пережил исчезновение из списка", pend.get("741") == now40, pend)
+check("но срок ещё не вышел", due == [], due)
+
+st40["pending"] = pend
+due, pend = S.panel_pending(st40, [], now40 + grace40, grace40,
+                            keep=S.panel_sharing_held(now40 + grace40))
+check("через тридцать минут подписка отключается", due == ["741"], due)
+
+# Хозяин снял штраф руками — отсчёт отменяется, как и задумано.
+_pen_store = {}
+st40["pending"] = {"741": now40}
+due, pend = S.panel_pending(st40, [], now40 + grace40, grace40,
+                            keep=S.panel_sharing_held(now40 + grace40))
+check("снятый штраф отменяет отсчёт", due == [] and pend == {}, (due, pend))
+
+# Истёкший штраф держать отсчёт не должен.
+_pen_store = {"10.0.0.1": sharing_pen(741, now40 + 60)}
+check("истёкший штраф не держит", S.panel_sharing_held(now40 + 120) == set(),
+      S.panel_sharing_held(now40 + 120))
+# Чужие штрафы к раздаче отношения не имеют.
+_pen_store = {"10.0.0.2": {"until": now40 + 3600, "source": "guard",
+                           "reason": "hourly", "user_id": "999"}}
+check("штраф сторожа отсчёт не держит",
+      S.panel_sharing_held(now40) == set(), S.panel_sharing_held(now40))
+# Записи без номера пользователя не должны ронять разбор.
+_pen_store = {"10.0.0.3": {"until": now40 + 3600, "source": "panel",
+                           "reason": "sharing"}, "10.0.0.4": "мусор"}
+check("мусор в штрафах не роняет", S.panel_sharing_held(now40) == set(),
+      S.panel_sharing_held(now40))
+_pen_store = {}
 
 srv.shutdown()
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")

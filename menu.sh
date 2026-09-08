@@ -38,10 +38,14 @@ title() { clear; echo; echo -e "  ${B}$1${N}"; hr; }
 pause() { echo; read -rsp "  ${T[back]} " _; }
 ask()   { local p="$1" d="${2:-}" v; read -rp "  $p${d:+ [$d]}: " v; echo "${v:-$d}"; }
 cfg()   { python3 -c "
-import json
-try: c = json.load(open('$ETC_DIR/config.json'))
+import json, sys
+# Значения приходят аргументами, а не подстановкой в текст программы: одинарная
+# кавычка в ключе или в умолчании иначе закрыла бы строку, и всё, что дальше,
+# выполнилось бы от root. Сейчас все вызовы передают литералы, но защита не
+# должна держаться на дисциплине вызывающих.
+try: c = json.load(open(sys.argv[1]))
 except Exception: c = {}
-print(c.get('$1', '$2'))" 2>/dev/null || echo "$2"; }
+print(c.get(sys.argv[2], sys.argv[3]))" "$ETC_DIR/config.json" "$1" "$2" 2>/dev/null || echo "$2"; }
 
 # shaper.conf читается через `source` и в меню, и в engine.sh — то есть его
 # содержимое выполняется от root при каждом старте сервиса. Значит в файл не
@@ -405,7 +409,7 @@ guard_preset() {
                    --upload-warn 0 --upload-hours 6 --upload-hours-mbps 0.05 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
                "$CTL" panel set --threshold 20 --window 10 \
-                   --limit-min 60 --action-set block >/dev/null 2>&1 || true
+                   --minutes 60 --per-device 4 --action-set block >/dev/null || true
                echo -e "  ${G}✓ ${T[gp_done]}${N}"
                pause; return ;;
 
@@ -460,13 +464,19 @@ guard_preset() {
                    --upload-gbh 0 --upload-day 30 \
                    --upload-warn 10 --upload-hours 6 --upload-hours-mbps 0.05 \
                    --penalty-mbps 1 --penalty-min 60 >/dev/null || { pause; continue; }
+               # --per-device 4 защищает офисы: пятнадцать проданных устройств
+               # дают порог 60, и легальная контора на одной ноде под правило не
+               # попадает. Семье с пятью устройствами он ничего не меняет —
+               # 5*4 = 20, то есть базовый порог. Раздающему он тоже не помогает:
+               # у него тариф на пять устройств, а адресов сотня.
+               #
                # Двадцать, а не десять: домашняя нода это не только вайфай,
                # с мобильного заходят на любую. У оператора адрес меняется
                # при переподключении, и семья из пяти телефонов за десять
                # минут легко даёт полтора-два десятка адресов. Настоящие
                # перепродавцы при этом дают 146 и 230 — запас десятикратный.
                "$CTL" panel set --threshold 20 --window 10 \
-                   --limit-min 60 --action-set block >/dev/null 2>&1 || true
+                   --minutes 60 --per-device 4 --action-set block >/dev/null || true
                echo -e "  ${G}✓ ${T[gp_done]}${N}"
                pause; return ;;
             0|"") return ;;
@@ -968,6 +978,87 @@ print("|".join([
     ", ".join(str(x) for x in (d.get("exempt_tags") or [])) or "-",
 ]))
 PY
+}
+
+cdn_enabled() {
+    python3 -c "
+import json,sys
+try: d = json.load(open('$ETC_DIR/config.json')).get('cdn', {})
+except Exception: d = {}
+sys.exit(0 if d.get('enabled') else 1)" 2>/dev/null
+}
+
+# Читаем одним заходом, как и остальные экраны: дёргать shaperctl по разу на
+# каждое поле — это лишние запуски питона на отрисовку.
+cdn_read() {
+    python3 - <<PY 2>/dev/null || echo "0|-|-|-|100|100"
+import json
+try:
+    d = json.load(open("$ETC_DIR/config.json")).get("cdn", {})
+except Exception:
+    d = {}
+tok = d.get("token") or ""
+print("|".join([
+    "1" if d.get("enabled") else "0",
+    d.get("url") or "-",
+    str(d.get("resource_id") or "-"),
+    (tok[:6] + "\u2026") if tok else "-",
+    "%g" % float(d.get("low_gb") or 0),
+    "%g" % float(d.get("low_balance") or 0),
+]))
+PY
+}
+
+screen_cdn() {
+    local on url res tok low lowb v
+    while :; do
+        IFS='|' read -r on url res tok low lowb <<< "$(cdn_read)"
+        title "${T[cdn_title]}"
+        echo -e "  ${D}${T[cdn_h1]}${N}"
+        echo -e "  ${D}${T[cdn_h2]}${N}"
+        echo
+        if [[ "$on" == "1" ]]; then
+            echo -e "  ${T[cdn_l_state]}: ${G}${T[g_on]}${N}"
+        else
+            echo -e "  ${T[cdn_l_state]}: ${D}${T[g_off]}${N}"
+        fi
+        echo -e "  ${T[cdn_l_url]}: ${B}${url}${N}"
+        echo -e "  ${T[cdn_l_res]}: ${B}${res}${N}"
+        echo -e "  ${T[cdn_l_token]}: ${D}${tok}${N}"
+        echo
+        echo "  [1] ${T[g_toggle]}"
+        echo "  [2] ${T[cdn_set_url]}"
+        echo "  [3] ${T[cdn_set_token]}"
+        echo "  [4] ${T[cdn_set_res]}"
+        echo "  [5] ${T[cdn_test]}"
+        echo "  [6] ${T[cdn_list]}"
+        echo "  [7] ${T[cdn_usage]}"
+        echo "  [8] ${T[cdn_set_low]}: ${B}${low}${N}"
+        echo "  [9] ${T[cdn_set_lowbal]}: ${B}${lowb}${N}"
+        echo "  [0] ← ${T[m0]}"
+        echo
+        case "$(ask "${T[choice]}")" in
+            1) if [[ "$on" == "1" ]]; then "$CTL" cdn set --disable
+               else "$CTL" cdn set --enable; fi >/dev/null ;;
+            2) echo -e "  ${D}${T[cdn_hint_url]}${N}"
+               v="$(ask "${T[cdn_set_url]}")"
+               [[ -n "$v" ]] && { "$CTL" cdn set --url "$v" >/dev/null || pause; } ;;
+            3) echo -e "  ${D}${T[cdn_hint_token]}${N}"
+               v="$(ask "${T[cdn_set_token]}")"
+               [[ -n "$v" ]] && "$CTL" cdn set --token "$v" >/dev/null ;;
+            4) echo -e "  ${D}${T[cdn_hint_res]}${N}"
+               v="$(ask "${T[cdn_set_res]}" "$res")"
+               [[ -n "$v" ]] && { "$CTL" cdn set --resource-id "$v" >/dev/null || pause; } ;;
+            5) "$CTL" cdn test; pause ;;
+            6) "$CTL" cdn list; pause ;;
+            7) "$CTL" cdn usage; pause ;;
+            8) v="$(ask "${T[cdn_set_low]}" "$low")"
+               [[ -n "$v" ]] && "$CTL" cdn set --low-gb "$v" >/dev/null ;;
+            9) v="$(ask "${T[cdn_set_lowbal]}" "$lowb")"
+               [[ -n "$v" ]] && "$CTL" cdn set --low-balance "$v" >/dev/null ;;
+            0|"") return ;;
+        esac
+    done
 }
 
 screen_panel() {
@@ -2069,6 +2160,11 @@ while :; do
     else
         echo -e "  [9] 🛰  ${T[pn_menu]} ${D}${T[pn_menu_d]}${N}"
     fi
+    if cdn_enabled; then
+        echo -e " [10] 🌐 ${T[cdn_menu]} ${G}${T[g_on]}${N}"
+    else
+        echo -e " [10] 🌐 ${T[cdn_menu]} ${D}${T[cdn_menu_d]}${N}"
+    fi
     echo -e "  [0] 🚪 ${T[m0]}"
     hr
     # Ссылка живёт только здесь, в подвале главного экрана: на рабочих
@@ -2085,6 +2181,7 @@ while :; do
         7) screen_whitelist ;;
         8) screen_service ;;
         9) screen_panel ;;
+        10) screen_cdn ;;
         0|"") clear; exit 0 ;;
     esac
 done

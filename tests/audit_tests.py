@@ -1714,6 +1714,49 @@ try:
 finally:
     _bi.open = _REAL_OPEN
 
+# ── разбор per-CPU карты счётчиков ──────────────────────────────────────────
+#
+# bpftool с -j отдаёт значение МАССИВОМ БАЙТОВ, а не числом: у карты нет BTF на
+# тип значения. Разбор через _int молча возвращал ноль на каждой ячейке, и
+# счётчики выглядели пустыми при живых цифрах в ядре — метрики печатались,
+# просто все нули. Такую ошибку не видно ниоткуда, кроме сравнения с
+# `bpftool map dump` руками, поэтому проверяем оба формата.
+_REAL_MDP = S.map_dump_percpu
+
+
+def _percpu(payload):
+    import json as _js
+    S.run = lambda cmd, check=True: (_js.dumps(payload), 0)
+    S.os.path.exists = lambda p: True
+    try:
+        return _REAL_MDP("stat_map")
+    finally:
+        S.run = _REAL_RUN_CMD
+        S.os.path.exists = _REAL_EXISTS
+
+
+_REAL_RUN_CMD = S.run
+_REAL_EXISTS = S.os.path.exists
+
+# Ровно то, что отдаёт живой bpftool 7.x на ядре 6.12.
+_bytes_form = [{"key": ["0x00", "0x00", "0x00", "0x00"],
+                "values": [{"cpu": 0, "value": ["0x96", "0xa8"] + ["0x00"] * 6},
+                           {"cpu": 1, "value": ["0xb7", "0x88"] + ["0x00"] * 6}]}]
+check("значение массивом байтов складывается по всем CPU",
+      _percpu(_bytes_form) == {0: 43158 + 34999},
+      _percpu(_bytes_form))
+
+# Сборки с BTF печатают число. Понимать надо оба вида.
+_int_form = [{"key": 2, "values": [{"cpu": 0, "value": 100},
+                                   {"cpu": 1, "value": 23}]}]
+check("значение числом тоже понимается", _percpu(_int_form) == {2: 123})
+
+check("пустой ответ не роняет", _percpu([]) == {})
+check("имена счётчиков совпадают с индексами в shaper.bpf.c",
+      S.STAT_NAMES == ("down_pass", "down_drop", "up_pass", "up_drop",
+                       "pp_resolved", "pp_unresolved"))
+
+
 # Предупреждение должно быть на обоих языках и не совпадать дословно —
 # иначе перевода нет, а есть копия.
 for _k in ("eth_off", "eth_fix", "too_slow"):
@@ -1869,6 +1912,309 @@ check("флаги едут значением, а не именем",
 # Движок обязан перезагружать список при старте: карта перезапуск не переживает.
 _eng = open(os.path.join(SRC, "engine.sh")).read()
 check("движок делает trusted sync при запуске", "trusted sync" in _eng)
+
+
+# ── Смена релея CDN ───────────────────────────────────────────────────
+# 05.09 край CDN переехал на другой адрес, он перестал быть доверенным,
+# заголовок PROXY разбираться перестал — и все клиенты за CDN оказались на
+# одном лимите. В журнале при этом было пусто. Проверка ловит это по своим
+# же счётчикам, никуда не обращаясь.
+print("\n\033[1mСмена релея CDN\033[0m")
+
+check("адрес IPv4 из /proc разбирается", S._hex_ip("0100007F") == "127.0.0.1",
+      S._hex_ip("0100007F"))
+check("адрес IPv4 в обёртке IPv6 разбирается",
+      S._hex_ip("0000000000000000FFFF0000" + "9B7100CB") == "203.0.113.155",
+      S._hex_ip("0000000000000000FFFF00009B7100CB"))
+check("мусор не роняет разбор", S._hex_ip("нет") == "" and S._hex_ip("00") == "")
+
+_gs = {}
+S.guard_state = lambda: dict(_gs)
+S.guard_state_save = lambda st: _gs.update(st)
+_sent = []
+S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
+S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
+S.proc_peers = lambda ports: {"10.0.0.9": 40, "10.0.0.1": 1}
+_stats = {"pp_resolved": 0, "pp_unresolved": 0}
+S.read_stats = lambda: dict(_stats)
+_cfg = {"proxy_ports": [443], "telegram": dict(S.TG_DEFAULT, node_name="Нода")}
+
+# Первый проход только запоминает счётчики: сравнивать не с чем.
+check("первый проход молчит", S.relay_watch(_cfg, now=1000.0) == "", _sent)
+
+# Заголовки разбираются — тишина, даже если неразрешённых заметная доля.
+_stats.update({"pp_resolved": 9000, "pp_unresolved": 1000})
+check("здоровая доля тревоги не даёт",
+      S.relay_watch(_cfg, now=1000.0 + S.RELAY_CHECK_EVERY) == "", _sent)
+
+# Разбор прекратился: весь прирост ушёл в неразрешённые.
+_stats.update({"pp_resolved": 9000, "pp_unresolved": 41000})
+got = S.relay_watch(_cfg, now=1000.0 + 2 * S.RELAY_CHECK_EVERY)
+check("смена релея замечена", got == "10.0.0.9", got)
+check("названо ровно то, у кого соединений больше",
+      _sent and "10.0.0.9" in _sent[-1], _sent[-1][:200] if _sent else "")
+check("в сообщении есть готовая команда",
+      _sent and "trusted add 10.0.0.9 --relay" in _sent[-1],
+      _sent[-1][:200] if _sent else "")
+check("доверенный адрес в подозреваемые не попал",
+      _sent and "10.0.0.1</code>" not in _sent[-1], _sent[-1][:200] if _sent else "")
+
+# Повтор в пределах паузы сообщение не шлёт.
+_was = len(_sent)
+_stats.update({"pp_resolved": 9000, "pp_unresolved": 81000})
+S.relay_watch(_cfg, now=1000.0 + 3 * S.RELAY_CHECK_EVERY)
+check("второй раз подряд не пишем", len(_sent) == _was, len(_sent))
+
+# Перезагрузка движка обнуляет счётчики — это не повод для тревоги.
+_was = len(_sent)
+_stats.update({"pp_resolved": 0, "pp_unresolved": 0})
+S.relay_watch(_cfg, now=1000.0 + 10 * S.RELAY_CHECK_EVERY)
+check("сброс счётчиков тревоги не даёт", len(_sent) == _was, len(_sent))
+
+# Малая выборка ничего не значит.
+_gs.clear(); _sent.clear()
+_stats.update({"pp_resolved": 0, "pp_unresolved": 0})
+S.relay_watch(_cfg, now=2000.0)
+_stats.update({"pp_resolved": 0, "pp_unresolved": 100})
+S.relay_watch(_cfg, now=2000.0 + S.RELAY_CHECK_EVERY)
+check("на сотне пакетов не срабатываем", _sent == [], _sent)
+
+# Где CDN не используется, проверка не работает вовсе.
+check("без портов PROXY проверка молчит",
+      S.relay_watch({"proxy_ports": [], "telegram": {}}, now=9e9) == "")
+S.trusted_sources = lambda: {}
+check("без доверенных релеев проверка молчит",
+      S.relay_watch(_cfg, now=9e9) == "")
+
+check("порог доли отделяет здоровую ноду от сломанной",
+      0.9 <= S.RELAY_BAD_SHARE < 1.0, S.RELAY_BAD_SHARE)
+check("событие объявлено", "relay_changed" in S.EVENT_TYPES)
+
+
+# ── Обвал клиентов и вердикт провайдера CDN ────────────────────────────
+# Нода не может сообщить о собственной смерти, но об исчезновении клиентов —
+# может: она жива, а людей нет. И сразу говорит, чья это беда.
+print("\n\033[1mОбвал клиентов и вердикт CDN\033[0m")
+
+import http.server, threading, urllib.parse as _up
+
+CDN = {"status": "active", "top_ips": [], "requests": 0, "code": 0, "hits": 0,
+       "out": 5 * 1024 ** 3, "in": 1024 ** 3, "left": 100.0, "stop": False,
+       "bal": 500.0}
+
+
+class _CdnH(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        CDN["hits"] += 1
+        if self.headers.get("Authorization") != "Bearer test_key_123":
+            return self._send(401, {"error": "нет ключа"})
+        if CDN["code"]:
+            return self._send(CDN["code"], {"error": "провайдер молчит"})
+        if self.path.startswith("/v1/usage"):
+            return self._send(200, {"hours": 24, "resources": [], "totals": {
+                "bytes_in": CDN["in"], "bytes_out": CDN["out"],
+                "requests": 10}})
+        if self.path.endswith("/account"):
+            return self._send(200, {"billing_mode": "package",
+                                    "balance": CDN["bal"],
+                                    "package_gb_left": CDN["left"],
+                                    "billing_suspended": CDN["stop"]})
+        if self.path.endswith("/audience"):
+            return self._send(200, {"top_ips": CDN["top_ips"],
+                                    "top_locations": [], "top_upstreams": []})
+        if "/stats" in self.path:
+            return self._send(200, {"bucket_sec": 300, "points": [
+                {"ts": "x", "requests": str(CDN["requests"]),
+                 "bytes_out": "0", "bytes_in": "0"}], "totals": {}})
+        return self._send(200, {"resource": {"id": 7, "status": CDN["status"]},
+                                "upstreams": [], "certs": []})
+
+    def _send(self, code, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+
+_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CdnH)
+threading.Thread(target=_srv.serve_forever, daemon=True).start()
+_CDN_URL = "http://127.0.0.1:%d" % _srv.server_address[1]
+
+
+def _cfg_cdn(**over):
+    c = dict(S.CDN_DEFAULT)
+    c.update({"enabled": True, "url": _CDN_URL, "token": "test_key_123",
+              "resource_id": "7"})
+    c.update(over)
+    return {"cdn": c, "telegram": dict(S.TG_DEFAULT, node_name="Нода")}
+
+
+check("выключенный раздел никого не спрашивает",
+      S.cdn_verdict(_cfg_cdn(enabled=False)) == "" and CDN["hits"] == 0,
+      CDN["hits"])
+
+CDN.update({"top_ips": [], "requests": 0})
+v = S.cdn_verdict(_cfg_cdn())
+check("пусто у края — вердикт «это провайдер»", "провайдер" in v or "provider" in v, v)
+
+CDN.update({"top_ips": [{"ip": "203.0.113.7"}], "requests": 12})
+v = S.cdn_verdict(_cfg_cdn())
+check("клиенты у края есть — вердикт «смотреть здесь»",
+      "12" in v and ("смотреть" in v or "look" in v), v)
+
+# По кнопке в меню обвала нет — вывод «клиенты не доезжают» был бы ложью
+# при живых клиентах. Там только факты.
+CDN.update({"top_ips": [], "requests": 8433})
+v = S.cdn_verdict(_cfg_cdn(), collapsed=False)
+check("по кнопке — факты, без вывода про ноду",
+      "8433" in v and "не доезжают" not in v and "look here" not in v, v)
+v = S.cdn_verdict(_cfg_cdn())
+check("а при обвале вывод остаётся", "не доезжают" in v or "look here" in v, v)
+CDN.update({"requests": 0})
+v = S.cdn_verdict(_cfg_cdn(), collapsed=False)
+check("по кнопке при пустом крае — предупреждение, а не обвинение",
+      ("не доходит" in v or "not a single" in v) and "провайдер" not in v, v)
+
+CDN.update({"status": "disabled"})
+v = S.cdn_verdict(_cfg_cdn())
+check("выключенный ресурс назван отдельно", "disabled" in v, v)
+CDN.update({"status": "active"})
+
+CDN.update({"code": 500})
+check("отказ провайдера вердикта не даёт и не роняет", S.cdn_verdict(_cfg_cdn()) == "")
+CDN.update({"code": 0})
+check("неверный ключ вердикта не даёт",
+      S.cdn_verdict(_cfg_cdn(token="wrong_key_456")) == "")
+# Провайдер в документации пишет базу вместе с версией. Обе формы должны
+# работать: иначе получилось бы /v1/v1/resources и вечное «ответа нет».
+CDN.update({"top_ips": [{"ip": "203.0.113.7"}], "requests": 5})
+check("база с хвостом /v1 понимается так же",
+      "5" in S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1")),
+      S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1")))
+check("и с косой чертой на конце тоже",
+      "5" in S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1/")),
+      S.cdn_verdict(_cfg_cdn(url=_CDN_URL + "/v1/")))
+CDN.update({"top_ips": [], "requests": 0})
+
+check("без адреса и номера ресурса не ходим",
+      S.cdn_verdict(_cfg_cdn(url="")) == ""
+      and S.cdn_verdict(_cfg_cdn(resource_id="")) == "")
+check("ключ не утекает в текст ошибки",
+      "ключ" not in S.cdn_scrub("сбой ключ тут", {"token": "ключ12345"})
+      or S.cdn_scrub("сбой ключ12345", {"token": "ключ12345"}) == "сбой ***",
+      S.cdn_scrub("сбой ключ12345", {"token": "ключ12345"}))
+
+# Обвал клиентов.
+_gs2 = {}
+S.guard_state = lambda: dict(_gs2)
+S.guard_state_save = lambda st: _gs2.update(st)
+_sent2 = []
+S.tg_send = lambda text, cfg=None, **kw: (_sent2.append(text), (True, ""))[1]
+_users = {"10.0.0.%d" % i: {} for i in range(40)}
+S.read_users = lambda: dict(_users)
+CDN.update({"top_ips": [], "requests": 0})
+
+now = 10000.0
+for i in range(S.ONLINE_KEEP):
+    S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
+check("пока клиенты на месте — молчим", _sent2 == [], _sent2)
+
+_users = {"10.0.0.1": {}}
+S.read_users = lambda: dict(_users)
+n = S.clients_watch(_cfg_cdn(), now=now + S.ONLINE_KEEP * S.ONLINE_EVERY)
+check("обвал замечен", n == 1, n)
+check("сообщение ушло", len(_sent2) == 1, len(_sent2))
+check("в нём есть и текущее число, и норма",
+      _sent2 and "1" in _sent2[0] and "40" in _sent2[0], _sent2[0][:160] if _sent2 else "")
+check("и вердикт провайдера приложен",
+      _sent2 and ("провайдер" in _sent2[0] or "provider" in _sent2[0]),
+      _sent2[0][:200] if _sent2 else "")
+
+_was2 = len(_sent2)
+S.clients_watch(_cfg_cdn(), now=now + (S.ONLINE_KEEP + 1) * S.ONLINE_EVERY)
+check("второй раз подряд не пишем", len(_sent2) == _was2, len(_sent2))
+
+# Маленькая нода: ноль там ничего не доказывает.
+_gs2.clear(); _sent2.clear()
+_users = {"10.0.0.1": {}, "10.0.0.2": {}}
+S.read_users = lambda: dict(_users)
+now = 50000.0
+for i in range(S.ONLINE_KEEP + 2):
+    S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
+check("маленькую ноду не судим", _sent2 == [], _sent2)
+
+# ── Трафик и остаток пакета у провайдера ──────────────────────────────
+# Кончившийся трафик кладёт всех клиентов разом. Предупреждаем заранее.
+u = S.cdn_usage(_cfg_cdn())
+check("потребление читается", u and u["out"] == 5 * 1024 ** 3, u)
+check("остаток пакета читается", u and u["left_gb"] == 100.0, u)
+check("баланс и режим тоже", u and u["balance"] == 500.0 and u["mode"] == "package", u)
+check("выключенный раздел потребления не даёт",
+      S.cdn_usage(_cfg_cdn(enabled=False)) is None)
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 100.0, "stop": False, "bal": 500.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=100), now=100000.0)
+check("полный пакет тревоги не даёт", _sent2 == [], _sent2)
+
+_gs2.clear()
+CDN.update({"left": 3.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=200000.0)
+check("остаток ниже порога — предупреждение",
+      len(_sent2) == 1 and "3.0" in _sent2[0], _sent2[-1][:120] if _sent2 else "")
+
+_was3 = len(_sent2)
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=200000.0 + S.CDN_QUOTA_EVERY)
+check("второй раз в пределах паузы не пишем", len(_sent2) == _was3, len(_sent2))
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 100.0, "stop": True})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=300000.0)
+check("приостановленное обслуживание — отдельная тревога",
+      len(_sent2) == 1 and ("приостановлено" in _sent2[0] or "suspended" in _sent2[0]),
+      _sent2[-1][:120] if _sent2 else "")
+CDN.update({"stop": False})
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 3.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=0, low_balance=0), now=400000.0)
+check("порог 0 выключает предупреждение", _sent2 == [], _sent2)
+CDN.update({"left": 100.0})
+
+# Баланс — отдельный повод и отдельная память: предупреждение о гигабайтах не
+# должно проглотить предупреждение о деньгах, действия по ним разные.
+_gs2.clear(); _sent2.clear()
+CDN.update({"bal": 40.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=0, low_balance=100), now=500000.0)
+check("баланс ниже порога — предупреждение",
+      len(_sent2) == 1 and "40" in _sent2[0], _sent2[-1][:120] if _sent2 else "")
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"left": 3.0, "bal": 40.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=100), now=600000.0)
+check("кончились и гигабайты, и деньги — придут оба",
+      len(_sent2) == 2, [x[:40] for x in _sent2])
+
+_gs2.clear(); _sent2.clear()
+CDN.update({"bal": 500.0, "left": 100.0})
+S.cdn_quota_watch(_cfg_cdn(low_gb=20, low_balance=0), now=700000.0)
+check("порог баланса 0 выключает предупреждение о деньгах", _sent2 == [], _sent2)
+
+check("умолчания порогов — сто гигабайт и сотня на балансе",
+      S.CDN_DEFAULT["low_gb"] == 100 and S.CDN_DEFAULT["low_balance"] == 100,
+      (S.CDN_DEFAULT["low_gb"], S.CDN_DEFAULT["low_balance"]))
+check("событие объявлено", "cdn_quota_low" in S.EVENT_TYPES)
+
+check("порог обвала — заметная доля нормы", 0 < S.ONLINE_COLLAPSE <= 0.5,
+      S.ONLINE_COLLAPSE)
+check("свежие отсчёты в норму не берём", S.ONLINE_SKIP_FRESH >= 1)
+check("событие объявлено", "clients_gone" in S.EVENT_TYPES)
+_srv.shutdown()
 
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

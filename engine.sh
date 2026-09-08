@@ -152,6 +152,112 @@ setup_fq() {
     ok "fq активен — скачивание ограничивается"
 }
 
+# ── Привязки PROXY protocol переживают перезагрузку ────────────────────
+#
+# Заголовок PROXY приходит один раз, в начале TCP-соединения, и больше не
+# повторяется. Раньше unload_quiet сносил pp_conn_map вместе с остальными
+# картами, и все живые сессии через CDN до самого закрытия шли мимо
+# ограничения. Замерено 03.09: через шесть минут после reload 20% байт без
+# шейпинга, средний пакет 1100 байт — настоящие данные, а не хендшейки.
+# Спад медленный, часами: через 443 идут долгоживущие сессии.
+#
+# Поэтому содержимое карты снимаем до выгрузки и возвращаем после загрузки.
+#
+# Восстановление добровольное: любая осечка означает ровно то, что было
+# раньше, и ронять из-за неё загрузку шейпера нельзя. Отсюда `|| true` и
+# `return 0` в каждой ветке.
+#
+# ВАЖНО: если менять раскладку struct pp_key или struct pp_conn — старые
+# байты в новую карту класть нельзя, они будут разобраны как другой клиент,
+# и чужой трафик пойдёт в учёт. Размеры ключа и значения сверяются ниже, но
+# перестановку полей той же длины проверка не поймает. Меняете раскладку —
+# уберите вызов pp_restore на это одно обновление.
+# Куда сбрасывается карта, когда выгрузка и загрузка — РАЗНЫЕ процессы.
+#
+# `engine.sh reload` спасает привязки сам: там pp_save и pp_restore живут в
+# одном вызове. А `systemctl restart shaper` — это ExecStop (`unload`) и
+# ExecStart (`load`) по отдельности, и к моменту загрузки карты уже нет.
+# Через неё же идёт обновление: install.sh заканчивается restart.
+# Замерено 05.09 на живом обновлении: доля трафика без привязки 10,8% → 22,8%.
+#
+# Файл в /run намеренно: он переживает перезапуск службы и умирает при
+# перезагрузке машины — а после перезагрузки восстанавливать нечего, там и
+# соединений уже нет.
+PP_SPILL_DIR="/run/shaper"
+PP_SPILL="$PP_SPILL_DIR/pp_conn.json"
+# Дамп старше этого не берём: соединений давно нет, а порт релея уже мог
+# достаться другому клиенту — вернув такую привязку, мы приписали бы ему
+# чужой трафик. Ровно та ошибка, что чинилась в fins, только другой дверью.
+PP_SPILL_MAX_AGE=120
+
+PP_PIN=""
+PP_DUMP=""
+
+pp_save() {
+    PP_PIN="$PIN_MAPS/pp_conn_map"
+    PP_DUMP=""
+    [[ -e "$PP_PIN" ]] || return 0
+    local d
+    d="$(mktemp /run/shaper-pp.XXXXXX 2>/dev/null)" || return 0
+    chmod 600 "$d" 2>/dev/null || true
+    # В дампе адреса клиентов, поэтому файл 600 и удаляется сразу после.
+    if bpftool map dump pinned "$PP_PIN" -j >"$d" 2>/dev/null \
+       && bpftool map show pinned "$PP_PIN" -j >"$d.meta" 2>/dev/null; then
+        chmod 600 "$d.meta" 2>/dev/null || true
+        PP_DUMP="$d"
+    else
+        rm -f "$d" "$d.meta" 2>/dev/null || true
+    fi
+    return 0
+}
+
+pp_adopt_spill() {
+    # Подобрать то, что оставил предыдущий процесс при выгрузке.
+    [[ -s "$PP_SPILL" && -s "$PP_SPILL.meta" ]] || return 0
+    local age now mtime
+    now="$(date +%s 2>/dev/null || echo 0)"
+    mtime="$(stat -c %Y "$PP_SPILL" 2>/dev/null || echo 0)"
+    age=$(( now - mtime ))
+    if (( age < 0 || age > PP_SPILL_MAX_AGE )); then
+        warn "привязки PROXY из прошлого запуска устарели (${age} с) — не восстанавливаю"
+        rm -f "$PP_SPILL" "$PP_SPILL.meta" 2>/dev/null || true
+        return 0
+    fi
+    PP_DUMP="$PP_SPILL"
+    return 0
+}
+
+pp_restore() {
+    # В памяти пусто — значит выгрузка была отдельным процессом
+    # (systemctl restart, обновление). Берём то, что она оставила.
+    [[ -n "$PP_DUMP" && -s "$PP_DUMP" ]] || pp_adopt_spill
+    [[ -n "$PP_DUMP" && -s "$PP_DUMP" ]] || { ok "привязок PROXY не нашлось"; pp_forget; return 0; }
+    local batch n
+    batch="$(mktemp /run/shaper-pp.XXXXXX 2>/dev/null)" || { pp_forget; return 0; }
+    chmod 600 "$batch" 2>/dev/null || true
+    n="$(PP_PIN="$PP_PIN" python3 "$APP_DIR/pp_restore.py" \
+            "$PP_DUMP" "$PP_DUMP.meta" "$batch" 2>/dev/null)" || n=""
+    if [[ -z "$n" ]]; then
+        warn "привязки PROXY не восстановлены — раскладка карты изменилась или дамп не разобрался"
+    elif [[ "$n" == "0" ]]; then
+        ok "привязок PROXY не было — восстанавливать нечего"
+    elif bpftool batch file "$batch" >/dev/null 2>&1; then
+        ok "привязки PROXY восстановлены: $n"
+    else
+        warn "привязки PROXY не восстановились — сессии через CDN пойдут без ограничения до переустановки"
+    fi
+    rm -f "$batch" 2>/dev/null || true
+    pp_forget
+    return 0
+}
+
+pp_forget() {
+    [[ -n "$PP_DUMP" ]] && rm -f "$PP_DUMP" "$PP_DUMP.meta" 2>/dev/null || true
+    rm -f "$PP_SPILL" "$PP_SPILL.meta" 2>/dev/null || true
+    PP_DUMP=""
+    return 0
+}
+
 # ── Загрузка ──────────────────────────────────────────────────────────
 load() {
     need_iface
@@ -162,6 +268,8 @@ load() {
     mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf
     [[ -f "$BPF_OBJ" && "$BPF_OBJ" -nt "$BPF_SRC" ]] || build
 
+    # Снимаем привязки PROXY ДО выгрузки: unload_quiet сносит карты.
+    pp_save
     unload_quiet
     mkdir -p "$PIN_ROOT"
 
@@ -188,6 +296,10 @@ load() {
     [[ -e "$PIN_PROGS/shaper_down" && -e "$PIN_PROGS/shaper_up" ]] \
         || die "программы не нашлись в $PIN_PROGS: $(ls "$PIN_PROGS" 2>/dev/null | tr '\n' ' ')"
     ok "программа загружена, карты закреплены в $PIN_MAPS"
+
+    # Возвращаем привязки до того, как фильтры пойдут в дело: иначе первые
+    # пакеты живых сессий успеют уехать без ограничения.
+    pp_restore
 
     # Без fq загрузку не отменяем: учёт, отдача и белый список работают и
     # так, а нода без шейпера вообще — хуже, чем нода с половиной шейпера.
@@ -234,7 +346,23 @@ unload_quiet() {
         tc filter del dev "$ifc" ingress 2>/dev/null || true
         tc qdisc  del dev "$ifc" clsact  2>/dev/null || true
     done
+    pp_spill
     rm -rf "$PIN_PROGS" "$PIN_MAPS" 2>/dev/null || true
+}
+
+pp_spill() {
+    # Сохранить привязки для следующего процесса. Осечка ничего не ломает:
+    # получится ровно прежнее поведение, поэтому все ветки возвращают 0.
+    local pin="$PIN_MAPS/pp_conn_map"
+    [[ -e "$pin" ]] || return 0
+    mkdir -p "$PP_SPILL_DIR" 2>/dev/null || return 0
+    chmod 700 "$PP_SPILL_DIR" 2>/dev/null || true
+    # В дампе адреса клиентов, поэтому файл создаётся сразу закрытым.
+    ( umask 077
+      bpftool map dump pinned "$pin" -j >"$PP_SPILL" 2>/dev/null &&
+      bpftool map show pinned "$pin" -j >"$PP_SPILL.meta" 2>/dev/null ) ||
+        { rm -f "$PP_SPILL" "$PP_SPILL.meta" 2>/dev/null; return 0; }
+    return 0
 }
 
 unload() {
@@ -255,7 +383,9 @@ state() {
 case "${1:-}" in
     load)   load ;;
     unload) unload ;;
-    reload) unload_quiet; load ;;
+    # Без отдельного unload_quiet: load() выгружает сам, а до этого успевает
+    # снять привязки PROXY. Раньше карты сносились здесь, и снимать было нечего.
+    reload) load ;;
     build)  build ;;
     state)  state ;;
     *) echo "использование: $0 {load|unload|reload|build|state}"; exit 1 ;;

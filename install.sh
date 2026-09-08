@@ -109,6 +109,7 @@ if [[ ! -s /var/lib/shape/node_id ]]; then
 fi
 install -m 755 "$SRC/shaperctl.py"     "$APP_DIR/shaperctl.py"
 install -m 755 "$SRC/engine.sh"        "$APP_DIR/engine.sh"
+install -m 755 "$SRC/pp_restore.py"    "$APP_DIR/pp_restore.py"
 # Удаление должно быть доступно с самой ноды: меню вызывает именно этот файл.
 install -m 755 "$SRC/uninstall.sh"     "$APP_DIR/uninstall.sh"
 install -m 755 "$SRC/menu.sh"          "$APP_DIR/menu.sh"

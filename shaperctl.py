@@ -227,7 +227,7 @@ MSG = {
         "pn_who_none": "панель не знает адрес {ip}; всего на ноде адресов у {n} пользователей",
         "pn_who_hint": "адрес мог отвалиться, либо нода в панели не та, через которую он ходит",
         "h_pn_who_ip": "адрес для команды who",
-        "pn_bad_uuid": "UUID ноды должен выглядеть как 5d8bba03-0951-4503-a4d6-572233c3b934 — 36 знаков с дефисами",
+        "pn_bad_uuid": "UUID ноды должен выглядеть как a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d — 36 знаков с дефисами",
         "pn_seen": "Пользователей на опросе",
         "pn_seen_none": "ноль при успешном опросе почти всегда значит, что UUID указывает не на ту ноду",
         "guard_ratio": "отдельно: отдал за сутки больше {p} процентов от скачанного, начиная с {mb} МБ",
@@ -310,6 +310,40 @@ MSG = {
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
         "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b>",
+        "cdn_no_url": "адрес API провайдера CDN не задан",
+        "cdn_no_token": "ключ API провайдера CDN не задан",
+        "cdn_v_off": "🛑 Ресурс у провайдера CDN в состоянии «{s}» — он выключен, а не сломан.",
+        "cdn_v_empty": "🛑 <b>До края CDN не доходит ни один запрос.</b> Это провайдер: у него пусто и по запросам, и по адресам. Нода тут ни при чём.",
+        "cdn_v_alive": "✅ До края CDN запросы доходят: {r} за последние минуты. Значит клиенты не доезжают уже до ноды — смотреть здесь.",
+        "clients_msg": "🟠 <b>{node} — клиенты пропали</b>\n\nСейчас {n}, обычно около {norm}. Нода жива: процессы работают, ошибок нет.",
+        "cdn_state": "Связь с CDN",
+        "h_cdn": "связь с API провайдера CDN: чья беда, когда клиенты пропали",
+        "h_cdn_url": "адрес API провайдера, например https://api.example.com/v1",
+        "h_cdn_token": "ключ из личного кабинета провайдера",
+        "h_cdn_res": "номер ресурса, за которым стоит эта нода",
+        "cdn_ask": "Спрашиваю провайдера…",
+        "cdn_bad_res": "номер ресурса — это число",
+        "cdn_bad_key": "ключ не принят: возьмите его в личном кабинете, раздел API",
+        "cdn_no_res": "связь есть, но ресурс не отвечает — проверьте его номер",
+        "cdn_no_list": "у ключа нет ни одного ресурса",
+        "cdn_d_traffic": "Через CDN: ↓ {out} · ↑ {inb}",
+        "cdn_d_left": "осталось {g} ГБ",
+        "cdn_d_stop": "🛑 <b>Обслуживание у провайдера CDN приостановлено.</b>",
+        "cdn_u_none": "провайдер не ответил или раздел выключен",
+        "cdn_q_low": "⚠️ <b>{node} — у провайдера CDN кончается пакет</b>\n\nОсталось {g} ГБ. За сутки через CDN прошло {out}.",
+        "cdn_q_stop": "🛑 <b>{node} — обслуживание у провайдера CDN приостановлено</b>\n\nКлиенты потеряют доступ, как только край перестанет их принимать.",
+        "cdn_q_money": "⚠️ <b>{node} — заканчивается баланс у провайдера CDN</b>\n\nОсталось {b}. Когда деньги кончатся, обслуживание приостановят и клиенты потеряют доступ.",
+        "cdn_usage_t": "За сутки через CDN",
+        "cdn_left_t": "Остаток пакета",
+        "cdn_balance_t": "Баланс",
+        "h_cdn_low": "предупредить, когда в пакете останется меньше стольких ГБ; 0 — не предупреждать",
+        "h_cdn_lowbal": "предупредить, когда на балансе останется меньше этого; 0 — не предупреждать",
+        "cdn_p_alive": "✅ Связь есть. До края CDN доходят запросы: {r} за последние минуты.",
+        "cdn_p_empty": "⚠️ Связь есть, ресурс активен, но до края CDN не доходит ни один запрос.",
+        "cdn_quiet": "Ответа нет: проверьте адрес, ключ и номер ресурса.",
+        "cdn_url": "Адрес API",
+        "cdn_res": "Номер ресурса",
+        "relay_msg": "⚠️ <b>{node} — похоже, релей CDN сменил адрес</b>\n\nЗа последние минуты <b>{share}%</b> трафика на портах {ports} пришло без разбора заголовка PROXY. Настоящие адреса клиентов не распознаются, и все они делят <b>один лимит на всех</b>.\n\nБольше всего соединений с <code>{ip}</code> — их {n}.\n\nЕсли это ваш новый релей, добавьте его:\n<code>shaperctl trusted add {ip} --relay</code>",
         "pn_off_head": "⛔ <b>Подписка отключена</b>",
         "pn_off_why": "🤖 Отключил Shape: адресов было {n}, реакции не было {m} мин.",
         "pn_off_how": "<i>Включить обратно: <code>shaperctl panel enable {id}</code> или в панели.</i>",
@@ -336,6 +370,7 @@ MSG = {
         "pn_msg_blocked": "🚫 Доступ к ноде перекрыт на {m} мин, адресов: {n}",
         "pn_msg_nothing": "Ничего не предпринято: включено только уведомление.",
         "pn_msg_ips": "Адресов одновременно: <b>{n}</b> за последние {w} мин",
+        "pn_grace_long": "отсрочка длиннее перекрытия ({m} мин) — штраф истечёт раньше срока, и отсчёт оборвётся",
         "pn_msg_tariff": "<i>Порог для его тарифа: {t} — продано устройств {d}</i>",
         "h_pn_per_device": "во сколько раз порог адресов больше числа устройств в тарифе, 0 = один порог на всех",
         "pn_per_device": "Порог от тарифа",
@@ -691,7 +726,7 @@ MSG = {
         "pn_who_none": "the panel does not know {ip}; the node has addresses for {n} users",
         "pn_who_hint": "the address may have dropped, or this is not the node it connects through",
         "h_pn_who_ip": "address for the who command",
-        "pn_bad_uuid": "the node UUID must look like 5d8bba03-0951-4503-a4d6-572233c3b934 — 36 characters with dashes",
+        "pn_bad_uuid": "the node UUID must look like a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d — 36 characters with dashes",
         "pn_seen": "Users on the last poll",
         "pn_seen_none": "zero on a successful poll almost always means the UUID points at a different node",
         "guard_ratio": "separately: uploaded over {p} percent of the download in a day, from {mb} MB",
@@ -774,6 +809,40 @@ MSG = {
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
         "pn_msg_head": "🔎 <b>Looks like a shared subscription</b>",
+        "cdn_no_url": "the CDN provider API address is not set",
+        "cdn_no_token": "the CDN provider API key is not set",
+        "cdn_v_off": "🛑 The resource at the CDN provider is in state {s} — switched off, not broken.",
+        "cdn_v_empty": "🛑 <b>Not a single request reaches the CDN edge.</b> This is the provider: empty both by requests and by addresses. The node has nothing to do with it.",
+        "cdn_v_alive": "✅ Requests do reach the CDN edge: {r} in the last minutes. So clients are failing to reach the node itself — look here.",
+        "clients_msg": "🟠 <b>{node} — clients are gone</b>\n\nNow {n}, usually about {norm}. The node is alive: processes running, no errors.",
+        "cdn_state": "CDN link",
+        "h_cdn": "link to the CDN provider API: whose fault it is when clients vanish",
+        "h_cdn_url": "provider API address, for example https://api.example.com/v1",
+        "h_cdn_token": "key from the provider dashboard",
+        "h_cdn_res": "id of the resource this node sits behind",
+        "cdn_ask": "Asking the provider…",
+        "cdn_bad_res": "the resource id is a number",
+        "cdn_bad_key": "the key was rejected: take it from the dashboard, API section",
+        "cdn_no_res": "the link works, but the resource does not answer — check its id",
+        "cdn_no_list": "the key has no resources",
+        "cdn_d_traffic": "Through the CDN: ↓ {out} · ↑ {inb}",
+        "cdn_d_left": "{g} GB left",
+        "cdn_d_stop": "🛑 <b>Service at the CDN provider is suspended.</b>",
+        "cdn_u_none": "the provider did not answer, or the section is off",
+        "cdn_q_low": "⚠️ <b>{node} — the CDN package is running out</b>\n\n{g} GB left. {out} went through the CDN in the last day.",
+        "cdn_q_stop": "🛑 <b>{node} — service at the CDN provider is suspended</b>\n\nClients will lose access as soon as the edge stops taking them.",
+        "cdn_q_money": "⚠️ <b>{node} — the balance at the CDN provider is running out</b>\n\n{b} left. When the money runs out, service is suspended and clients lose access.",
+        "cdn_usage_t": "Through the CDN in a day",
+        "cdn_left_t": "Package left",
+        "cdn_balance_t": "Balance",
+        "h_cdn_low": "warn when fewer than this many GB are left; 0 — never warn",
+        "h_cdn_lowbal": "warn when the balance falls below this; 0 — never warn",
+        "cdn_p_alive": "✅ The link works. Requests do reach the CDN edge: {r} in the last minutes.",
+        "cdn_p_empty": "⚠️ The link works and the resource is active, but not a single request reaches the CDN edge.",
+        "cdn_quiet": "No answer: check the address, the key and the resource id.",
+        "cdn_url": "API address",
+        "cdn_res": "Resource id",
+        "relay_msg": "⚠️ <b>{node} — the CDN relay seems to have changed address</b>\n\nOver the last minutes <b>{share}%</b> of the traffic on ports {ports} arrived without the PROXY header being parsed. Real client addresses are not recognised, so they all share <b>one limit between them</b>.\n\nMost connections come from <code>{ip}</code> — {n} of them.\n\nIf this is your new relay, add it:\n<code>shaperctl trusted add {ip} --relay</code>",
         "pn_off_head": "⛔ <b>Subscription disabled</b>",
         "pn_off_why": "🤖 Disabled by Shape: there were {n} addresses and no reaction for {m} min.",
         "pn_off_how": "<i>To turn it back on: <code>shaperctl panel enable {id}</code> or in the panel.</i>",
@@ -800,6 +869,7 @@ MSG = {
         "pn_msg_blocked": "🚫 Access to the node cut off for {m} min, addresses: {n}",
         "pn_msg_nothing": "Nothing was done: only notification is enabled.",
         "pn_msg_ips": "Simultaneous addresses: <b>{n}</b> over the last {w} min",
+        "pn_grace_long": "the grace period is longer than the block ({m} min) — the penalty expires first and the countdown breaks",
         "pn_msg_tariff": "<i>Threshold for his plan: {t} — devices sold: {d}</i>",
         "h_pn_per_device": "how many times the address threshold exceeds the plan's device count, 0 = one threshold for all",
         "pn_per_device": "Threshold from the plan",
@@ -1146,8 +1216,19 @@ def map_dump_percpu(name):
         idx = parse_u32(e["key"])
         total = 0
         for cell in (e.get("values") or []):
-            if isinstance(cell, dict):
-                total += _int(cell.get("value", 0))
+            if not isinstance(cell, dict):
+                continue
+            raw_v = cell.get("value", 0)
+            # С -j значение приходит массивом байтов, а не числом: у карты нет
+            # BTF на тип значения, и bpftool отдаёт сырьё. Разбор через _int
+            # молча давал ноль на каждой ячейке — счётчики выглядели пустыми
+            # при живых цифрах в ядре. Рядом лежит "formatted" с готовым
+            # числом, но полагаться на него нельзя: его печатают не все сборки.
+            b = _raw(raw_v)
+            if b is not None and len(b) >= 8:
+                total += struct.unpack("<Q", b[:8])[0]
+            else:
+                total += _int(raw_v)
         res[idx] = total
     return res
 
@@ -1727,6 +1808,8 @@ def load_config():
                        if str(x).strip()]
     panel["exempt_tags"] = [str(x).strip() for x in
                             (panel.get("exempt_tags") or []) if str(x).strip()]
+    cdn = dict(CDN_DEFAULT)
+    cdn.update(cfg.get("cdn", {}))
     met = dict(METRICS_DEFAULT)
     met.update(cfg.get("metrics", {}))
     # Порты, на которых заголовку PROXY верят от кого угодно. Отдельно от
@@ -1736,7 +1819,8 @@ def load_config():
     return {"ports": cfg.get("ports", [443]),
             "proxy_ports": proxy_ports,
             "speed_mbps": float(cfg.get("speed_mbps", 0)),
-            "guard": guard, "telegram": tg, "panel": panel, "metrics": met}
+            "guard": guard, "telegram": tg, "panel": panel, "metrics": met,
+            "cdn": cdn}
 
 
 def save_config(cfg):
@@ -2448,7 +2532,8 @@ def load_penalties():
 def save_penalties(pens):
     tmp = PEN_FILE + ".tmp"
     os.makedirs(ETC_DIR, exist_ok=True)
-    with open(tmp, "w") as f:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(pens, f, indent=2)
     os.replace(tmp, PEN_FILE)
 
@@ -2503,7 +2588,21 @@ EVENT_TYPES = {
     "engine_stopped",    # движок выгружен
     "api_action",        # действие через API
     "sharing_found",     # панель показала раздачу подписки
-    "error",             # ошибка
+    "relay_changed",     # релей CDN сменил адрес и перестал быть доверенным
+    "clients_gone",      # клиенты пропали, хотя нода жива
+    "cdn_quota_low",     # у провайдера CDN кончается пакет
+    # Ниже — панельные события, которые не были объявлены и потому писались
+    # типом "error": log_event заменяет неизвестный тип. Отличить отказ
+    # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
+    # это лилось в серию type="error".
+    "panel_exempt",          # исключён по тегу или номеру
+    "panel_under_tariff",    # адресов меньше, чем разрешает его тариф
+    "panel_disabled",        # подписка отключена по отсрочке
+    "panel_disable_refused", # за проход набралось больше потолка — не трогаем
+    "panel_disable_failed",  # панель не приняла отключение
+    "panel_user_enable",     # подписку включили обратно
+    "panel_user_disable",    # подписку отключили руками
+    "error",                 # ошибка
 }
 EVENT_MAX_BYTES = 4 * 1024 * 1024      # больше — половина уезжает в .1
 
@@ -3042,7 +3141,8 @@ def load_daily():
 def save_daily(ips):
     tmp = DAILY_FILE + ".tmp"
     os.makedirs(ETC_DIR, exist_ok=True)
-    with open(tmp, "w") as f:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump({"day": time.strftime("%Y-%m-%d"), "ips": ips}, f)
     os.replace(tmp, DAILY_FILE)
 
@@ -3481,11 +3581,33 @@ def cmd_watch(a):
                                                in notified.items()},
                                   "owners": owners_seen, "noticed": noticed,
                                   "update": upd})
-            # Опрос панели. Внутри свой дедлайн и своя пауза после ошибки:
-            # недоступная панель не должна ни ронять сторож, ни задерживать
-            # выдачу штрафов дольше одного пропущенного прохода.
+            # Опрос панели. Сторож она не роняет — внутри свой дедлайн и
+            # своя пауза после ошибки. Но проход растягивает: POST плюс опрос
+            # задачи до PANEL_JOB_DEADLINE, причём дедлайн проверяется ПОСЛЕ
+            # запроса, так что последний GET выходит за него почти на полный
+            # таймаут. Худший случай около 40 с против watch_interval в 10 —
+            # то есть три-четыре пропущенных прохода, и только в том проходе
+            # из panel.interval, где опрос вообще идёт. На пороги сторожа это
+            # не влияет: они измеряются минутами, а не проходами.
             panel_due(cfg)
             panel_report_due(cfg)
+            # Смена релея CDN. Наружу не ходит, ошибок не выпускает, стоит
+            # ноль запросов: сверяет свои же счётчики раз в пять минут.
+            try:
+                relay_watch(cfg)
+            except Exception:
+                pass
+            # Обвал клиентов при живой ноде. Спрашивает провайдера CDN, если
+            # раздел включён, и кладёт вердикт в то же сообщение.
+            try:
+                clients_watch(cfg)
+            except Exception:
+                pass
+            # Остаток пакета у провайдера CDN. Заглядываем раз в шесть часов.
+            try:
+                cdn_quota_watch(cfg)
+            except Exception:
+                pass
 
             # Персональные скорости живут в ядре с далёким, но конечным
             # сроком. Продлеваем раз в час, чтобы они не истекли молча.
@@ -4327,7 +4449,8 @@ def digest_stash(day, snapshot):
         return
     tmp = DIGEST_FILE + ".tmp"
     os.makedirs(ETC_DIR, exist_ok=True)
-    with open(tmp, "w") as f:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump({"day": day, "ips": snapshot}, f)
     os.replace(tmp, DIGEST_FILE)
 
@@ -4582,6 +4705,90 @@ def backup_due(cfg, now=None):
 # сторож и ограничение скорости продолжают работать как ни в чём не бывало.
 # Это главное свойство: нода не должна зависеть от внешней службы.
 
+# ── Связь с API провайдера CDN ─────────────────────────────────────────
+#
+# Нужна ровно для одного: когда клиенты с ноды пропали, сказать вслух, чья
+# это беда. Нода здорова, процессы работают, ошибок нет — и по ней не понять,
+# то ли край CDN лёг, то ли что-то у нас. Разбор такого случая занимает час;
+# провайдер отвечает за две секунды, если его спросить.
+#
+# Раздел необязательный и выключен по умолчанию. Провайдер недоступен, ключ
+# протух, API у него другой — сообщение уйдёт как раньше, просто без строки
+# с вердиктом. Ни шейпер, ни сторож, ни штрафы этого пути не касаются.
+#
+# Пути соответствуют API вида `/v1/resources/{id}` — если у вашего провайдера
+# они другие, раздел просто не включайте.
+CDN_HTTP_TIMEOUT = 8            # на один запрос, секунд
+CDN_RETRY = 900                 # пауза после ошибки, чтобы не долбить
+
+CDN_DEFAULT = {
+    "enabled": False,
+    "url": "",            # база API провайдера, например https://api.example.com
+    "token": "",          # ключ из личного кабинета провайдера
+    "resource_id": "",    # номер ресурса, за которым стоит эта нода
+    "low_gb": 100,        # предупредить, когда в пакете осталось меньше ГБ
+    "low_balance": 100,   # и когда на балансе осталось меньше этого
+    "proxy": "",          # http(s)-прокси; socks5 здесь не поддержан
+}
+
+
+class CdnError(Exception):
+    """Ошибка обращения к API провайдера. code — HTTP-код, если он был."""
+
+    def __init__(self, msg, code=0):
+        super().__init__(msg)
+        self.code = code
+
+
+def cdn_scrub(text, c=None):
+    """Убирает ключ из текста ошибки — журнал читают не только свои."""
+    s = str(text)
+    token = str((c or {}).get("token") or "")
+    if len(token) > 8:
+        s = s.replace(token, "***")
+    return s
+
+
+def cdn_call(c, path):
+    """Один GET к API провайдера. Возвращает разобранный ответ словарём."""
+    base = str(c.get("url") or "").strip().rstrip("/")
+    if not base:
+        raise CdnError(t("cdn_no_url"))
+    if not base.startswith(("http://", "https://")):
+        base = "https://" + base
+    # Провайдер в своей документации пишет базу вместе с версией — вида
+    # https://api.example.com/v1. Пути мы строим со своим /v1, и склеилось бы
+    # /v1/v1. Понимаем обе формы: лишний хвост убираем, а человека не
+    # заставляем помнить, какую именно из них мы ждём.
+    if base.endswith("/v1"):
+        base = base[:-3]
+    token = str(c.get("token") or "").strip()
+    if not token:
+        raise CdnError(t("cdn_no_token"))
+
+    proxy = str(c.get("proxy") or "").strip()
+    if proxy.startswith(("socks5://", "socks5h://")):
+        raise CdnError(t("pn_socks"))
+
+    req = urllib.request.Request(base + path, method="GET")
+    req.add_header("Authorization", "Bearer " + token)
+    req.add_header("Accept", "application/json")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(
+        {"http": proxy, "https": proxy} if proxy else {}))
+    try:
+        with opener.open(req, timeout=CDN_HTTP_TIMEOUT) as r:
+            raw = r.read()
+    except urllib.error.HTTPError as e:
+        raise CdnError(cdn_scrub("HTTP %d" % e.code, c), e.code) from e
+    except Exception as e:
+        raise CdnError(cdn_scrub(e, c)) from e
+    try:
+        got = json.loads(raw.decode() or "{}")
+    except ValueError:
+        raise CdnError(t("pn_bad_json")) from None
+    return got if isinstance(got, dict) else {}
+
+
 PANEL_STATE = os.path.join(VAR_DIR, "panel.state")
 PANEL_RETRY = 900           # пауза после ошибки, чтобы не долбить панель
 PANEL_JOB_DEADLINE = 20.0   # сколько всего ждём готовности задачи, секунд
@@ -4776,15 +4983,17 @@ def panel_call(p, method, path, body=None):
         except Exception:
             detail = ""
         if e.code in (401, 403):
-            raise PanelError(t("pn_denied", detail=detail or e.reason), e.code)
-        raise PanelError(panel_scrub(f"HTTP {e.code}: {detail or e.reason}", p), e.code)
+            raise PanelError(t("pn_denied", detail=detail or e.reason),
+                             e.code) from e
+        raise PanelError(panel_scrub(f"HTTP {e.code}: {detail or e.reason}", p),
+                         e.code) from e
     except Exception as e:
-        raise PanelError(panel_scrub(e, p))
+        raise PanelError(panel_scrub(e, p)) from e
 
     try:
         return panel_unwrap(json.loads(raw.decode() or "{}"))
     except ValueError:
-        raise PanelError(t("pn_bad_json"))
+        raise PanelError(t("pn_bad_json")) from None
 
 
 def panel_fetch(p):
@@ -5154,6 +5363,338 @@ def panel_report(cfg, now=None, force=False):
                        mime="text/plain; charset=utf-8")
 
 
+# ── Обвал клиентов: чья это беда ───────────────────────────────────────
+#
+# Нода не может сообщить о собственной смерти, но об исчезновении клиентов —
+# вполне: она жива, а людей нет. Норму берём как медиану последнего часа,
+# исключая самые свежие отсчёты: иначе начавшийся обвал сам опускал бы планку,
+# по которой его оценивают. Маленькие ноды не проверяем — там ноль ничего не
+# доказывает.
+ONLINE_EVERY = 300              # как часто берём отсчёт, секунд
+ONLINE_KEEP = 12                # сколько отсчётов держим — час
+ONLINE_SKIP_FRESH = 2           # свежие в норму не берём
+ONLINE_MIN_NORMAL = 10          # ниже этой нормы ноду не судим
+ONLINE_COLLAPSE = 0.2           # доля от нормы, ниже которой это обвал
+ONLINE_ALERT_EVERY = 3600       # не чаще раза в час
+
+
+def cdn_usage(cfg, hours=24):
+    """
+    Сколько прошло через CDN и сколько осталось. Возвращает словарь или None.
+
+    Наружу не выпускает ничего: это строка в сводке, а не условие её отправки.
+    Ключи: out, inb, requests — за окно; left_gb, balance, mode, suspended —
+    из профиля, если провайдер их отдаёт.
+    """
+    c = cfg.get("cdn") or {}
+    if not c.get("enabled"):
+        return None
+    out = {}
+    try:
+        u = cdn_call(c, "/v1/usage?hours=%d" % max(1, int(hours))) or {}
+        tot = u.get("totals") or {}
+        out["out"] = int(tot.get("bytes_out") or 0)
+        out["inb"] = int(tot.get("bytes_in") or 0)
+        out["requests"] = int(tot.get("requests") or 0)
+    except Exception:
+        return None
+    try:
+        a = cdn_call(c, "/v1/account") or {}
+        acc = a.get("account") if isinstance(a.get("account"), dict) else a
+        if acc.get("package_gb_left") is not None:
+            out["left_gb"] = float(acc.get("package_gb_left") or 0)
+        if acc.get("balance") is not None:
+            out["balance"] = float(acc.get("balance") or 0)
+        out["mode"] = str(acc.get("billing_mode") or "")
+        out["suspended"] = bool(acc.get("billing_suspended"))
+    except Exception:
+        pass
+    return out
+
+
+def cdn_verdict(cfg, collapsed=True):
+    """
+    Спросить провайдера, доходят ли до его края запросы.
+
+    Возвращает готовую строку или пустую, если спросить не вышло. Наружу не
+    выпускает ничего: это украшение уведомления, а не условие его отправки.
+
+    `collapsed` — за чем пришли. В уведомлении об обвале уместен вывод «это
+    провайдер» или «смотреть у себя»: клиентов там действительно нет, и
+    вопрос лишь в том, чья это беда. По кнопке в меню обвала нет, и тот же
+    вывод оказался бы прямой ложью — «клиенты не доезжают» при живых
+    клиентах. Поэтому там просто факты.
+    """
+    c = cfg.get("cdn") or {}
+    if not c.get("enabled"):
+        return ""
+    rid = str(c.get("resource_id") or "").strip()
+    if not rid:
+        return ""
+    try:
+        res = (cdn_call(c, "/v1/resources/" + rid) or {}).get("resource") or {}
+        if str(res.get("status") or "") not in ("", "active"):
+            return t("cdn_v_off", s=str(res.get("status")))
+
+        aud = cdn_call(c, "/v1/resources/" + rid + "/audience") or {}
+        seen = len(aud.get("top_ips") or [])
+
+        st = cdn_call(c, "/v1/resources/" + rid + "/stats?hours=1") or {}
+        reqs = 0
+        for p in (st.get("points") or [])[-3:]:
+            try:
+                reqs += int(p.get("requests") or 0)
+            except (TypeError, ValueError):
+                pass
+    except Exception:
+        return ""
+
+    # Опираемся на запросы, а не на список адресов: у ресурсов типа TCP
+    # провайдер адреса не ведёт вовсе, и там всегда пусто. Сказать «клиентов
+    # нет» на основании пустого списка означало бы врать при живом трафике.
+    if not collapsed:
+        return (t("cdn_p_alive", r=reqs) if reqs or seen
+                else t("cdn_p_empty"))
+    if not reqs and not seen:
+        return t("cdn_v_empty")
+    return t("cdn_v_alive", r=reqs)
+
+
+CDN_QUOTA_EVERY = 6 * 3600      # как часто заглядываем в остаток
+CDN_QUOTA_ALERT_EVERY = 12 * 3600   # и не чаще чем раз в полсуток пишем
+
+
+def cdn_quota_watch(cfg, now=None):
+    """
+    Не кончается ли пакет у провайдера CDN. Возвращает остаток или None.
+
+    Кончившийся трафик кладёт всех клиентов разом, а узнать об этом задним
+    числом — значит разбирать аварию с нуля. Предупреждаем заранее, но редко:
+    раз в полсуток, пока остаток ниже порога.
+    """
+    c = cfg.get("cdn") or {}
+    if not c.get("enabled"):
+        return None
+    now = now if now is not None else time.time()
+    state = guard_state()
+    prev = state.get("cdnq") or {}
+    if now - float(prev.get("at") or 0) < CDN_QUOTA_EVERY:
+        return None
+    prev["at"] = now
+    state["cdnq"] = prev
+    guard_state_save(state)
+
+    got = cdn_usage(cfg, hours=24)
+    if not got:
+        return None
+    left = got.get("left_gb")
+    bal = got.get("balance")
+    low_gb = float(c.get("low_gb") or 0)
+    low_bal = float(c.get("low_balance") or 0)
+
+    # Три повода, и у каждого своя память: предупреждение о гигабайтах не
+    # должно проглотить предупреждение о деньгах. Кончится и то и другое —
+    # придут оба сообщения, потому что действия по ним разные.
+    said = prev.get("said") or {}
+    if not isinstance(said, dict):
+        said = {}
+    node = node_label(cfg["telegram"])
+    todo = []
+    if got.get("suspended"):
+        todo.append(("stop", t("cdn_q_stop", node=node)))
+    if left is not None and low_gb > 0 and left < low_gb:
+        todo.append(("gb", t("cdn_q_low", node=node, g="%.1f" % left,
+                             out=fmt_bytes(got.get("out", 0)))))
+    if bal is not None and low_bal > 0 and bal < low_bal:
+        todo.append(("bal", t("cdn_q_money", node=node, b="%g" % bal)))
+
+    for kind, text in todo:
+        if now - float(said.get(kind) or 0) < CDN_QUOTA_ALERT_EVERY:
+            continue
+        said[kind] = now
+        log_event("cdn_quota_low", kind=kind, left_gb=left, balance=bal)
+        tg_send(text, cfg)
+    prev["said"] = said
+    state["cdnq"] = prev
+    guard_state_save(state)
+    return left
+
+
+def clients_watch(cfg, now=None):
+    """
+    Не пропали ли клиенты. Возвращает текущее число или -1, если не судим.
+
+    Считаем по адресам, которые видит ядро: это те, кто прямо сейчас гонит
+    трафик через ноду. Ошибок наружу не выпускает.
+    """
+    now = now if now is not None else time.time()
+    state = guard_state()
+    prev = state.get("online") or {}
+    if now - float(prev.get("at") or 0) < ONLINE_EVERY:
+        return -1
+
+    n = len(read_users() or {})
+    hist = [int(x) for x in (prev.get("hist") or []) if str(x).isdigit()]
+    hist = (hist + [n])[-ONLINE_KEEP:]
+    prev.update({"at": now, "hist": hist})
+    state["online"] = prev
+    guard_state_save(state)
+
+    if len(hist) < ONLINE_KEEP:
+        return -1
+    base = sorted(hist[:-ONLINE_SKIP_FRESH])
+    norm = base[len(base) // 2]
+    if norm < ONLINE_MIN_NORMAL:
+        return -1
+
+    if n > norm * ONLINE_COLLAPSE:
+        if prev.pop("alerted", None) is not None:
+            state["online"] = prev
+            guard_state_save(state)
+        return n
+    if now - float(prev.get("alerted") or 0) < ONLINE_ALERT_EVERY:
+        return n
+
+    prev["alerted"] = now
+    state["online"] = prev
+    guard_state_save(state)
+
+    log_event("clients_gone", now=n, normal=norm)
+    tail = cdn_verdict(cfg)
+    tg_send(t("clients_msg", node=node_label(cfg["telegram"]), n=n, norm=norm)
+            + (("\n\n" + tail) if tail else ""), cfg)
+    return n
+
+
+# ── Смена релея CDN ────────────────────────────────────────────────────
+#
+# Край CDN однажды переезжает на другой адрес — провайдер меняет узел, и
+# предупредить об этом забывает. Новый адрес не значится в trusted.txt, а заголовок
+# PROXY разбирается ТОЛЬКО для доверенных источников. Дальше происходит вот
+# что: настоящие адреса клиентов не распознаются, весь трафик за CDN
+# складывается в один адрес — сам релей, — и сотня человек делит один лимит
+# на всех. Снаружи это выглядит как «интернет пропал», а в журнале тишина:
+# нода здорова, Xray работает, ошибок нет.
+#
+# Признак чисто локальный, наружу нода не ходит. Заголовки разбираются —
+# растёт pp_resolved. Перестали — весь прирост уходит в pp_unresolved, а
+# pp_resolved стоит. Здоровая доля неразрешённых на живой ноде 8-10% (это
+# рукопожатия новых соединений и служебный трафик релея), так что порог в
+# 95% при остановившемся pp_resolved шумом не берётся.
+RELAY_CHECK_EVERY = 300         # как часто сверяем, секунд
+RELAY_MIN_PACKETS = 2000        # меньше — выборка ничего не значит
+RELAY_BAD_SHARE = 0.95          # доля неразрешённых, выше которой это не шум
+RELAY_ALERT_EVERY = 6 * 3600    # не чаще раза в шесть часов на один адрес
+
+
+def _hex_ip(h):
+    """Адрес из /proc/net/tcp. IPv4 — 8 знаков, IPv6 — 32, порядок обратный."""
+    try:
+        b = bytes.fromhex(h)
+    except ValueError:
+        return ""
+    if len(b) == 4:
+        return socket.inet_ntop(socket.AF_INET, b[::-1])
+    if len(b) == 16:
+        # Ядро хранит адрес четвёрками байт, каждая в обратном порядке.
+        w = b"".join(b[i:i + 4][::-1] for i in range(0, 16, 4))
+        if w[:12] == b"\x00" * 10 + b"\xff\xff":
+            return socket.inet_ntop(socket.AF_INET, w[12:])
+        return socket.inet_ntop(socket.AF_INET6, w)
+    return ""
+
+
+def proc_peers(ports):
+    """Кто держит соединения на эти порты прямо сейчас: {адрес: сколько}."""
+    out = {}
+    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(path) as f:
+                next(f, None)
+                for line in f:
+                    p = line.split()
+                    if len(p) < 4 or p[3] != "01":      # 01 — ESTABLISHED
+                        continue
+                    try:
+                        if int(p[1].rsplit(":", 1)[1], 16) not in ports:
+                            continue
+                        ip = _hex_ip(p[2].rsplit(":", 1)[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if ip:
+                        out[ip] = out.get(ip, 0) + 1
+        except OSError:
+            continue
+    return out
+
+
+def relay_watch(cfg, now=None):
+    """
+    Не сменился ли релей CDN. Возвращает адрес-подозреваемый или пустую строку.
+
+    Наружу не ходит и ошибок не выпускает: это сторожевая проверка, она не
+    имеет права уронить цикл. Работает только там, где CDN вообще есть, —
+    то есть заданы порты с заголовком PROXY и хотя бы один доверенный релей.
+    """
+    now = now if now is not None else time.time()
+    ports = {int(x) for x in (cfg.get("proxy_ports") or []) if str(x).isdigit()}
+    if not ports:
+        return ""
+    trusted = {ip for ip, fl in trusted_sources().items() if fl & TRUST_RELAY}
+    if not trusted:
+        return ""
+
+    st = read_stats()
+    if not st:
+        return ""
+
+    state = guard_state()
+    prev = state.get("relay") or {}
+    at = float(prev.get("at") or 0)
+    if now - at < RELAY_CHECK_EVERY:
+        return ""
+
+    dr = st["pp_resolved"] - int(prev.get("resolved") or 0)
+    du = st["pp_unresolved"] - int(prev.get("unresolved") or 0)
+    prev.update({"at": now, "resolved": st["pp_resolved"],
+                 "unresolved": st["pp_unresolved"]})
+    state["relay"] = prev
+    guard_state_save(state)
+
+    # Движок перезагрузили — счётчики начались заново, сравнивать нечего.
+    if dr < 0 or du < 0 or dr + du < RELAY_MIN_PACKETS:
+        return ""
+    if du / float(dr + du) < RELAY_BAD_SHARE:
+        return ""
+
+    # Заголовки не разбираются. Кто же тогда к нам ходит на эти порты.
+    unknown = {ip: n for ip, n in proc_peers(ports).items() if ip not in trusted}
+    if not unknown:
+        return ""
+    ip = max(unknown, key=lambda k: unknown[k])
+
+    # Про адрес, о котором ещё не писали, сообщаем сразу: сравнивать «сейчас
+    # минус ноль» с паузой нельзя — это верно только потому, что время
+    # большое число, и разваливается на любом другом отсчёте времени.
+    alerted = prev.get("alerted") or {}
+    last = alerted.get(ip)
+    if last is not None and now - float(last) < RELAY_ALERT_EVERY:
+        return ip
+    alerted = {k: v for k, v in alerted.items()
+               if now - float(v or 0) < RELAY_ALERT_EVERY * 4}
+    alerted[ip] = now
+    prev["alerted"] = alerted
+    state["relay"] = prev
+    guard_state_save(state)
+
+    share = int(round(100 * du / float(dr + du)))
+    log_event("relay_changed", ip=ip, share=share, conns=unknown[ip])
+    tg_send(t("relay_msg", node=node_label(cfg["telegram"]), share=share,
+              ports=", ".join(str(p) for p in sorted(ports)),
+              ip=html.escape(ip), n=unknown[ip]), cfg)
+    return ip
+
+
 def panel_report_due(cfg, now=None):
     """
     Раз в цикл сторожа: не пора ли отправить отчёт по ноде.
@@ -5221,7 +5762,41 @@ def panel_user_enable(p, uid):
     panel_call(p, "POST", "/api/users/%s/actions/enable" % uid)
 
 
-def panel_pending(state, offenders, now, grace_sec):
+def panel_sharing_held(now=None):
+    """
+    Номера тех, кого прямо сейчас держит наше же перекрытие за раздачу.
+
+    Нужно ровно для одного. Перекрытие само убирает нарушителя из видимости:
+    трафика нет, lastSeen не обновляется, и за window_min его адреса выпадают
+    из окна. Он перестаёт числиться нарушителем — и отсчёт до отключения
+    подписки обнулялся, не доходя до конца НИКОГДА. Замерено 05.09: адреса
+    стареют за десять минут, отсрочка в тридцать не наступала ни разу.
+
+    Отмена отсчёта задумана для другого случая — когда владелец разобрался
+    сам. Его и оставляем: снял штраф через `release --user`, переиздал
+    подписку — запись уходит. А пока штраф жив, исчезновение из списка
+    объясняется нами, и отсчёт продолжается.
+    """
+    now = now if now is not None else time.time()
+    out = set()
+    for _ip, e in (load_penalties() or {}).items():
+        if not isinstance(e, dict):
+            continue
+        if e.get("source") != "panel" or e.get("reason") != "sharing":
+            continue
+        try:
+            if float(e.get("until") or 0) <= now:
+                continue
+        except (TypeError, ValueError):
+            continue
+        uid = str(e.get("user_id")
+                  or (e.get("subject") or {}).get("user_id") or "")
+        if uid:
+            out.add(uid)
+    return out
+
+
+def panel_pending(state, offenders, now, grace_sec, keep=()):
     """
     Кого пора отключать, и обновлённый список ожидающих.
 
@@ -5231,11 +5806,16 @@ def panel_pending(state, offenders, now, grace_sec):
 
     Из ожидания выпадают те, кто нарушителем больше не числится. Это и есть
     отмена: успел владелец — отсчёт прекращается сам.
+
+    Кроме тех, кто в `keep`: их держит наше собственное перекрытие, и их
+    исчезновение из списка ничего про владельца не говорит. Новых записей
+    для них не заводим — только не даём стереть уже начатый отсчёт.
     """
     live = {str(r["user_id"]) for r in offenders}
+    held = {str(x) for x in keep}
     pend = {k: float(v) for k, v in (state.get("pending") or {}).items()
             if isinstance(v, (int, float, str)) and str(v).replace(".", "", 1)
-            .replace("-", "", 1).isdigit() and k in live}
+            .replace("-", "", 1).isdigit() and (k in live or k in held)}
     for uid in live:
         pend.setdefault(uid, now)
     due = sorted(uid for uid, at in pend.items() if now - at >= grace_sec)
@@ -5493,6 +6073,12 @@ def panel_scan(cfg, now=None, act=True):
     found = panel_offenders(users, p, now)
     res = {"ok": True, "error": "", "code": 0,
            "users": len(users), "offenders": found}
+    # Сколько нарушителей на ЭТОМ опросе. Метрика раньше отдавала len(seen), а
+    # seen — учёт пауз между сигналами, записи в нём живут до двух суток: после
+    # единственного срабатывания график держал единицу двое суток.
+    st_found = panel_state()
+    st_found["last_found"] = len(found)
+    panel_state_save(st_found)
     if not act:
         return res
 
@@ -5509,7 +6095,8 @@ def panel_scan(cfg, now=None, act=True):
         # Исключённых в ожидание не берём вовсе.
         live = [r for r in found
                 if not guard_exempt(cfg, {"user_id": r["user_id"]})]
-        due, pend = panel_pending(state, live, now, grace)
+        due, pend = panel_pending(state, live, now, grace,
+                                  keep=panel_sharing_held(now))
         state["pending"] = pend
         panel_state_save(state)
 
@@ -5524,6 +6111,22 @@ def panel_scan(cfg, now=None, act=True):
         for uid in due:
             rec = next((r for r in live if str(r["user_id"]) == uid), None)
             person = panel_user(p, uid)
+            # Тег проверяем здесь, а не при наборе `live`: тег живёт в карточке,
+            # а её до этого места не запрашивали — иначе на каждом проходе ушёл
+            # бы запрос за каждого кандидата. Без этой проверки исключение по
+            # тегу защищало от ограничения и обрыва, но НЕ от отключения
+            # подписки: в guard_exempt выше уходит только номер, без тега.
+            # Отключение — самое дорогое действие, и деловой аккаунт, помеченный
+            # в панели, обязан быть защищён и от него.
+            if guard_exempt(cfg, {"user_id": uid,
+                                  "tag": (person or {}).get("tag")}):
+                pend.pop(uid, None)
+                state["pending"] = pend
+                panel_state_save(state)
+                if rec is not None:
+                    rec["skipped"] = True
+                log_event("panel_exempt", user_id=uid, stage="disable")
+                continue
             try:
                 panel_user_disable(p, uid)
             except PanelError as e:
@@ -5579,9 +6182,10 @@ def panel_scan(cfg, now=None, act=True):
             continue
 
         # Блокировка старше обычного ограничения: если задано и то и другое,
-        # выигрывает более строгое. Обрыв к ней прилагается сам — без него
-        # уже установленные соединения просто стали бы медленными, а человек
-        # остался бы «в сети» до того, как они отвалятся по таймауту.
+        # выигрывает более строгое. Обрыв к ней НЕ прилагается: лимит лежит в
+        # карте ядра по адресу и придавливает уже открытые соединения сразу,
+        # а обрыв стёр бы сессии из панели — владелец, пришедший по
+        # уведомлению, увидел бы пустую карточку вместо адресов и нод.
         if "block" in actions:
             rec["blocked"] = True
             rec["limited"] = panel_limit(p, rec["ips"], PANEL_BLOCK_MBPS,
@@ -5596,7 +6200,15 @@ def panel_scan(cfg, now=None, act=True):
         pens_now = load_penalties()
         rec["limited_now"] = sum(1 for ip in rec["ips"] if ip in pens_now)
 
-        if "drop" in actions or "block" in actions:
+        # Обрыв — только по явному указанию. Раньше его тянуло за собой
+        # перекрытие, и это вредило дважды. Во-первых, он не нужен: лимит
+        # лежит в карте ядра по адресу и действует на уже открытые соединения
+        # немедленно, рвать их незачем. Во-вторых, он стирает картину: сессии
+        # пропадают из панели, и владелец, открыв карточку человека, видит
+        # пустоту вместо адресов и нод. А смотреть он идёт именно тогда, когда
+        # пришло уведомление. Заодно исчезновение адресов обнуляло отсчёт до
+        # отключения подписки.
+        if "drop" in actions:
             try:
                 panel_drop(p, rec["ips"])
                 rec["dropped"] = list(rec["ips"])
@@ -5700,6 +6312,12 @@ def cmd_panel(a):
         if p.get("disable_after_min"):
             print(f"  {t('pn_disable_after')} : "
                   f"{C['red']}{p['disable_after_min']:g} {t('pn_min')}{C['r']}")
+            # Отсчёт держится, пока жив наш штраф: перекрытие само убирает
+            # нарушителя из видимости. Отсрочка длиннее перекрытия означает,
+            # что штраф истечёт раньше срока и отсчёт оборвётся молча.
+            if float(p["disable_after_min"]) >= float(p.get("limit_min") or 60):
+                print(f"    {C['yel']}"
+                      f"{t('pn_grace_long', m=p.get('limit_min', 60))}{C['r']}")
         print(f"  {t('pn_last')} : " + (time.strftime("%Y-%m-%d %H:%M",
               time.localtime(last)) if last else t("pn_never")))
         if last:
@@ -6518,7 +7136,7 @@ def build_metrics(users=None, unit_state=None, started=None, events=None):
                 int(exp - time.time()))
         add("shape_panel_sharing_found", "gauge",
             "Users flagged as sharing on the last poll",
-            len(st.get("seen") or {}))
+            int(st.get("last_found") or 0))
 
     return "\n".join(out) + "\n"
 
@@ -6830,6 +7448,101 @@ def cmd_whitelist(a):
                     found = True
         if not found:
             print(f"  {C['gry']}{t('wl_empty')}{C['r']}")
+
+
+def cmd_cdn(a):
+    """Связь с API провайдера CDN: показать, настроить, спросить."""
+    cfg = load_config()
+    c = cfg["cdn"]
+
+    if a.action == "set":
+        if a.url is not None:
+            u = a.url.strip().rstrip("/")
+            if u and not u.startswith(("http://", "https://")):
+                die(t("pn_bad_url"))
+            c["url"] = u
+        if a.token is not None:
+            c["token"] = a.token.strip()
+        if a.resource_id is not None:
+            r = str(a.resource_id).strip()
+            if r and not r.isdigit():
+                die(t("cdn_bad_res"))
+            c["resource_id"] = r
+        if a.proxy is not None:
+            c["proxy"] = a.proxy.strip()
+        if a.low_gb is not None:
+            c["low_gb"] = max(0.0, float(a.low_gb))
+        if a.low_balance is not None:
+            c["low_balance"] = max(0.0, float(a.low_balance))
+        if a.enable:
+            c["enabled"] = True
+        if a.disable:
+            c["enabled"] = False
+        cfg["cdn"] = c
+        save_config(cfg)
+        log_event("config_changed", section="cdn", source="cli")
+
+    if a.action == "usage":
+        got = cdn_usage(cfg, hours=24)
+        print()
+        if not got:
+            print(f"  {C['yel']}{t('cdn_u_none')}{C['r']}\n")
+            return
+        print(f"  {t('cdn_usage_t')} : ↓ {fmt_bytes(got.get('out', 0))}"
+              f" · ↑ {fmt_bytes(got.get('inb', 0))}")
+        if got.get("left_gb") is not None:
+            print(f"  {t('cdn_left_t')}   : {C['b']}{got['left_gb']:.1f} GB{C['r']}")
+        if got.get("balance") is not None:
+            print(f"  {t('cdn_balance_t')}         : {got['balance']:g}")
+        if got.get("suspended"):
+            print(f"  {C['red']}{t('cdn_d_stop')}{C['r']}")
+        print()
+        return
+
+    if a.action == "list":
+        # Чтобы номер ресурса не приходилось искать в личном кабинете руками.
+        try:
+            got = cdn_call(c, "/v1/resources")
+        except CdnError as e:
+            die(str(e))
+        rows = got.get("resources") or []
+        print()
+        if not rows:
+            print(f"  {C['gry']}{t('cdn_no_list')}{C['r']}\n")
+            return
+        for r in rows:
+            mark = C["grn"] if str(r.get("status")) == "active" else C["gry"]
+            print(f"  {C['b']}{r.get('id')}{C['r']}  {r.get('domain') or '—'}"
+                  f"  {mark}{r.get('status')}{C['r']}")
+        print()
+        return
+
+    if a.action == "test":
+        print(f"\n  {C['gry']}{t('cdn_ask')}{C['r']}")
+        # Сначала простой запрос: он называет причину отказа. Вердикт молчит
+        # обо всех ошибках намеренно — это украшение уведомления, — но здесь
+        # человек как раз и хочет знать, почему не отвечает.
+        try:
+            cdn_call(c, "/v1/ping")
+        except CdnError as e:
+            print(f"  {C['red']}✗ {e}{C['r']}")
+            if getattr(e, "code", 0) in (401, 403):
+                print(f"  {C['gry']}{t('cdn_bad_key')}{C['r']}")
+            print()
+            return
+        got = cdn_verdict(cfg, collapsed=False)
+        if got:
+            print(f"  {got}\n")
+        else:
+            print(f"  {C['yel']}{t('cdn_no_res')}{C['r']}\n")
+        return
+
+    print()
+    print(f"  {t('cdn_state')} : " + (f"{C['grn']}{t('guard_on')}{C['r']}"
+          if c["enabled"] else f"{C['gry']}{t('guard_off')}{C['r']}"))
+    print(f"  {t('cdn_url')}   : {c['url'] or '—'}")
+    print(f"  {t('cdn_res')}   : {c['resource_id'] or '—'}")
+    print()
 
 
 def cmd_trusted(a):
@@ -7570,6 +8283,23 @@ def build_parser():
     w.add_argument("action", choices=["add", "del", "sync", "list"])
     w.add_argument("ip", nargs="?", default="")
     w.set_defaults(func=cmd_whitelist)
+
+    cd = sub.add_parser("cdn", help=t("h_cdn"))
+    cd.add_argument("action", nargs="?",
+                    choices=["show", "set", "test", "list", "usage"],
+                    default="show")
+    cd.add_argument("--url", default=None, help=t("h_cdn_url"))
+    cd.add_argument("--token", default=None, help=t("h_cdn_token"))
+    cd.add_argument("--resource-id", dest="resource_id", default=None,
+                    help=t("h_cdn_res"))
+    cd.add_argument("--low-gb", dest="low_gb", type=float, default=None,
+                    help=t("h_cdn_low"))
+    cd.add_argument("--low-balance", dest="low_balance", type=float,
+                    default=None, help=t("h_cdn_lowbal"))
+    cd.add_argument("--proxy", default=None, help=t("h_met_proxy"))
+    cd.add_argument("--enable", action="store_true")
+    cd.add_argument("--disable", action="store_true")
+    cd.set_defaults(func=cmd_cdn)
 
     tr = sub.add_parser("trusted", help=t("h_trusted"))
     tr.add_argument("action", choices=["add", "del", "sync", "list"])

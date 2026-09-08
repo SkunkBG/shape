@@ -13,6 +13,222 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.87
+
+**A warning when the CDN provider runs out of traffic or money.**
+
+The node's own traffic is already in the daily digest. The account at the provider is another matter: the node cannot know about it, and it runs out just as suddenly and for every client at once.
+
+Two warnings now arrive. **The package is running out** — fewer than the configured number of gigabytes left, 100 by default. **The balance is running out** — less money than configured, also 100 by default. Each has its own memory, so one never silences the other: if both run out, both messages come, because the actions they call for differ.
+
+Suspended service at the provider is reported separately and loudly. That is no longer a warning but the reason clients are about to lose access — and precisely the one that would otherwise take hours to find, investigating an outage from scratch.
+
+Repeats no more than once every twelve hours while the cause holds. Thresholds are set from the menu or with `shaperctl cdn set --low-gb 100 --low-balance 100`; zero turns the matching warning off. To look at any moment, use the "Traffic and package left" item or `shaperctl cdn usage`.
+
+The account at the provider covers the whole dashboard rather than one node, so the section is worth keeping on a single node — otherwise the same warning arrives from every one of them.
+
+**On update** settings are unchanged. The warnings work only where the `cdn` section is on.
+
+---
+
+## 3.86
+
+**The "Ask the provider now" button no longer draws conclusions it has no grounds for.**
+
+The verdict was written for one case: the clients are gone and you need to know whose fault it is. Pressing the button in the menu is not that case — yet the same phrase "clients are not reaching the node" was said while the clients were there, which is simply false. The button now reports facts: the link works, the resource is active, so many requests reach the edge. The conclusion stayed where it belongs — in the collapse notification.
+
+**On update** settings are unchanged.
+
+---
+
+## 3.85
+
+**A node notices that its clients are gone and says straight away whose fault it is.**
+
+From outside, a CDN failure looks exactly like any breakage on the node: the people are gone while the node is alive — processes running, no errors, an empty journal. Telling one from the other without a hint takes an hour, and that hour had to be spent by hand.
+
+The node now watches its own client count. The normal level is the median of the last hour, with the freshest samples left out: otherwise a collapse in progress would lower the very bar it is judged against. Fewer than a fifth of the normal number left, and a message goes out. Nodes that normally hold fewer than ten people are not checked: zero proves nothing there.
+
+**The message also carries a verdict from the CDN provider.** The node asks its API whether the resource is active, whether clients reach the edge, and whether there were requests in the last minutes. Telegram then says either "not a single client reaches the edge — this is the provider" or "the edge does have clients, so they are not reaching the node, look here".
+
+The `cdn` section is optional and off by default. Set it up from the menu — item **10 "CDN provider"** on the main screen — or with `shaperctl cdn set`; check it with `shaperctl cdn test` or the "Ask the provider now" button. If the provider is unreachable, the key expired, or the paths in its API differ, the message goes out as before, just without the verdict line. Neither the shaper, nor the watchdog, nor the penalties touch this path: the node stays self-sufficient, and that property is not weakened anywhere here.
+
+The paths follow an API shaped like `/v1/resources/{id}`. Another provider's may differ — then simply leave the section off; the node notices the collapse without it.
+
+**On update** settings are unchanged and nothing needs turning on.
+
+---
+
+## 3.84
+
+**A node now notices on its own that the CDN relay changed address.**
+
+The failure this was built for looks like this. The CDN moves to another node. The new address is not in the trusted list, the PROXY header from it is not parsed — and real client addresses stop being recognised. All traffic behind the CDN collapses into one address, so a hundred people share **one limit between them**. From outside it is "the internet is gone", while the node stays silent: processes run, no errors, an empty journal. That is exactly what happened on 5 September, and it was found by accident while looking into something else.
+
+The signal turned out to be the node's own, with nobody to ask. While headers are parsed the resolved packet counter grows; once they are not, the whole increase goes to unresolved and resolved stands still. A healthy unresolved share on a live node is 8–10%: handshakes of new connections and the relay's own service traffic. So a 95% threshold with a stalled counter is not noise.
+
+Having noticed it, the node looks at who holds connections on its PROXY ports, drops the trusted ones, and sends the new relay's address to Telegram together with a ready `trusted add` command. It will not add the address itself: a trusted source can claim any client address, and that decision belongs to a person.
+
+The check runs every five minutes, costs **zero outside requests**, repeats about one address no more than once every six hours, and switches on only where PROXY ports are configured. On nodes without a CDN it does nothing.
+
+**On update** settings are unchanged and nothing needs turning on.
+
+---
+
+## 3.83
+
+**Disabling a subscription for sharing never fired — the block itself reset the countdown.**
+
+The design was this: sharing found, access cut off, and you get half an hour to step in; if you do not, the subscription is disabled entirely, on every node at once. Disabling through the API worked, the countdown worked, and together they did not.
+
+The reason is that a block removes the offender from view. At 0.05 Mbit/s the handshake never completes, connections are dropped, traffic stops — so `lastSeen` on his addresses stops updating and within `window_min` they fall out of the window. He stops counting as an offender, and cancellation is written as "gone from the list means the owner sorted it out". The countdown reset on every pass.
+
+Measured on two live nodes: addresses go stale in about ten minutes, and out of 243 addresses only four were older than ten minutes. With a thirty-minute grace and a ten-minute window, disabling could not happen at all — only an endless cycle of hourly blocks.
+
+The pending entry now survives while **our own** sharing penalty is alive: it carries `source=panel`, `reason=sharing` and the user id, so "vanished because of us" is told apart from "the owner sorted it out" precisely. Cancellation still works where it was meant to: clear the penalty with `release --user`, revoke the subscription, and the countdown stops.
+
+Hence a new rule that `panel show` warns about: **the grace period must be shorter than the block**. The countdown lives while the penalty lives, and that lasts `limit_min` minutes — 60 against 30 by default, a twofold margin.
+
+**A block no longer drops connections.**
+
+`block` used to pull a drop along with it. The drop was not needed — the limit lives in the kernel map by address and applies to already open connections at once — and it did harm: sessions vanished from the panel, so the owner, coming in on a notification to see who this is and from which nodes, found an empty card instead of addresses. It was also what reset the countdown to disabling the subscription.
+
+A drop now happens only when asked for explicitly: `--action-set block,drop`.
+
+**On update** settings are unchanged. If you have the disable grace turned on, it will start seeing things through for the first time.
+
+---
+
+## 3.82
+
+**Presets applied no sharing-detection settings at all — on any node.**
+
+Both presets called `panel set` with a `--limit-min` flag that does not exist: minutes are set with `--minutes`. Argument parsing rejected **the whole line**, and the error was swallowed by `2>/dev/null || true`. You picked a preset, saw "done", and kept the old settings: no threshold, no window, no `block` action. Checked on two live nodes — both sat on `notify`, meaning Shape would have seen sharing and said nothing.
+
+The error is no longer swallowed: if the command ever breaks again, it will show rather than hide. The same non-existent flag was in the README.
+
+**Presets now also set the plan-based threshold — `--per-device 4`.** It protects offices: fifteen devices sold give a threshold of 60, so a legitimate company sitting on one node stays out of the rule. For a family with five devices nothing changes — 5 × 4 = 20, the base threshold. It does not help a reseller either: his plan is five devices and his addresses are a hundred.
+
+**Tag exemption did not protect against disabling a subscription.** It worked for limiting and dropping, but the grace path received only the user id, without the tag: the card had not been fetched by that point. A business account tagged in the panel could be disabled automatically — contrary to what the documentation promised. The tag is now checked where the card is already in hand, so not a single extra request is spent.
+
+**The `shape_panel_sharing_found` metric measured something else than promised.** It returned the number of cooldown records, and those live up to two days: after a single hit the graph held one for forty-eight hours. It is now offenders on the last poll.
+
+**Seven panel events were written to the journal as errors.** Their types were never declared, and the journal replaces an unknown type with `error`: telling a refused disable from a real error was impossible, and in `shape_events_24h` all of it poured into the `type="error"` series. Now declared: `panel_exempt`, `panel_under_tariff`, `panel_disabled`, `panel_disable_refused`, `panel_disable_failed`, `panel_user_enable`, `panel_user_disable`.
+
+**On update** settings and state files are untouched. A preset does not touch values you set by hand — it applies only when you pick it yourself.
+
+---
+
+## 3.81
+
+**Clients behind a CDN no longer run unlimited after an update.**
+
+The PROXY header arrives once, in the first bytes of a connection, and never again. From it the shaper learns the real address of a client behind the CDN and keeps the binding in kernel memory. An update restarts the service, and stopping and starting are two separate processes: the bindings map was destroyed before anything could save it. Live connections through the CDN then ran **with no limit at all**, for hours, until the client happened to reconnect.
+
+Worse than the failure was how quiet it was: an update like that left no line about bindings in the journal.
+
+Now the map is spilled to `/run/shaper/pp_conn.json` on stop and restored on start. `/run` is deliberate: it survives a service restart and disappears when the machine reboots — and after a reboot there is nothing left to restore anyway. A dump older than two minutes is refused: over a long gap the relay port goes to another client, and a restored binding would bill them for someone else's traffic.
+
+Verified on a node behind a CDN with a real service restart: 759 bindings before it, 755 restored. On the same path before the fix, zero survived.
+
+There is now always a line about bindings in the journal — "restored: N" or "none found". The silence was more dangerous than the loss itself: there was no way to tell working persistence from broken.
+
+**On update** settings and state files are untouched. This very update already keeps the bindings: the new `engine.sh` is in place before the service restarts.
+
+---
+
+## 3.80
+
+**Watchman arrived — a silence watchdog for the node fleet.**
+
+A separate program in [watchman/](watchman/). It is installed **not on a node**, reads the Remnawave panel's `/api/nodes` once a minute and writes to Telegram when a node loses its clients or the panel loses the node.
+
+Why it is needed when the shaper already sends notifications. The shaper's Telegram answers "what happened **on** this node": who was limited, who is seeding, how much went through in a day. There is another question — "is it alive at all?" — and a node cannot answer it: a node that is down will not send a message saying it is down. Absence of a signal cannot be sent as a signal.
+
+Watchman watches client counts rather than missing metrics, and that is the point. A node can be perfectly healthy — processes running, panel connected, certificates valid — and still be unreachable for clients: the CDN in front of it broke, a DNS record vanished, a route went down. Metrics keep flowing all the while, and a metrics watchdog stays silent. The number of people collapses in both cases.
+
+So that it does not become the thing people mute:
+
+- a node's normal level is the median over the last fifteen minutes, with the most recent three excluded: otherwise a collapse in progress would lower the very bar it is judged against;
+- a fleet correction — at night the online count drops everywhere, so watchman compares a node against the overall sag rather than an absolute threshold;
+- nodes that normally hold fewer than ten people are not checked for collapse, because zero proves nothing there. Loss of connection is watched on every node without exception;
+- an alert is sent after three consecutive passes, repeats about one node come no more than hourly, and an all-clear follows when clients return.
+
+A daily "watchman alive" summary arrives once a day. It is not decoration: without it, watchman's own death looks like silence, which reads as "all is well".
+
+It installs with one command, is configured through the `watchman` menu, listens to nothing and opens no inbound ports. Thresholds are edited in the menu and covered by `selftest.py`, which runs the rules against invented scenarios without touching the network.
+
+**On upgrade** nothing changes on the nodes: watchman is unrelated to them and is installed separately.
+
+---
+
+## 3.79
+
+**Reloading the engine left a fifth of the traffic unshaped.**
+
+`engine.sh reload` removed the pinned maps wholesale, `pp_conn_map` among them — and that map holds the binding from a CDN connection to the real client behind it. The PROXY header arrives once, in the first bytes of a connection, and never again: every live session went past the limiter until it closed on its own.
+
+Measured on a production node: six minutes after a reload, 20% of the bytes were unshaped at an average packet size of 1100 bytes — real client data, not handshakes. The decay is slow, hours long, because the sessions on 443 are long-lived.
+
+The map contents are now saved before the unload and put back after the load — before the filters go on, otherwise the first packets of live sessions would already be gone unshaped. Key and value sizes are compared, so old bytes cannot land in a map whose layout has changed. Any failure means the previous behaviour rather than a failed load: a shaper without bindings beats a node without a shaper.
+
+Measured after the fix: the share of CDN packets without a binding was 11.7% before the reload and 10.8% after. No collapse.
+
+While here, `reload` no longer calls `unload_quiet` separately — `load()` unloads on its own, and the old order tore the maps down before anything could save them. A side benefit: if the build or the interface check fails, the old shaper stays in place instead of having been removed ahead of the failure.
+
+**Records of CDN connections got stuck forever, and traffic landed in someone else's account.**
+
+TCP closes in two halves, and different programs handle them: the client's FIN arrives on ingress, the node's FIN leaves on egress — near-simultaneously and on different cores. The half-counter was incremented with a plain `++`: both sides read zero, both wrote one, and it never reached two. The record stayed in the map until LRU evicted it.
+
+On its own that would be litter, but a new header is parsed **only** when no record exists. So the next client handed that same relay port was silently attributed to the previous one — along with their traffic and someone else's limits.
+
+Measured: records holding a single half had no live TCP connection in 96% of cases (51 of 53), against 14% for healthy ones. These were not long half-closes but genuinely stuck records. The increment is now atomic; two hours after the fix their number had fallen rather than grown.
+
+**Files holding client addresses were created world-readable.**
+
+`penalties.json`, `daily.json` and the deferred daily snapshot were written through a temporary file created with the default mode — 644. They hold client addresses and the history of their limits. The temporary file is now created as 600, and the mode travels to the final file with it.
+
+**The Settings menu entry allowed arbitrary code execution.**
+
+`cfg()` in `menu.sh` substituted its arguments straight into the text of a Python program, so a value that reached a setting was executed. Arguments now go through `sys.argv`.
+
+**The unresolved-header counter fell silent when a relay address reached the whitelist.**
+
+The whitelist branch returned before the counter could be incremented. Missing PROXY headers stopped being visible exactly when the port hands out no limit at all — the worst possible case.
+
+**On upgrade** settings, limits and lists are preserved: the state files in `/etc/shaper` are left alone and the format has not changed. The first engine reload after the upgrade already keeps the bindings.
+
+---
+
+## 3.78
+
+**The processing counters showed zeros while the kernel held real numbers.**
+
+With `-j`, `bpftool` returns a per-CPU map value as a **byte array** rather than
+a number: the map has no BTF for its value type, so the raw bytes are printed.
+The parser expected a number and silently returned zero for every cell — the
+metrics came out complete and tidy, all six lines present, and all zero.
+
+Found by comparing against `bpftool map dump` by hand: 23 thousand packets down
+and 49 thousand up in the kernel, zeros in the metrics. Exactly the class of
+error these counters were added for in 3.77: numbers that look trustworthy and
+mean something else.
+
+Both forms are now understood: byte array and number (builds with BTF print a
+number). The `formatted` field that `bpftool` places alongside with a ready
+value is deliberately not used — not every build prints it.
+
+The harness now carries both forms, taken from a live node rather than invented.
+
+### Also
+
+`ruff` is pinned in CI. Without that its rule set drifts on its own, and the
+very first run went red over `B904` in panel code nobody had touched since 3.6.
+Those four sites are fixed: re-raising from `except` now uses `from`, so the
+traceback shows the real cause rather than only the outer one.
+
+---
+
 ## 3.77
 
 **Changing CDN addresses no longer breaks anything. And the shaper's drops are finally visible.**
@@ -3225,7 +3441,7 @@ without the users scope the address is still found. 1047 in total.
 On a live node the settings held:
 
 ```
-Node UUID : 5d8572233c3b934
+Node UUID : a1b0e1f2a3b4c5d
 ```
 
 Fifteen characters instead of thirty-six — the head and tail of a real UUID with
@@ -3256,7 +3472,7 @@ at save time does not repair old settings.
 Last successful poll : 2026-08-26 14:41
 Users on the last poll : 0
   zero on a successful poll almost always means the UUID points at a different node
-⚠ the node UUID must look like 5d8bba03-0951-4503-a4d6-572233c3b934
+⚠ the node UUID must look like a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
 ```
 
 ### Tests
@@ -3746,8 +3962,8 @@ doing double duty as column headers and as units.
 
 ```
 State       : enabled
-Address     : https://admin.badgerproxy.com
-Node UUID   : 5d8bba03
+Address     : https://admin.example.com
+Node UUID   : a1b2c3d4
 Token       : eyJhbG… · valid until 2848-01-06
 Polling     : 300 s
 Threshold   : 20 addresses / 10 min

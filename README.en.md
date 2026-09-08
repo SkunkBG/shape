@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.77-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.87-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--2.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.77
+# Shape v3.87
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -45,6 +45,17 @@ separately, and Shape runs perfectly well without it.
 
 Zero external dependencies: the system Python plus `clang`, `bpftool` and
 `iproute2`. Runs on a single-core VPS with 512 MB of RAM.
+
+**Three optional companions live alongside.** Each is installed separately and
+none of them affects how the shaper works:
+
+- **[watchman/](watchman/)** — a silence watchdog. It notices when a node stops
+  taking clients and says so in Telegram. It is installed **not on a node**: a
+  watchdog living on a node goes quiet exactly when it is needed.
+- **[monitor/](monitor/)** — a metrics receiver: VictoriaMetrics, Grafana,
+  Caddy and a second-factor gate, one command on a clean VPS.
+- **[grafana/](grafana/)** — a ready dashboard for the whole fleet and a
+  description of every metric.
 
 ---
 
@@ -831,6 +842,103 @@ behind it shares a single limit**. The real address arrives in the PROXY
 protocol header — the first bytes of the stream, the same ones Xray reads with
 `acceptProxyProtocol`.
 
+### When the relay changes address
+
+One day the CDN moves to another node. The new address is not in the trusted
+list, the PROXY header from it is not parsed — and every client behind the CDN
+lands on **one shared limit**. From outside it looks like "the internet is
+gone", while the node stays silent: processes run, no errors, an empty journal.
+
+Shape notices this on its own, asking nobody. While headers are parsed the
+resolved counter grows; once they are not, the whole increase goes to
+unresolved and resolved stands still. A healthy unresolved share on a live node
+is 8–10% — handshakes of new connections and the relay's own service traffic —
+so a 95% threshold with a stalled counter is not noise.
+
+Having noticed it, the node looks at who holds connections on its PROXY ports,
+drops the trusted ones and sends the address to Telegram with a ready command:
+`shaperctl trusted add <address> --relay`.
+
+Shape will not add the address by itself: a trusted source can claim any client
+address, and that decision belongs to a person. A repeat about the same address
+comes no more than once every six hours. The check runs every five minutes,
+costs zero outside requests and does not apply to nodes without a CDN — it only
+switches on where PROXY ports are configured.
+
+### Clients are gone: whose fault is it
+
+A node cannot report its own death, but it can report that its clients have
+vanished: it is alive and the people are not there. That is exactly what a CDN
+failure looks like from outside, and working it out without a hint takes an
+hour.
+
+The normal level is the median of the last hour with the freshest samples
+excluded: otherwise a collapse in progress would lower the very bar it is
+judged against. If fewer than a fifth of the normal number remain, a message
+goes out. Nodes that normally hold fewer than ten people are not checked,
+because zero proves nothing there.
+
+The message can carry a **verdict from the CDN provider**. The node asks its
+API whether the resource is active and whether there were requests in the last
+minutes — and says either "not a single request reaches the CDN edge, this is
+the provider" or "requests do reach the edge, so clients are failing to reach
+the node itself, look here". An hour of investigation collapses into one line.
+
+The conclusion is drawn only where clients really did vanish. The "Ask the
+provider now" button reports facts and concludes nothing: there is no collapse
+at that moment, and "clients are not reaching the node" would simply be a lie
+while the clients are there.
+
+Set up from the menu — item **10 "CDN provider"** on the main screen — or with
+commands:
+
+```bash
+shaperctl cdn set --url https://api.example.com/v1 --token KEY --resource-id 7 --enable
+shaperctl cdn test
+```
+
+The section is optional and off by default. If the provider is unreachable, the
+key expired or the paths in its API differ, the message goes out as before,
+just without the verdict line. Neither the shaper, nor the watchdog, nor the
+penalties touch this path: the node stays self-sufficient.
+
+The address may be entered with or without the trailing `/v1` — both forms are
+understood, and a trailing slash makes no difference.
+
+### When traffic or money runs out
+
+The node's own traffic is already in the daily digest. This is about something
+else — the account at the CDN provider, which the node cannot know about and
+which runs out just as suddenly for every client at once.
+
+Two warnings arrive, each with its own memory so one never silences the other:
+
+**The package is running out.** Fewer than the configured number of gigabytes
+left. Default 100.
+
+**The balance is running out.** Less money left than configured. Default 100 as
+well.
+
+And separately, loudly: **service suspended**. That is no longer a warning but
+the reason clients are about to lose access.
+
+Repeats no more than once every twelve hours while the cause holds. Thresholds
+are set from the menu or with:
+
+```bash
+shaperctl cdn set --low-gb 100 --low-balance 100
+```
+
+Zero turns the matching warning off.
+
+To look at any moment, use the **"Traffic and package left"** menu item or
+`shaperctl cdn usage`: consumption for the day, the package remainder and the
+balance.
+
+The account at the provider covers the whole dashboard rather than one node, so
+the section is worth keeping on **a single node** — otherwise the same warning
+arrives from every one of them.
+
 ### Why a list, not a switch
 
 In both cases the real address comes from data written by the sender. Unwrapping
@@ -1499,6 +1607,17 @@ shaperctl panel set --disable-after 30
 9:00   shaperctl panel enable 741 — once you have looked into it
 ```
 
+**A block does not cancel the countdown.** By itself it removes the offender
+from view: traffic stops, `lastSeen` stops updating, and within `window_min` his
+addresses fall out of the window. The countdown used to reset there, so the
+subscription was never disabled: with a thirty-minute grace and a ten-minute
+window it could not happen at all. The pending entry now survives while our own
+sharing penalty is alive.
+
+Hence the rule: **the grace period must be shorter than the block**
+(`limit_min`, 60 minutes by default), or the penalty expires first. `panel show`
+warns about it.
+
 **The countdown cancels itself.** If you disabled or revoked the subscription in
 time, the buyers vanish from the connection list, at the next check the person is
 no longer an offender, and Shape does nothing. There is nothing to wait for or
@@ -1557,7 +1676,8 @@ Both lists are set whole, not appended to. To check: `panel show`, the
 
 These users fall under **neither sharing detection nor the auto-limiter** — no
 penalty, no drop, no notification. The trigger is still written to the event log
-as `guard_exempt`, so it can be looked at if wanted.
+as `panel_exempt` for sharing detection and as `guard_exempt` for
+auto-limiting, so it can be looked at if wanted.
 
 The number of exceptions is shown on the auto-limit screen too: the setting lives
 in the panel section but affects both rules.
@@ -1604,7 +1724,7 @@ own UUIDs, and those will not work here.
 | --- | --- |
 | `notify` | a Telegram card: who, how many addresses, examples. **Always on** |
 | `limit` | a local penalty on the addresses this node can see itself |
-| `block` | cut off access to the node: minimal speed plus a connection drop |
+| `block` | cut off access to the node: minimal speed, connections are kept |
 | `drop` | drop connections through the panel — by address, on this node only |
 
 Combine them with commas:
@@ -1698,7 +1818,7 @@ mobile address moves to another subscriber within minutes, and they inherited
 someone else's 0.05 Mbit/s for half a day.
 
 **If disabling the subscription is off** and the night still needs covering,
-raise the cut-off by hand: `panel set --limit-min 720`. The old drawback comes
+raise the cut-off by hand: `panel set --minutes 720`. The old drawback comes
 back with it.
 
 **It can be lifted earlier, and not address by address.** A reseller has a
@@ -1797,11 +1917,14 @@ history of addresses and should not.
 | `interval` | `300` | how often to ask, seconds |
 | `window_min` | `10` | simultaneity window, minutes |
 | `ip_threshold` | `20` | addresses above which it is sharing |
-| `action` | `notify` | `notify`, `limit`, `drop`, or a combination |
+| `action` | `notify` | `notify`, `limit`, `block`, `drop`, or a combination |
 | `limit_mbps` | `1` | megabits to throttle down to |
 | `limit_min` | `60` | for how many minutes |
 | `cooldown_min` | `360` | pause between alerts about one person |
 | `exempt` | `[]` | who is allowed to share |
+| `exempt_tags` | `[]` | the same, but by tag from the panel |
+| `per_device` | `0` | threshold multiplier from the plan; 0 — ignore |
+| `disable_after_min` | `0` | minutes before disabling the subscription; 0 — never |
 | `resolve` | `true` | use the name and Telegram ID instead of the number |
 | `report` | `false` | send the node report |
 | `report_at` | `09:00` | when to send the report |
@@ -1878,6 +2001,23 @@ sample, and that sample lives in a file, so it works for one-off CLI runs too.
 Running `shaperctl metrics` without root cannot read the BPF maps. The
 `shape_metrics_complete` metric then drops to zero, so monitoring sees
 "incomplete data" rather than "no traffic".
+
+### Who notices that a node went quiet
+
+Metrics answer the question "what is happening on the node". There is another
+one — "is it alive at all?" — and a node cannot answer it. A node that is down
+will not send a message saying it is down; absence of a signal cannot be sent
+as a signal.
+
+That is what **[watchman/](watchman/)** is for — a silence watchdog. It runs on
+a separate machine, reads the Remnawave panel's `/api/nodes` once a minute and
+writes to Telegram when a node loses its clients or the panel loses the node.
+It is not installed on nodes and changes nothing on them.
+
+It watches client counts rather than missing metrics: a node can be healthy and
+still unreachable from outside — a broken CDN, a vanished DNS record, a dead
+route. Metrics keep flowing all the while.
+
 
 ---
 
