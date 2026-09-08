@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.90
+
+**The operator list was extended from data on a live node.**
+
+The breakdown on a working node exposed gaps the table alone did not show. AS16345 `BEE-AS Russia` is Beeline and AS25159 `SONICDUO-AS` is MegaFon Moscow, and neither reached its operator. Whole providers were missing too: ER-Telecom (Dom.ru) with 33 networks and 868k addresses, TTK, MGTS, Akado, Intersvyaz.
+
+There are thirteen operators now, covering 20 of Russia's 44 million addresses. The rest are independent regional providers with nothing to group them with: each is counted on its own.
+
+MGTS sits after MTS in the list on purpose. It is a subsidiary, but to a subscriber they are different providers, and the word boundary keeps them apart: "mts" inside "MGTS" is not a match.
+
+One more substring trap is pinned by tests: without word boundaries the "dom.ru" pattern catches RANDOMRUSSIA. The third such case after Toyota and Norilsk.
+
+Upgrading changes nothing.
+
+---
+
 ## 3.89
 
 **Networks of one operator are counted together.**

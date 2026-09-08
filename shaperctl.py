@@ -5797,13 +5797,21 @@ def asn_name(tab, num):
 # неотличимы от абонентов Tele2. Отдельные номера AS у этих компаний есть, но
 # за ними корпоративные сети, а не пользователи, и вписывать их сюда значило
 # бы приписывать людей не туда.
+# Порядок важен: побеждает первое совпадение. МГТС стоит после МТС намеренно —
+# он его дочерняя компания, но для абонента это разные провайдеры, и
+# «\bmts\b» внутри «ASN-MGTS-USPD» не срабатывает как раз из-за границы слова.
 CENSOR_OPERATORS = (
-    ("Билайн",     "RU", r"vimpelcom|beeline|corbina|\bsovam\b"),
+    ("Билайн",     "RU", r"vimpelcom|beeline|corbina|\bsovam\b|\bbee-as\b"),
     ("МТС",        "RU", r"\bmts\b|\bmts-|mobile telesystems"),
+    ("МГТС",       "RU", r"\bmgts\b"),
     ("Yota",       "RU", r"\byota\b|\bscartel\b"),
-    ("МегаФон",    "RU", r"megafon|\bmf-[a-z]"),
+    ("МегаФон",    "RU", r"megafon|\bmf-[a-z]|sonicduo"),
     ("Tele2",      "RU", r"\btele ?2\b|\bt2 russia\b|\bt2-[a-z]"),
     ("Ростелеком", "RU", r"rostelecom|\brtcomm\b|\bzsttk"),
+    ("Дом.ru",     "RU", r"er-?telecom|\bdom\.?ru\b|\berth\b"),
+    ("ТТК",        "RU", r"transtelecom|\bttk[- ]"),
+    ("Акадо",      "RU", r"\bakado\b|\bcomcor\b"),
+    ("Интерсвязь", "RU", r"intersvyaz"),
     ("Таттелеком", "RU", r"tattelecom"),
     ("Крым",       "RU", r"miranda-media|\bk-telecom\b|asvolna|crimeatelecom"),
 )

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.89-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.90-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.89
+# Shape v3.90
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -937,7 +937,9 @@ shaperctl censor list
 ```
 
 Networks of one operator are counted together: Rostelecom has 52 of them, MTS
-18, MegaFon 13. Counted apart, an operator's users would scatter into small
+18, MegaFon 14, ER-Telecom 33. Thirteen operators are listed, covering 20 of
+Russia's 44 million addresses; the rest are independent regional providers with
+nothing to group them with. Counted apart, an operator's users would scatter into small
 buckets, each below the floor. Matching goes by the network name and country
 from the table rather than by a list of numbers — a list would go stale on the
 first new range, while a name is picked up as soon as the file is refreshed.

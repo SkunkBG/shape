@@ -2379,6 +2379,27 @@ check("казахский Билайн — не наш Билайн",
 check("российский Tele2 при этом узнаётся",
       S.censor_operator("T2-NOVOSIBIRSK-AS T2 Russia Network", "RU") == "Tele2")
 
+# Пробелы, найденные разбивкой на живой ноде: под этими именами операторы не
+# узнавались, хотя сети крупные.
+check("BEE-AS — это Билайн", S.censor_operator("BEE-AS Russia") == "Билайн")
+check("SONICDUO — это МегаФон", S.censor_operator("SONICDUO-AS") == "МегаФон")
+check("ER-TELECOM — это Дом.ru", S.censor_operator("ER-TELECOM-AS") == "Дом.ru")
+check("ERTH-NNOV — тоже Дом.ru", S.censor_operator("ERTH-NNOV-AS") == "Дом.ru")
+check("TRANSTELECOM — это ТТК", S.censor_operator("TRANSTELECOM Moscow, Russia") == "ТТК")
+check("TTK-RTL — тоже ТТК", S.censor_operator("TTK-RTL Retail") == "ТТК")
+check("Интерсвязь узнаётся", S.censor_operator("INTERSVYAZ-AS") == "Интерсвязь")
+
+# МГТС — дочерняя компания МТС, но для абонента это разные провайдеры.
+# Разводит их граница слова: «mts» внутри «MGTS» совпадением не считается.
+check("МГТС не сливается с МТС",
+      S.censor_operator("ASN-MGTS-USPD") == "МГТС",
+      S.censor_operator("ASN-MGTS-USPD"))
+
+# Третья ловушка подстроки после Toyota и Норильска.
+check("RANDOMRUSSIA — не Дом.ru",
+      S.censor_operator("RANDOMRUSSIA-NET") is None,
+      S.censor_operator("RANDOMRUSSIA-NET"))
+
 # Обе ловушки пойманы на настоящей таблице: без границ слов «yota» ловит
 # Toyota, а «k-telecom» ловит Норильск и записывает его в Крым.
 check("Toyota — это не Yota",
