@@ -1,0 +1,139 @@
+name: tests
+
+# Ловим ошибку до того, как она уедет на все ноды. Заливка идёт через
+# браузер, локального прогона тестов нет — значит эта проверка единственная.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить инструменты
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck clang gcc
+          pip install --quiet ruff bandit
+
+      - name: Синтаксис shell
+        run: |
+          for f in menu.sh lang.sh engine.sh install.sh uninstall.sh; do
+            bash -n "$f" || exit 1
+          done
+          echo "bash -n: чисто"
+
+      - name: ShellCheck
+        # Информационные замечания не роняют сборку, ошибки — роняют.
+        run: shellcheck -S error menu.sh lang.sh engine.sh install.sh uninstall.sh
+
+      - name: Синтаксис Python
+        run: python3 -m py_compile shaperctl.py api/server.py
+
+      - name: Ruff
+        run: ruff check --select=E9,F,B shaperctl.py api/server.py
+
+      - name: Bandit
+        run: bandit -q -ll -r shaperctl.py api/server.py
+
+      - name: Сборка eBPF настоящим clang
+        run: |
+          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
+                -I/usr/include/x86_64-linux-gnu \
+                -c bpf/shaper.bpf.c -o /tmp/shaper.bpf.o
+          ls -la /tmp/shaper.bpf.o
+
+      - name: eBPF на синтетических пакетах
+        run: |
+          cd tests
+          gcc -O1 -Wno-unknown-pragmas -I stub -o /tmp/harness bpf_harness.c
+          /tmp/harness
+
+      - name: Ядро Shape
+        run: python3 tests/audit_tests.py
+
+      - name: Shell-часть
+        run: bash tests/audit_shell_tests.sh
+
+      - name: Обновление со старой версии
+        run: python3 tests/upgrade_tests.py
+
+      - name: Удаление
+        run: bash tests/uninstall_tests.sh
+
+      - name: Резервная копия состояния
+        run: python3 tests/export_tests.py
+
+      - name: API
+        run: python3 tests/api_tests.py
+
+      - name: Связь с панелью
+        run: python3 tests/panel_tests.py
+
+      - name: Независимость Shape от API
+        run: bash tests/api_independence_tests.sh
+
+      - name: Метрики работают без API
+        run: |
+          export SHAPE_APP_DIR="$PWD" SHAPE_ETC_DIR=/tmp/etc SHAPE_VAR_DIR=/tmp/var
+          mkdir -p /tmp/etc /tmp/var
+          python3 shaperctl.py metrics | head -5
+          python3 shaperctl.py metrics --out /tmp/var/shape.prom --quiet
+          grep -q '^shape_up{' /tmp/var/shape.prom
+          grep -q 'shape_metrics_complete' /tmp/var/shape.prom
+          test ! -f /tmp/var/shape.prom.tmp
+          echo "метрики без API: чисто"
+
+      - name: Версия согласована во всех пяти файлах
+        run: |
+          V="$(cat VERSION)"
+          grep -q "^# Shape v$V\$" README.md
+          grep -q "версия-$V-" README.md
+          grep -q "^# Shape v$V\$" README.en.md
+          grep -q "version-$V-" README.en.md
+          grep -q "^## $V\$" CHANGELOG.md
+          grep -q "^## $V\$" CHANGELOG.en.md
+          echo "версия $V согласована"
+
+      - name: Русский и английский идут парой
+        # Раздел версии в CHANGELOG — это release notes. Если он есть только
+        # на одном языке, релиз выйдет однобоким, и это лучше поймать здесь.
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          ru = re.findall(r"^## (\S+)", open("CHANGELOG.md", encoding="utf-8").read(), re.M)
+          en = re.findall(r"^## (\S+)", open("CHANGELOG.en.md", encoding="utf-8").read(), re.M)
+          miss = [v for v in ru if v not in en] + [v for v in en if v not in ru]
+          print("версий:", len(ru), "| без пары:", miss or "нет")
+          sys.exit(1 if miss else 0)
+          PY
+
+      - name: Строки интерфейса совпадают в ru и en
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          s = open("lang.sh", encoding="utf-8").read()
+          blocks = re.findall(r"T=\((.*?)\n\s*\)\n", s, re.S)
+          sets = [set(re.findall(r"\[(\w+)\]=", b)) for b in blocks]
+          diff = sets[0] ^ sets[1]
+          print("ключей:", [len(x) for x in sets], "расхождения:", sorted(diff) or "нет")
+          sys.exit(1 if diff else 0)
+          PY
+
+      - name: В репозитории нет секретов
+        run: |
+          if grep -rInE '"(read|write)": "[A-Za-z0-9_-]{20,}"' \
+                  --include='*.py' --include='*.json' --include='*.sh' .; then
+            echo "найден похожий на токен литерал"; exit 1
+          fi
+          if grep -rInE '[0-9]{8,10}:[A-Za-z0-9_-]{30,}' \
+                  --include='*.py' --include='*.sh' . | grep -v SECRET-TOKEN; then
+            echo "найден похожий на токен Telegram литерал"; exit 1
+          fi
+          echo "секретов не найдено"
