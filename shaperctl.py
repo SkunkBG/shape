@@ -5661,6 +5661,11 @@ CENSOR_KEEP = 12                # сколько отсчётов держим �
 CENSOR_SKIP_FRESH = 2           # свежие в норму не берём
 CENSOR_MIN_NORMAL = 5           # сети мельче не судим: ноль там ничего не значит
 CENSOR_COLLAPSE = 0.5           # доля от нормы, ниже которой это падение
+# Одного отношения мало. Хостинги и прокси естественно скачут: на живой ноде
+# турецкий AS47516 гулял 6..22 при медиане 15, и провал до 6 — его обычное
+# поведение, а не блокировка. Поэтому падение должно быть заметным и по
+# разбросу самой сети: не меньше стольких MAD ниже нормы.
+CENSOR_SIGMAS = 3.0
 CENSOR_ALERT_EVERY = 3600       # не чаще раза в час на сеть
 CENSOR_TOP = 8                  # сколько сетей показывать в списке
 # Клиент считается присутствующим, если ядро видело его пакет недавно. Карты
@@ -5925,6 +5930,38 @@ def _median(xs):
     return s[len(s) // 2] if s else 0
 
 
+def _mad(xs):
+    """
+    Медианное абсолютное отклонение, домноженное на 1.4826.
+
+    Множитель приводит его к масштабу стандартного отклонения для нормального
+    распределения. Счётчики адресов нормальными не являются, так что это
+    устойчивая оценка разброса, а не настоящая сигма.
+    """
+    if not xs:
+        return 0.0
+    m = _median(xs)
+    return _median([abs(x - m) for x in xs]) * 1.4826
+
+
+def _fell(cur, norm, spread):
+    """
+    Считать ли это падением: и по отношению к норме, и по разбросу сети.
+
+    Оба условия обязательны. Отношение одно отсекало бы стабильные сети, но
+    пропускало шумные: хостинг, гуляющий вдвое сам по себе, давал бы тревогу
+    каждый раз, когда сходил вниз.
+
+    У сети с ровной историей разброс нулевой, и тогда решает одно отношение —
+    иначе любое изменение проходило бы проверку, которую не с чем сравнивать.
+    """
+    if cur > norm * CENSOR_COLLAPSE:
+        return False
+    if spread <= 0:
+        return True
+    return cur <= norm - CENSOR_SIGMAS * spread
+
+
 def censor_watch(cfg, now=None):
     """
     Не пропала ли отдельная сеть. Возвращает список номеров, о которых сказали.
@@ -5972,11 +6009,12 @@ def censor_watch(cfg, now=None):
     min_norm = int(c.get("min_clients") or CENSOR_MIN_NORMAL)
     told = []
     for key in {k for h in base for k in h}:
-        norm = _median([int(h.get(key, 0)) for h in base])
+        vals = [int(h.get(key, 0)) for h in base]
+        norm = _median(vals)
         if norm < min_norm:
             continue
         cur = int(counts.get(key, 0))
-        if cur > norm * CENSOR_COLLAPSE:
+        if not _fell(cur, norm, _mad(vals)):
             said.pop(key, None)
             continue
         if now - float(said.get(key) or 0) < CENSOR_ALERT_EVERY:
@@ -6015,11 +6053,12 @@ def censor_tail(cfg):
     base = hist[:-CENSOR_SKIP_FRESH]
     rows = []
     for key in {k for h in base for k in h}:
-        norm = _median([int(h.get(key, 0)) for h in base])
+        vals = [int(h.get(key, 0)) for h in base]
+        norm = _median(vals)
         if norm < CENSOR_MIN_NORMAL:
             continue
         cur = int(counts.get(key, 0))
-        if cur <= norm * CENSOR_COLLAPSE:
+        if _fell(cur, norm, _mad(vals)):
             rows.append((norm - cur, key, cur, norm))
     if not rows:
         return ""

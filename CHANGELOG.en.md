@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.92
+
+**A network counts as down only if the drop stands out against its own spread.**
+
+The section called any halving of the normal a drop. For an operator that is enough — they are stable — but not for everyone: on a working node a Turkish hosting network swung between 6 and 22 on its own with a median of 15, and the very first real alert turned out to be false. Dropping to six was its ordinary behaviour, not a block.
+
+A drop now has to pass both tests: half the normal, and three MAD below it. MAD is the median absolute deviation, a robust measure of spread: one outlying hour does not move it, unlike a standard deviation.
+
+Nothing changes for stable networks. Beeline on the same node had a spread of about three against a median of 62, and a halving passes with room to spare. The noisy hosting network has a spread of nine, and its ordinary dips no longer raise anything.
+
+The numbers from the node are pinned by tests: the hosting series must not alert, the Beeline series halved must.
+
+Networks with a flat history are judged by the ratio alone: there is no spread to compare against.
+
+**On upgrade** the history already collected is kept, and the thresholds apply to it at once.
+
+---
+
 ## 3.91
 
 **The country is now part of a network's label, and the listing got a flag for full output.**
