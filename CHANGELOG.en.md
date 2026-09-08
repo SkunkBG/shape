@@ -13,6 +13,20 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.91
+
+**The country is now part of a network's label, and the listing got a flag for full output.**
+
+Among the clients on a live node there turned out to be a Turkish provider and a hosting network in the Seychelles, a dozen-odd addresses each. Both buckets are above the floor and will be judged by the detector, yet their going down has nothing to do with blocking: the first is users abroad, the second — judging by its scatter of small ranges — clients behind another proxy, whose real operator the node cannot see.
+
+That has to be clear while the alert is being read, not in a separate investigation. So a label now looks like `AS34984 TR TELLCOM-AS` — number, country, name. Nothing changes for grouped operators: they already read "MTS".
+
+`censor list` showed only the top eight networks. On a node with three hundred clients that covered two thirds of the addresses and hid the rest entirely. There is now an `--all` flag and a line saying how many networks were left out.
+
+**On upgrade** ungrouped networks start collecting history afresh: it is keyed by the label, and the label changed. Their first verdict comes an hour later. Operators are unaffected — their labels are the same.
+
+---
+
 ## 3.90
 
 **The operator list was extended from data on a live node.**

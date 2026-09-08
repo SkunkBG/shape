@@ -353,6 +353,8 @@ MSG = {
         "cen_unknown_t": "не распознано",
         "cen_total_t": "всего адресов",
         "cen_rows_t": "строк в таблице",
+        "cen_more": "ещё сетей: {n}, показать все: censor list --all",
+        "h_cen_all": "показать все сети, а не только верхние",
         "cen_hint_off": "раздел выключен: censor set --enable",
         "h_censor": "разбивка клиентов по сетям",
         "h_cen_table": "путь к таблице «диапазон адресов → номер сети»",
@@ -873,6 +875,8 @@ MSG = {
         "cen_unknown_t": "unresolved",
         "cen_total_t": "addresses total",
         "cen_rows_t": "rows in table",
+        "cen_more": "{n} more networks, show all: censor list --all",
+        "h_cen_all": "show every network, not just the top ones",
         "cen_hint_off": "section is off: censor set --enable",
         "h_censor": "clients by network",
         "h_cen_table": "path to the address-range to network-number table",
@@ -5774,9 +5778,22 @@ def asn_org(tab, num):
 
 
 def asn_name(tab, num):
-    """«AS8359 Оператор» — как это показывают и как пишут в сообщении."""
-    _cc, org = asn_org(tab, num)
-    return "AS%d %s" % (num, org) if org else "AS%d" % num
+    """
+    «AS34984 TR TELLCOM-AS» — номер, страна, название.
+
+    Страна в подписи не для красоты. Клиенты приходят и из-за границы, и
+    из-под чужих прокси: на живой ноде нашлись турецкий провайдер и хостинг с
+    Сейшел. Обе корзины выше порога и будут судиться, но их падение к ТСПУ
+    отношения не имеет — и понять это надо в момент чтения тревоги, а не
+    отдельным разбирательством.
+    """
+    cc, org = asn_org(tab, num)
+    parts = ["AS%d" % num]
+    if cc:
+        parts.append(cc)
+    if org:
+        parts.append(org)
+    return " ".join(parts)
 
 
 # Один оператор живёт под десятками номеров сетей: у Ростелекома их 52, у МТС
@@ -7929,8 +7946,12 @@ def cmd_censor(a):
         if not counts and not unknown:
             print(f"  {C['yel']}{t('cen_none')}{C['r']}\n")
             return
-        for key, n in sorted(counts.items(), key=lambda kv: -kv[1])[:CENSOR_TOP]:
+        rows = sorted(counts.items(), key=lambda kv: -kv[1])
+        shown = rows if getattr(a, "all", False) else rows[:CENSOR_TOP]
+        for key, n in shown:
             print(f"  {key:<34} {C['b']}{n}{C['r']}")
+        if len(shown) < len(rows):
+            print(f"  {C['dim']}{t('cen_more', n=len(rows) - len(shown))}{C['r']}")
         if unknown:
             print(f"  {C['yel']}{t('cen_unknown_t')}{C['r']} : {unknown}")
         print()
@@ -8804,6 +8825,7 @@ def build_parser():
     cn.add_argument("--table", default=None, help=t("h_cen_table"))
     cn.add_argument("--min-clients", dest="min_clients", type=int,
                     default=None, help=t("h_cen_min"))
+    cn.add_argument("--all", action="store_true", help=t("h_cen_all"))
     cn.add_argument("--enable", action="store_true")
     cn.add_argument("--disable", action="store_true")
     cn.set_defaults(func=cmd_censor)

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.90-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.91-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.90
+# Shape v3.91
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -945,6 +945,11 @@ from the table rather than by a list of numbers — a list would go stale on the
 first new range, while a name is picked up as soon as the file is refreshed.
 The country is required: the brands are international, and without it Tele2
 Sverige would land in the same bucket as the Russian one.
+
+Ungrouped networks are labelled `AS34984 TR TELLCOM-AS` — number, country,
+name. The country is not decoration: clients arrive from abroad and from behind
+other people's proxies, and such a network going down has nothing to do with
+blocking. That has to be visible while the alert is being read.
 
 What the grouping does not give: a breakdown by region — the table carries only
 a country, and one network number covers all of Russia. Nor virtual operators:
