@@ -2216,5 +2216,143 @@ check("свежие отсчёты в норму не берём", S.ONLINE_SKIP
 check("событие объявлено", "clients_gone" in S.EVENT_TYPES)
 _srv.shutdown()
 
+# ── Разбивка клиентов по сетям ─────────────────────────────────────────
+# Адреса и номера сетей здесь из документационных диапазонов: 203.0.113.0/24,
+# 198.51.100.0/24, 192.0.2.0/24 и номера AS 64496-64511, отведённые RFC под
+# примеры. Ничего настоящего.
+print("\n\033[1mРазбивка клиентов по сетям\033[0m")
+
+_TAB = os.path.join(TMP, "ip2asn.tsv")
+with open(_TAB, "w") as f:
+    f.write("203.0.113.0\t203.0.113.127\t64496\tZZ\tОператор один\n"
+            "198.51.100.0\t198.51.100.255\t64497\tZZ\tОператор два\n"
+            "192.0.2.0\t192.0.2.255\t64498\tZZ\tОператор три\n")
+
+_tab = S.asn_load(_TAB)
+check("таблица разобрана", len(_tab["starts"]) == 3, len(_tab["starts"]))
+check("адрес попадает в свою сеть", S.asn_of(_tab, "203.0.113.7") == 64496)
+check("нижняя граница диапазона включена", S.asn_of(_tab, "203.0.113.0") == 64496)
+check("верхняя граница диапазона включена", S.asn_of(_tab, "203.0.113.127") == 64496)
+check("за верхней границей сети уже нет", S.asn_of(_tab, "203.0.113.128") == 0)
+check("вне таблицы — ноль", S.asn_of(_tab, "10.0.0.1") == 0)
+check("IPv6 не угадывается по таблице для IPv4",
+      S.asn_of(_tab, "2001:db8::1") == 0)
+check("подпись сети содержит номер", "AS64496" in S.asn_name(_tab, 64496))
+
+def _rejects(text=None, path=None):
+    """Таблица должна отвергаться целиком: половина хуже отсутствия."""
+    if path is None:
+        path = os.path.join(TMP, "bad-%d.tsv" % abs(hash(text)))
+        with open(path, "w") as fh:
+            fh.write(text)
+    try:
+        S.asn_load(path)
+        return False
+    except S.CensorError:
+        return True
+
+check("строка без названия отвергнута",
+      _rejects("203.0.113.0\t203.0.113.255\t64496\tZZ\n"))
+check("нечисловой адрес отвергнут",
+      _rejects("нет\t203.0.113.255\t64496\tZZ\tИмя\n"))
+check("перевёрнутый диапазон отвергнут",
+      _rejects("203.0.113.255\t203.0.113.0\t64496\tZZ\tИмя\n"))
+check("пустая таблица отвергнута", _rejects("# только комментарий\n"))
+check("отсутствующий файл отвергнут",
+      _rejects(path=os.path.join(TMP, "нет-такого.tsv")))
+
+# Ключ trusted_map приходит из bpftool списком байтов — так же, как в бою.
+S.map_dump = lambda name: ([(list(S.ip_key("203.0.113.9")), [1])]
+                           if name == "trusted_map" else [])
+check("релей найден среди доверенных", "203.0.113.9" in S.censor_relays())
+
+_now_ns = time.monotonic_ns()
+def _users(n1, n2=8, n3=3, stale=0):
+    u = {}
+    for i in range(n1):
+        u["203.0.113.%d" % (100 + i)] = {"seen": _now_ns}
+    for i in range(n2):
+        u["198.51.100.%d" % (100 + i)] = {"seen": _now_ns}
+    for i in range(n3):
+        u["192.0.2.%d" % (100 + i)] = {"seen": _now_ns}
+    for i in range(stale):
+        u["203.0.113.%d" % (60 + i)] = {"seen": _now_ns - 2 * S.CENSOR_FRESH_NS}
+    u["203.0.113.9"] = {"seen": _now_ns}          # релей, не человек
+    u["10.9.9.9"] = {"seen": _now_ns}             # вне таблицы
+    return u
+
+_cfg = S.load_config()
+_cfg["censor"].update({"enabled": True, "table": _TAB, "min_clients": 5})
+
+S.read_users = lambda: _users(20)
+_counts, _unknown, _total = S.censor_counts(_cfg)
+check("клиенты разложены по сетям",
+      _counts.get(64496) == 20 and _counts.get(64497) == 8, _counts)
+check("релей не считается клиентом", 64496 in _counts and _counts[64496] == 20)
+check("адрес вне таблицы попал в нераспознанные", _unknown == 1, _unknown)
+
+S.read_users = lambda: _users(20, stale=5)
+_c2, _u2, _t2 = S.censor_counts(_cfg)
+check("протухшие записи LRU не считаются присутствующими",
+      _c2.get(64496) == 20, _c2.get(64496))
+
+# ── Сработка ───────────────────────────────────────────────────────────
+_sent, _events = [], []
+S.tg_send = lambda text, cfg=None, force=False: (_sent.append(text), (True, ""))[1]
+S.log_event = lambda etype, **kw: _events.append((etype, kw))
+
+def _reset_state():
+    # guard_state в этом наборе — словарь в памяти, а сохранение сливает, а не
+    # заменяет. Поэтому раздел сбрасываем явно; удалять файл здесь нечего.
+    S.guard_state_save({"censor": {}})
+    del _sent[:], _events[:]
+
+_reset_state()
+S.read_users = lambda: _users(20)
+_t0 = 1_000_000.0
+for _i in range(S.CENSOR_KEEP):
+    S.censor_watch(_cfg, now=_t0 + _i * S.CENSOR_EVERY)
+check("на ровной нагрузке молчит", not _sent, _sent)
+check("истории набрано ровно столько, сколько держим",
+      len((S.guard_state().get("censor") or {}).get("hist") or []) == S.CENSOR_KEEP)
+
+S.read_users = lambda: _users(1)          # первая сеть пропала, остальные целы
+_told = S.censor_watch(_cfg, now=_t0 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+check("падение сети замечено", _told == [64496], _told)
+check("сообщение называет именно эту сеть",
+      len(_sent) == 1 and "AS64496" in _sent[0], _sent)
+check("здоровая сеть не помечена", 64497 not in _told)
+check("событие объявлено", "censor_drop" in S.EVENT_TYPES)
+check("событие записано", any(e[0] == "censor_drop" for e in _events), _events)
+
+_before = len(_sent)
+S.censor_watch(_cfg, now=_t0 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
+check("повтор придержан кулдауном", len(_sent) == _before, _sent)
+
+# Маленькая сеть: три адреса исчезли целиком и это ничего не доказывает.
+check("сеть ниже порога не судим", 64498 not in _told, _told)
+
+_reset_state()
+_off = S.load_config()
+_off["censor"].update({"enabled": False, "table": _TAB})
+check("выключенный раздел выходит первой строкой",
+      S.censor_watch(_off, now=_t0) == [] and not _sent)
+check("выключенный раздел не даёт хвоста к сообщению об обвале",
+      S.censor_tail(_off) == "")
+
+_reset_state()
+_broken = dict(_cfg, censor=dict(_cfg["censor"], table=os.path.join(TMP, "нет")))
+_out = S.censor_watch(_broken, now=_t0)
+check("сломанная таблица наружу не выходит", _out == [], _out)
+check("о сломанной таблице сказано в журнале",
+      any(e[0] == "censor_failed" for e in _events), _events)
+check("событие о поломке объявлено", "censor_failed" in S.EVENT_TYPES)
+
+check("порог падения — заметная доля нормы", 0 < S.CENSOR_COLLAPSE <= 0.5,
+      S.CENSOR_COLLAPSE)
+check("свежие отсчёты в норму не берём", S.CENSOR_SKIP_FRESH >= 1)
+check("раздел выключен по умолчанию", S.CENSOR_DEFAULT["enabled"] is False)
+
+
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.88
+
+**Clients by network: which of them stopped reaching the node.**
+
+The node already noticed when clients vanished. But a collapse is judged by the total, and a block at a single operator barely moves that total: if one operator carries a seventh of the people, losing them will not reach the collapse threshold — and the node stays silent, though it is already unreachable for a whole network.
+
+Client addresses are now grouped by network, and every network is judged against its own normal: the median of its own hour. Comparing networks with each other is meaningless, they differ in size. A network down to half its own normal gets a message of its own.
+
+The collapse message also got more useful — it now says which networks went down. A collapse everywhere and a collapse at two operators give the same total but mean different things: the first looks like the CDN or a route, the second like a block.
+
+What the section does not do: a single node cannot tell "our address is blocked for that operator" from "that operator has an outage". Only comparison across nodes can, and that is not here. So the message says a network is gone, and does not say why.
+
+The section is optional and off by default. It needs a file on disk with address ranges — the node does not go out for it. The path is a setting, `/etc/shaper/ip2asn-v4.tsv` by default. While the file is missing the section stays quiet and says so in the log, instead of passing an empty breakdown off as the truth. The table is held in memory: about 30 MB and a second and a half to parse on first use, for half a million rows.
+
+Upgrading changes nothing: the section is off, the shaper and the watchdog work as before.
+
+---
+
 ## 3.87
 
 **A warning when the CDN provider runs out of traffic or money.**

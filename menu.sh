@@ -1061,6 +1061,68 @@ screen_cdn() {
     done
 }
 
+cen_enabled() {
+    python3 -c "
+import json,sys
+try: d = json.load(open('$ETC_DIR/config.json')).get('censor', {})
+except Exception: d = {}
+sys.exit(0 if d.get('enabled') else 1)" 2>/dev/null
+}
+
+cen_read() {
+    python3 - <<PY 2>/dev/null || echo "0|-|5"
+import json
+try:
+    d = json.load(open("$ETC_DIR/config.json")).get("censor", {})
+except Exception:
+    d = {}
+print("|".join([
+    "1" if d.get("enabled") else "0",
+    d.get("table") or "-",
+    str(d.get("min_clients") or 5),
+]))
+PY
+}
+
+screen_censor() {
+    local on tab min v
+    while :; do
+        IFS='|' read -r on tab min <<< "$(cen_read)"
+        title "${T[cen_title]}"
+        echo -e "  ${D}${T[cen_h1]}${N}"
+        echo -e "  ${D}${T[cen_h2]}${N}"
+        echo
+        if [[ "$on" == "1" ]]; then
+            echo -e "  ${T[cen_l_state]}: ${G}${T[g_on]}${N}"
+        else
+            echo -e "  ${T[cen_l_state]}: ${D}${T[g_off]}${N}"
+        fi
+        echo -e "  ${T[cen_l_table]}: ${B}${tab}${N}"
+        echo -e "  ${T[cen_l_min]}: ${B}${min}${N}"
+        echo
+        echo "  [1] ${T[g_toggle]}"
+        echo "  [2] ${T[cen_set_table]}"
+        echo "  [3] ${T[cen_set_min]}: ${B}${min}${N}"
+        echo "  [4] ${T[cen_list]}"
+        echo "  [5] ${T[cen_test]}"
+        echo "  [0] ← ${T[m0]}"
+        echo
+        case "$(ask "${T[choice]}")" in
+            1) if [[ "$on" == "1" ]]; then "$CTL" censor set --disable
+               else "$CTL" censor set --enable; fi >/dev/null ;;
+            2) echo -e "  ${D}${T[cen_hint_table]}${N}"
+               v="$(ask "${T[cen_set_table]}" "$tab")"
+               [[ -n "$v" ]] && { "$CTL" censor set --table "$v" >/dev/null || pause; } ;;
+            3) echo -e "  ${D}${T[cen_hint_min]}${N}"
+               v="$(ask "${T[cen_set_min]}" "$min")"
+               [[ -n "$v" ]] && { "$CTL" censor set --min-clients "$v" >/dev/null || pause; } ;;
+            4) "$CTL" censor list; pause ;;
+            5) "$CTL" censor test; pause ;;
+            0|"") return ;;
+        esac
+    done
+}
+
 screen_panel() {
     local on url uuid tok texp every win thr act act_txt cool exempt mbps lmin
     local rep rep_at names v dis etags pdev
@@ -2165,6 +2227,11 @@ while :; do
     else
         echo -e " [10] 🌐 ${T[cdn_menu]} ${D}${T[cdn_menu_d]}${N}"
     fi
+    if cen_enabled; then
+        echo -e " [11] 📡 ${T[cen_menu]} ${G}${T[g_on]}${N}"
+    else
+        echo -e " [11] 📡 ${T[cen_menu]} ${D}${T[cen_menu_d]}${N}"
+    fi
     echo -e "  [0] 🚪 ${T[m0]}"
     hr
     # Ссылка живёт только здесь, в подвале главного экрана: на рабочих
@@ -2182,6 +2249,7 @@ while :; do
         8) screen_service ;;
         9) screen_panel ;;
         10) screen_cdn ;;
+        11) screen_censor ;;
         0|"") clear; exit 0 ;;
     esac
 done
