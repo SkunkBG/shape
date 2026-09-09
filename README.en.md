@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.96-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.97-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.96
+# Shape v3.97
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -982,10 +982,12 @@ amounts to some forty percent of the operator's federal count and does not clear
 the halving threshold, even though the node is already unreachable for a whole
 region.
 
-If a whole operator goes, one message carries the breakdown of which networks
-the loss came from. If a single network goes, the message names it with the
-operator in brackets. Networks of an operator already flagged as a whole are not
-duplicated separately.
+All findings of one sample go out in **a single message**: networks lost first,
+networks gained second. An event touches several networks at once, and a message
+per network would turn the chat into a feed where one cannot tell one event from
+five. An operator that went as a whole carries the breakdown of which networks
+the loss came from. A single network is named together with its operator in
+brackets. Networks of an operator already flagged as a whole are not duplicated.
 
 What the grouping does not give: a breakdown by region — the table carries only
 a country, and one network number covers all of Russia. Nor virtual operators:

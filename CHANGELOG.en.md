@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.97
+
+**A false influx after the upgrade is fixed, and the message flood is gone.**
+
+Version 3.95 moved history from operator labels to network numbers. For operators it carried over, but the new per-number keys had no history at all: older samples do not contain them, the median came out zero, and the influx rule always passed against a zero normal. The nodes declared an influx for everything they could see — "now 112, usually 0".
+
+A zero normal is no longer treated as an influx. A network with nothing to compare against may really have arrived, or may just have come under observation for the first time. Without history the two cannot be told apart, and calling an event out of something incomparable is a lie.
+
+The second half of the same incident: one event touches several networks, and the section sent a message for each — three nodes produced nine messages in a minute. All findings of one sample now go out in a single message, networks lost first, networks gained second.
+
+**After upgrading** the section has to be switched back on if you disabled it:
+
+```
+shaperctl censor set --enable
+```
+
+---
+
 ## 3.96
 
 **Not only a network dropping is caught, but an influx too.**

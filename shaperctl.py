@@ -342,6 +342,9 @@ MSG = {
         "cen_msg": "{node}: сеть {net} перестала доходить\nсейчас {n}, обычно {norm}",
         "cen_rise": "{node}: в сети {net} наплыв\nсейчас {n}, обычно {norm}",
         "cen_tail_head": "Просели сети:",
+        "cen_head": "{node}: изменения по сетям",
+        "cen_sec_down": "Перестали доходить:",
+        "cen_sec_up": "Наплыв:",
         "cen_blame_head": "Из них по сетям:",
         "cen_tail_row": "  {net}: {n} вместо {norm}",
         "cen_title": "Разбивка клиентов по сетям",
@@ -869,6 +872,9 @@ MSG = {
         "cen_msg": "{node}: network {net} stopped reaching us\nnow {n}, usually {norm}",
         "cen_rise": "{node}: an influx in {net}\nnow {n}, usually {norm}",
         "cen_tail_head": "Networks down:",
+        "cen_head": "{node}: network changes",
+        "cen_sec_down": "Stopped reaching us:",
+        "cen_sec_up": "Influx:",
         "cen_blame_head": "Broken down by network:",
         "cen_tail_row": "  {net}: {n} instead of {norm}",
         "cen_title": "Clients by network",
@@ -6059,7 +6065,18 @@ def _mad(xs):
 
 
 def _rose(cur, norm, spread):
-    """Считать ли это наплывом: и по отношению к норме, и по разбросу сети."""
+    """
+    Считать ли это наплывом: и по отношению к норме, и по разбросу сети.
+
+    Нулевая норма наплывом не считается никогда. Сеть, которой в истории не
+    было, могла и правда прийти — а могла просто впервые попасть под наблюдение:
+    так случилось при переходе на хранение по номерам сетей, когда у каждого
+    нового ключа норма оказалась нулевой, и ноды разом объявили наплыв всему,
+    что видели. Отличить одно от другого без истории нельзя, а объявлять
+    событием то, чего не с чем сравнить, — значит врать.
+    """
+    if norm < 1:
+        return False
     if cur < norm * CENSOR_RISE:
         return False
     if spread <= 0:
@@ -6113,6 +6130,27 @@ def censor_pp_broken(state, now):
         return False, None
     share = du / float(dr + du)
     return share > CENSOR_PP_BAD_SHARE, share
+
+
+def censor_message(node, alerts):
+    """
+    Одно сообщение на цикл: сначала пропавшие сети, потом пришедшие.
+
+    Порядок не случаен. Пропажа требует решения, наплыв — объясняет, откуда
+    люди взялись, и читается вторым.
+    """
+    lines = [t("cen_head", node=node)]
+    for rose, head in ((False, "cen_sec_down"), (True, "cen_sec_up")):
+        rows = [a for a in alerts if a[0] is rose]
+        if not rows:
+            continue
+        lines.append("")
+        lines.append(t(head))
+        for _r, key, cur, norm, blame in rows:
+            lines.append(t("cen_tail_row", net=key, n=cur, norm=norm))
+            for b in blame:
+                lines.append("  " + t("cen_tail_row", net=b[1], n=b[3], norm=b[2]))
+    return "\n".join(lines)
 
 
 def censor_watch(cfg, now=None):
@@ -6182,6 +6220,10 @@ def censor_watch(cfg, now=None):
     min_norm = int(c.get("min_clients") or CENSOR_MIN_NORMAL)
     want_cc = (c.get("country") or "").upper()
     told = []
+    # Копим находки и отправляем одним сообщением. Событие задевает несколько
+    # сетей сразу, и отдельное сообщение на каждую превращает телеграм в ленту,
+    # по которой невозможно понять, одно это событие или пять.
+    alerts = []
     for key in {k for h in base for k in h}:
         if want_cc and censor_key_country(_ASN_TABLE, key) != want_cc:
             continue
@@ -6206,16 +6248,10 @@ def censor_watch(cfg, now=None):
         log_event("censor_rise" if rose else "censor_drop",
                   net=key, now=cur, normal=norm,
                   by=[b[1] for b in blame[:3]] or None)
-        text = t("cen_rise" if rose else "cen_msg",
-                 node=node_label(cfg["telegram"]),
-                 net=key, n=cur, norm=norm)
         # Разбивка нужна, только когда убыль пришла из нескольких сетей: у
         # оператора с единственным номером она повторяла бы заголовок.
-        if len(blame) > 1:
-            text += "\n\n" + t("cen_blame_head") + "\n" + "\n".join(
-                t("cen_tail_row", net=b[1], n=b[3], norm=b[2])
-                for b in blame[:CENSOR_TOP])
-        tg_send(text, cfg)
+        alerts.append((rose, key, cur, norm,
+                       blame[:CENSOR_TOP] if len(blame) > 1 else []))
 
     # Теперь по отдельным номерам сетей. Белые списки включают регионально, и
     # у операторов есть региональные номера: исчезновение MTS-PENZA-AS — это
@@ -6251,9 +6287,10 @@ def censor_watch(cfg, now=None):
                   net=key, now=cur, normal=norm,
                   operator=op if op != key else None)
         shown = "%s (%s)" % (key, op) if op != key else key
-        tg_send(t("cen_rise" if rose else "cen_msg",
-                  node=node_label(cfg["telegram"]),
-                  net=shown, n=cur, norm=norm), cfg)
+        alerts.append((rose, shown, cur, norm, []))
+
+    if alerts:
+        tg_send(censor_message(node_label(cfg["telegram"]), alerts), cfg)
 
     prev["said"] = said
     state["censor"] = prev
