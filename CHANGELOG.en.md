@@ -13,6 +13,32 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.93
+
+**Thresholds calibrated against a day of work on a live node.**
+
+Over sixteen hours the section raised ten alerts, and all ten were false. The four large operators stayed silent the whole time: the signal is clean where it matters, and the noise came from the edges.
+
+There were exactly two causes.
+
+**A floor of five addresses is too low.** Seven alerts came from networks with a median between five and nine, where ordinary churn clears any threshold — losing three people out of five proves nothing. The default is raised to twenty. The value is fitted to a node with three hundred addresses; on a node half that size it will have to come down, with the noise that brings.
+
+**Foreign hosting networks are not worth judging.** Six of the ten alerts came from networks in Turkey, Germany, Poland and the Seychelles whose clients vanished wholesale — from seventy to zero in five minutes. That is someone else's infrastructure disconnecting, not a block. Only networks of the chosen country are judged now, `RU` by default; the rest are counted and listed but raise nothing. An empty value restores the old behaviour.
+
+On that same day both changes would have removed all ten alerts, leaving six judged buckets: MTS, MegaFon, Beeline, Rostelecom, Tele2, MGTS.
+
+One fear turned out to be unfounded: **the daily cycle does not disturb the thresholds.** The rolling normal moves with the load, and a gradual evening decline raises nothing.
+
+**Important when upgrading.** The new default applies only where the section has not been configured yet. If you already enabled it from the command line, the old floor sits in your config and has to be raised by hand:
+
+```
+shaperctl censor set --min-clients 20
+```
+
+The country fills itself in: old configs do not carry that setting.
+
+---
+
 ## 3.92
 
 **A network counts as down only if the drop stands out against its own spread.**

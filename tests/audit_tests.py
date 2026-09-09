@@ -2289,7 +2289,10 @@ def _users(n1, n2=8, n3=3, stale=0):
     return u
 
 _cfg = S.load_config()
-_cfg["censor"].update({"enabled": True, "table": _TAB, "min_clients": 5})
+# country пустой — судить все страны: таблица этого набора помечена
+# вымышленным кодом ZZ, а проверка здесь про пороги, а не про страну.
+_cfg["censor"].update({"enabled": True, "table": _TAB, "min_clients": 5,
+                       "country": ""})
 
 S.read_users = lambda: _users(20)
 _counts, _unknown, _total = S.censor_counts(_cfg)
@@ -2388,6 +2391,51 @@ check("порог падения — заметная доля нормы", 0 < 
 check("разброс учитывается не меньше чем в два MAD", S.CENSOR_SIGMAS >= 2)
 check("свежие отсчёты в норму не берём", S.CENSOR_SKIP_FRESH >= 1)
 check("раздел выключен по умолчанию", S.CENSOR_DEFAULT["enabled"] is False)
+
+# ── Порог и страна: откалибровано по суткам на работающей ноде ──────────
+# Десять тревог за шестнадцать часов, все ложные. Семь пришли от сетей с
+# медианой 5..9, где порог проходит обычная текучка, шесть — от иностранных
+# хостингов, чьи клиенты исчезали разом: с семидесяти до нуля.
+check("порог не ниже двадцати адресов", S.CENSOR_DEFAULT["min_clients"] >= 20,
+      S.CENSOR_DEFAULT["min_clients"])
+check("по умолчанию судим российские сети",
+      S.CENSOR_DEFAULT["country"] == "RU", S.CENSOR_DEFAULT.get("country"))
+
+_TAB3 = os.path.join(TMP, "cc.tsv")
+with open(_TAB3, "w") as f:
+    f.write("203.0.113.0\t203.0.113.255\t64496\tRU\tMEGAFON-AS\n"
+            "198.51.100.0\t198.51.100.255\t64497\tTR\tSOME-TR-HOSTING\n")
+_cfg3 = S.load_config()
+_cfg3["censor"].update({"enabled": True, "table": _TAB3,
+                        "min_clients": 20, "country": "RU"})
+S.map_dump = lambda name: []
+S.read_users = lambda: {**{"203.0.113.%d" % (10+i): {"seen": _now_ns} for i in range(30)},
+                        **{"198.51.100.%d" % (10+i): {"seen": _now_ns} for i in range(30)}}
+_c4, _u4, _t4 = S.censor_counts(_cfg3)
+check("иностранная сеть считается и показывается",
+      _c4.get("AS64497 TR SOME-TR-HOSTING") == 30, _c4)
+
+check("страна корзины берётся из подписи оператора",
+      S.censor_key_country(S._ASN_TABLE, "МегаФон") == "RU")
+check("страна корзины берётся из подписи по номеру",
+      S.censor_key_country(S._ASN_TABLE, "AS64497 TR SOME-TR-HOSTING") == "TR",
+      S.censor_key_country(S._ASN_TABLE, "AS64497 TR SOME-TR-HOSTING"))
+check("неизвестная подпись страны не даёт",
+      S.censor_key_country(S._ASN_TABLE, "что-то своё") == "")
+
+# Обе сети рушатся одинаково. Российская обязана дать тревогу, иностранная —
+# нет: её исчезновение к блокировке отношения не имеет.
+_reset_state()
+_t3 = 3_000_000.0
+for _i in range(S.CENSOR_KEEP):
+    S.censor_watch(_cfg3, now=_t3 + _i * S.CENSOR_EVERY)
+check("на ровной нагрузке молчит и здесь", not _sent, _sent)
+
+S.read_users = lambda: {"203.0.113.9": {"seen": _now_ns}}
+_told3 = S.censor_watch(_cfg3, now=_t3 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+check("российская сеть при обвале помечена", "МегаФон" in _told3, _told3)
+check("иностранная сеть при том же обвале молчит",
+      not any("TR" in x for x in _told3), _told3)
 
 
 # ── Объединение сетей одного оператора ─────────────────────────────────

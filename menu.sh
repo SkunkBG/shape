@@ -1070,7 +1070,7 @@ sys.exit(0 if d.get('enabled') else 1)" 2>/dev/null
 }
 
 cen_read() {
-    python3 - <<PY 2>/dev/null || echo "0|-|5"
+    python3 - <<PY 2>/dev/null || echo "0|-|20|RU"
 import json
 try:
     d = json.load(open("$ETC_DIR/config.json")).get("censor", {})
@@ -1079,15 +1079,16 @@ except Exception:
 print("|".join([
     "1" if d.get("enabled") else "0",
     d.get("table") or "-",
-    str(d.get("min_clients") or 5),
+    str(d.get("min_clients") or 20),
+    d.get("country") or "-",
 ]))
 PY
 }
 
 screen_censor() {
-    local on tab min v
+    local on tab min cc v
     while :; do
-        IFS='|' read -r on tab min <<< "$(cen_read)"
+        IFS='|' read -r on tab min cc <<< "$(cen_read)"
         title "${T[cen_title]}"
         echo -e "  ${D}${T[cen_h1]}${N}"
         echo -e "  ${D}${T[cen_h2]}${N}"
@@ -1099,12 +1100,14 @@ screen_censor() {
         fi
         echo -e "  ${T[cen_l_table]}: ${B}${tab}${N}"
         echo -e "  ${T[cen_l_min]}: ${B}${min}${N}"
+        echo -e "  ${T[cen_l_cc]}: ${B}${cc}${N}"
         echo
         echo "  [1] ${T[g_toggle]}"
         echo "  [2] ${T[cen_set_table]}"
         echo "  [3] ${T[cen_set_min]}: ${B}${min}${N}"
-        echo "  [4] ${T[cen_list]}"
-        echo "  [5] ${T[cen_test]}"
+        echo "  [4] ${T[cen_set_cc]}: ${B}${cc}${N}"
+        echo "  [5] ${T[cen_list]}"
+        echo "  [6] ${T[cen_test]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -1116,8 +1119,11 @@ screen_censor() {
             3) echo -e "  ${D}${T[cen_hint_min]}${N}"
                v="$(ask "${T[cen_set_min]}" "$min")"
                [[ -n "$v" ]] && { "$CTL" censor set --min-clients "$v" >/dev/null || pause; } ;;
-            4) "$CTL" censor list; pause ;;
-            5) "$CTL" censor test; pause ;;
+            4) echo -e "  ${D}${T[cen_hint_cc]}${N}"
+               v="$(ask "${T[cen_set_cc]}" "$cc")"
+               [[ -n "$v" ]] && { "$CTL" censor set --country "$v" >/dev/null || pause; } ;;
+            5) "$CTL" censor list; pause ;;
+            6) "$CTL" censor test; pause ;;
             0|"") return ;;
         esac
     done

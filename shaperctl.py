@@ -346,6 +346,9 @@ MSG = {
         "cen_state_t": "Состояние",
         "cen_table_t": "Таблица сетей",
         "cen_min_t": "Порог сети",
+        "cen_cc_t": "Судим страну",
+        "cen_cc_any": "все",
+        "h_cen_cc": "судить только сети этой страны, пусто — все",
         "cen_on": "включена",
         "cen_off": "выключена",
         "cen_list_t": "Сейчас на ноде",
@@ -868,6 +871,9 @@ MSG = {
         "cen_state_t": "State",
         "cen_table_t": "Network table",
         "cen_min_t": "Network floor",
+        "cen_cc_t": "Judged country",
+        "cen_cc_any": "all",
+        "h_cen_cc": "judge only networks of this country; empty means all",
         "cen_on": "on",
         "cen_off": "off",
         "cen_list_t": "On the node now",
@@ -4784,7 +4790,18 @@ CENSOR_DEFAULT = {
     # Таблица «диапазон адресов → номер сети». Лежит на диске, наружу за ней
     # нода не ходит: раздел обязан работать на узле без выхода в интернет.
     "table": "/etc/shaper/ip2asn-v4.tsv",
-    "min_clients": 5,     # сети мельче не судим
+    # Сети мельче не судим. Двадцать — не круглое число с потолка: на ноде в
+    # триста адресов сутки наблюдений дали десять тревог, и все ложные. Семь из
+    # них пришли от сетей с медианой от пяти до девяти, где обычная текучка
+    # проходит любой порог. На ноде вдвое меньше это значение придётся
+    # опускать, понимая, что вернётся и шум.
+    "min_clients": 20,
+    # Судим только сети этой страны. Прочие считаются и показываются, но тревог
+    # не дают: на живой ноде шесть тревог из десяти пришли от иностранных
+    # хостингов, чьи клиенты исчезали разом — с семидесяти до нуля за пять
+    # минут. Это чужая инфраструктура отключилась, а не блокировка. Пусто —
+    # судить всех.
+    "country": "RU",
 }
 
 
@@ -5859,6 +5876,25 @@ def censor_operator(name, cc="RU"):
     return None
 
 
+def censor_key_country(tab, key):
+    """
+    Страна корзины по её подписи. Пустая строка, если определить нельзя.
+
+    Подпись хранится в истории, а страна нужна при вынесении вердикта, когда
+    исходного номера сети уже нет под рукой. Оператор несёт страну в своём
+    описании, у остальных она стоит в подписи вторым словом после номера.
+    """
+    for op, cc, _rx in CENSOR_OPERATORS:
+        if key == op:
+            return cc
+    if key.startswith("AS"):
+        head = key.split(" ", 2)
+        if len(head) > 1 and head[0][2:].isdigit():
+            cc, _org = asn_org(tab, int(head[0][2:]))
+            return cc
+    return ""
+
+
 def censor_label(tab, num):
     """
     Под каким именем сеть попадает в счёт: оператор или «AS… название».
@@ -6007,8 +6043,11 @@ def censor_watch(cfg, now=None):
         said = {}
 
     min_norm = int(c.get("min_clients") or CENSOR_MIN_NORMAL)
+    want_cc = (c.get("country") or "").upper()
     told = []
     for key in {k for h in base for k in h}:
+        if want_cc and censor_key_country(_ASN_TABLE, key) != want_cc:
+            continue
         vals = [int(h.get(key, 0)) for h in base]
         norm = _median(vals)
         if norm < min_norm:
@@ -6051,8 +6090,11 @@ def censor_tail(cfg):
         return ""
 
     base = hist[:-CENSOR_SKIP_FRESH]
+    want_cc = (c.get("country") or "").upper()
     rows = []
     for key in {k for h in base for k in h}:
+        if want_cc and censor_key_country(_ASN_TABLE, key) != want_cc:
+            continue
         vals = [int(h.get(key, 0)) for h in base]
         norm = _median(vals)
         if norm < CENSOR_MIN_NORMAL:
@@ -7963,6 +8005,8 @@ def cmd_censor(a):
             c["table"] = a.table.strip()
         if a.min_clients is not None:
             c["min_clients"] = max(1, int(a.min_clients))
+        if a.country is not None:
+            c["country"] = a.country.strip().upper()
         if a.enable:
             c["enabled"] = True
         if a.disable:
@@ -8002,6 +8046,7 @@ def cmd_censor(a):
     print(f"  {t('cen_state_t')} : {state}")
     print(f"  {t('cen_table_t')} : {c.get('table') or '-'}")
     print(f"  {t('cen_min_t')} : {c.get('min_clients')}")
+    print(f"  {t('cen_cc_t')} : {c.get('country') or t('cen_cc_any')}")
     if not c.get("enabled"):
         print(f"  {C['yel']}{t('cen_hint_off')}{C['r']}")
     print()
@@ -8864,6 +8909,7 @@ def build_parser():
     cn.add_argument("--table", default=None, help=t("h_cen_table"))
     cn.add_argument("--min-clients", dest="min_clients", type=int,
                     default=None, help=t("h_cen_min"))
+    cn.add_argument("--country", default=None, help=t("h_cen_cc"))
     cn.add_argument("--all", action="store_true", help=t("h_cen_all"))
     cn.add_argument("--enable", action="store_true")
     cn.add_argument("--disable", action="store_true")
