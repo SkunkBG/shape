@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.94-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.95-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.94
+# Shape v3.95
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -960,6 +960,19 @@ Ungrouped networks are labelled `AS34984 TR TELLCOM-AS` — number, country,
 name. The country is not decoration: clients arrive from abroad and from behind
 other people's proxies, and such a network going down has nothing to do with
 blocking. That has to be visible while the alert is being read.
+
+**Two levels are judged at once.** History is kept per network number, and the
+fold into an operator happens when the verdict is made. The reason is that
+restrictions are switched on regionally, and operators have regional numbers —
+`MTS-PENZA-AS`, `MF-KAVKAZ-AS`, `T2-NOVOSIBIRSK-AS`. One of those disappearing
+amounts to some forty percent of the operator's federal count and does not clear
+the halving threshold, even though the node is already unreachable for a whole
+region.
+
+If a whole operator goes, one message carries the breakdown of which networks
+the loss came from. If a single network goes, the message names it with the
+operator in brackets. Networks of an operator already flagged as a whole are not
+duplicated separately.
 
 What the grouping does not give: a breakdown by region — the table carries only
 a country, and one network number covers all of Russia. Nor virtual operators:

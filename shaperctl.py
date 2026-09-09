@@ -341,6 +341,7 @@ MSG = {
         "cen_empty": "таблица сетей пуста: {p}",
         "cen_msg": "{node}: сеть {net} перестала доходить\nсейчас {n}, обычно {norm}",
         "cen_tail_head": "Просели сети:",
+        "cen_blame_head": "Из них по сетям:",
         "cen_tail_row": "  {net}: {n} вместо {norm}",
         "cen_title": "Разбивка клиентов по сетям",
         "cen_state_t": "Состояние",
@@ -866,6 +867,7 @@ MSG = {
         "cen_empty": "network table is empty: {p}",
         "cen_msg": "{node}: network {net} stopped reaching us\nnow {n}, usually {norm}",
         "cen_tail_head": "Networks down:",
+        "cen_blame_head": "Broken down by network:",
         "cen_tail_row": "  {net}: {n} instead of {norm}",
         "cen_title": "Clients by network",
         "cen_state_t": "State",
@@ -5910,6 +5912,52 @@ def censor_key_country(tab, key):
     return ""
 
 
+def censor_key_operator(tab, key):
+    """
+    Оператор для подписи из истории, или сама подпись, если он неизвестен.
+
+    Подписи операторов, оставшиеся в истории от прежних версий, возвращаются
+    как есть: они уже сгруппированы, и переносить историю не нужно.
+    """
+    if key.startswith("AS"):
+        head = key.split(" ", 1)
+        if head[0][2:].isdigit():
+            cc, org = asn_org(tab, int(head[0][2:]))
+            return censor_operator(org, cc) or key
+    return key
+
+
+def censor_group(tab, counts):
+    """Свернуть счёт по номерам сетей в счёт по операторам."""
+    out = {}
+    for key, n in counts.items():
+        g = censor_key_operator(tab, key)
+        out[g] = out.get(g, 0) + n
+    return out
+
+
+def censor_blame(tab, base, cur, group):
+    """
+    Какие номера сетей дали падение оператора: [(убыль, подпись, было, стало)].
+
+    Ради этого история и хранится по номерам, а не сразу по операторам. Белые
+    списки включают регионально, и у операторов есть региональные номера —
+    MTS-PENZA-AS, MF-KAVKAZ-AS, T2-NOVOSIBIRSK-AS. Увидеть, что вся убыль
+    пришлась на один такой номер, значит отличить региональное ограничение от
+    блокировки по всей стране, а это разные решения.
+    """
+    rows = []
+    for key in set(cur) | {k for h in base for k in h}:
+        if not key.startswith("AS") or censor_key_operator(tab, key) != group:
+            continue
+        was = _median([int(h.get(key, 0)) for h in base])
+        now_n = int(cur.get(key, 0))
+        if was - now_n > 0:
+            rows.append((was - now_n, key, was, now_n))
+    rows.sort(reverse=True)
+    return rows
+
+
 def censor_label(tab, num):
     """
     Под каким именем сеть попадает в счёт: оператор или «AS… название».
@@ -5971,7 +6019,7 @@ def censor_counts(cfg):
         if not num:
             unknown += 1
             continue
-        key = censor_label(tab, num)
+        key = asn_name(tab, num)
         counts[key] = counts.get(key, 0) + 1
     return counts, unknown, total
 
@@ -6097,7 +6145,12 @@ def censor_watch(cfg, now=None):
     if len(hist) < CENSOR_KEEP:
         return []
 
-    base = hist[:-CENSOR_SKIP_FRESH]
+    # Судим по операторам, а храним по номерам сетей: свёртка здесь, чтобы при
+    # падении можно было сказать, какие именно сети его дали.
+    tab = _ASN_TABLE
+    raw_base = hist[:-CENSOR_SKIP_FRESH]
+    base = [censor_group(tab, h) for h in raw_base]
+    counts = censor_group(tab, counts)
     said = prev.get("said") or {}
     if not isinstance(said, dict):
         said = {}
@@ -6120,9 +6173,53 @@ def censor_watch(cfg, now=None):
             continue
         said[key] = now
         told.append(key)
-        log_event("censor_drop", net=key, now=cur, normal=norm)
+        blame = censor_blame(tab, raw_base, hist[-1], key)
+        log_event("censor_drop", net=key, now=cur, normal=norm,
+                  by=[b[1] for b in blame[:3]] or None)
+        text = t("cen_msg", node=node_label(cfg["telegram"]),
+                 net=key, n=cur, norm=norm)
+        # Разбивка нужна, только когда убыль пришла из нескольких сетей: у
+        # оператора с единственным номером она повторяла бы заголовок.
+        if len(blame) > 1:
+            text += "\n\n" + t("cen_blame_head") + "\n" + "\n".join(
+                t("cen_tail_row", net=b[1], n=b[3], norm=b[2])
+                for b in blame[:CENSOR_TOP])
+        tg_send(text, cfg)
+
+    # Теперь по отдельным номерам сетей. Белые списки включают регионально, и
+    # у операторов есть региональные номера: исчезновение MTS-PENZA-AS — это
+    # ограничение в одной области, а на федеральном счёте оператора оно даёт
+    # процентов сорок и порога не проходит.
+    #
+    # Номера оператора, который уже отмечен целиком, пропускаем: его сообщение
+    # и так несёт разбивку, а отдельные тревоги по каждой его сети превратили
+    # бы общероссийское событие в поток одинаковых сообщений.
+    raw_now = hist[-1]
+    for key in {k for h in raw_base for k in h}:
+        if not key.startswith("AS"):
+            continue
+        op = censor_key_operator(tab, key)
+        if op in told:
+            continue
+        if want_cc and censor_key_country(tab, key) != want_cc:
+            continue
+        vals = [int(h.get(key, 0)) for h in raw_base]
+        norm = _median(vals)
+        if norm < min_norm:
+            continue
+        cur = int(raw_now.get(key, 0))
+        if not _fell(cur, norm, _mad(vals)):
+            said.pop(key, None)
+            continue
+        if now - float(said.get(key) or 0) < CENSOR_ALERT_EVERY:
+            continue
+        said[key] = now
+        told.append(key)
+        log_event("censor_drop", net=key, now=cur, normal=norm,
+                  operator=op if op != key else None)
+        shown = "%s (%s)" % (key, op) if op != key else key
         tg_send(t("cen_msg", node=node_label(cfg["telegram"]),
-                  net=key, n=cur, norm=norm), cfg)
+                  net=shown, n=cur, norm=norm), cfg)
 
     prev["said"] = said
     state["censor"] = prev
@@ -6149,7 +6246,8 @@ def censor_tail(cfg):
     if len(hist) < CENSOR_KEEP:
         return ""
 
-    base = hist[:-CENSOR_SKIP_FRESH]
+    base = [censor_group(_ASN_TABLE, h) for h in hist[:-CENSOR_SKIP_FRESH]]
+    counts = censor_group(_ASN_TABLE, counts)
     want_cc = (c.get("country") or "").upper()
     rows = []
     for key in {k for h in base for k in h}:
@@ -8082,6 +8180,7 @@ def cmd_censor(a):
             counts, unknown, total = censor_counts(cfg)
         except CensorError as e:
             die(str(e))
+        counts = censor_group(_ASN_TABLE, counts)
         print()
         if a.action == "test":
             print(f"  {t('cen_rows_t')} : {len(_ASN_TABLE['starts'])}")

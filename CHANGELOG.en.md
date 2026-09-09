@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.95
+
+**Regional restrictions became visible.**
+
+Whitelists are switched on region by region, in waves, not across the whole country. Operators have regional autonomous system numbers — `MTS-PENZA-AS`, `MF-KAVKAZ-AS`, `T2-NOVOSIBIRSK-AS` — and when a region goes under restriction, it is one of those that disappears. Against the operator's federal count that is some forty percent, while the threshold asks for a halving: the event passed by entirely.
+
+History is now kept per network number rather than pre-folded into operators. The fold happens when the verdict is made, and both levels are judged.
+
+A whole operator going gives one message with a breakdown of which networks the loss came from. A single network going gives a message about it, with the operator in brackets. Networks of an operator already flagged as a whole are not duplicated: otherwise a nationwide event would turn into a stream of identical messages.
+
+The thresholds are unchanged and apply to both levels: a network has to halve, to fall outside three MAD of its own spread, to hold at least twenty addresses, and to belong to the chosen country.
+
+**History from earlier versions carries over by itself.** Folded operator labels left in it are counted as they are: there will be no per-network breakdown for them until an hour of new samples accumulates, but the normal does not shift and the section does not fall silent.
+
+---
+
 ## 3.94
 
 **The section stays quiet when PROXY header parsing breaks.**

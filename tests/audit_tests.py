@@ -2408,6 +2408,57 @@ check("о пропуске сказано в журнале",
       any(e[0] == "censor_skipped" for e in _events), _events)
 _pp(0, 0)
 
+# ── Региональное ограничение против общероссийского ────────────────────
+# Белые списки включают по регионам. У оператора региональная сеть — это
+# процентов сорок его счёта, и порог в половину такое событие пропускает.
+# Поэтому судим ещё и отдельные номера сетей.
+_TAB4 = os.path.join(TMP, "reg.tsv")
+with open(_TAB4, "w") as f:
+    f.write("203.0.113.0\t203.0.113.127\t64496\tRU\tMTS\n"
+            "198.51.100.0\t198.51.100.255\t64497\tRU\tMTS-PENZA-AS\n"
+            "192.0.2.0\t192.0.2.255\t64498\tRU\tMEGAFON-AS\n")
+_cfg4 = S.load_config()
+_cfg4["censor"].update({"enabled": True, "table": _TAB4,
+                        "min_clients": 20, "country": "RU"})
+
+def _reg_users(fed, penza, mf):
+    u = {"203.0.113.%d" % (10 + i): {"seen": _now_ns} for i in range(fed)}
+    u.update({"198.51.100.%d" % (10 + i): {"seen": _now_ns} for i in range(penza)})
+    u.update({"192.0.2.%d" % (10 + i): {"seen": _now_ns} for i in range(mf)})
+    return u
+
+def _fill(fed, penza, mf, t0):
+    _reset_state()
+    S.read_users = lambda: _reg_users(fed, penza, mf)
+    for _i in range(S.CENSOR_KEEP):
+        S.censor_watch(_cfg4, now=t0 + _i * S.CENSOR_EVERY)
+
+_T4 = 7_000_000.0
+_fill(40, 35, 30, _T4)
+check("на ровной нагрузке молчит и здесь", not _sent, _sent)
+
+# Региональная сеть исчезла: у оператора это 75 -> 38, порога не проходит.
+S.read_users = lambda: _reg_users(38, 0, 30)
+_reg = S.censor_watch(_cfg4, now=_T4 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+check("оператор целиком порога не проходит", "МТС" not in _reg, _reg)
+check("региональная сеть замечена",
+      "AS64497 RU MTS-PENZA-AS" in _reg, _reg)
+check("в сообщении назван и оператор",
+      len(_sent) == 1 and "(МТС)" in _sent[0], _sent)
+
+# Оператор ушёл целиком: одно сообщение с разбивкой, а не по сообщению на сеть.
+_T5 = 8_000_000.0
+_fill(40, 35, 30, _T5)
+S.read_users = lambda: _reg_users(5, 2, 30)
+_nat = S.censor_watch(_cfg4, now=_T5 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+check("общероссийское падение отмечено на операторе", _nat == ["МТС"], _nat)
+check("и даёт ровно одно сообщение", len(_sent) == 1, len(_sent))
+check("с разбивкой по сетям внутри",
+      "MTS-PENZA-AS" in _sent[0] and "AS64496 RU MTS" in _sent[0], _sent)
+
+# Здоровый оператор молчит в обоих случаях.
+check("МегаФон не задет", not any("64498" in x or x == "МегаФон" for x in _nat), _nat)
+
 # ── Разброс сети: числа взяты с работающей ноды ────────────────────────
 # Турецкий хостинг AS47516 гулял сам по себе 6..22 при медиане 15. Одного
 # отношения к норме хватало, чтобы объявить его падением, и первая же
@@ -2557,8 +2608,34 @@ S.map_dump = lambda name: []
 S.read_users = lambda: {**{"203.0.113.%d" % (10+i): {"seen": _now_ns} for i in range(6)},
                         **{"198.51.100.%d" % (10+i): {"seen": _now_ns} for i in range(4)}}
 _c3, _u3, _t3 = S.censor_counts(_cfg2)
-check("два номера одного оператора сложились в одну корзину",
-      _c3 == {"МегаФон": 10}, _c3)
+check("счёт ведётся по номерам сетей",
+      sorted(_c3.values()) == [4, 6] and all(k.startswith("AS") for k in _c3), _c3)
+check("свёртка складывает номера одного оператора",
+      S.censor_group(S._ASN_TABLE, _c3) == {"МегаФон": 10},
+      S.censor_group(S._ASN_TABLE, _c3))
+
+# ── История по номерам, вердикт по оператору ───────────────────────────
+# Белые списки включают регионально, а у операторов есть региональные номера.
+# Хранить историю сразу свёрнутой значило бы потерять именно то разрешение,
+# которое отличает ограничение в одной области от блокировки по стране.
+check("подпись оператора из старой истории остаётся собой",
+      S.censor_key_operator(S._ASN_TABLE, "МегаФон") == "МегаФон")
+check("подпись по номеру сворачивается в оператора",
+      S.censor_key_operator(S._ASN_TABLE, "AS64497 RU MF-MGSM-AS PJSC MegaFon") == "МегаФон")
+check("чужой номер остаётся собой",
+      S.censor_key_operator(S._ASN_TABLE, "AS99999 XX NOBODY") == "AS99999 XX NOBODY")
+
+# Оператор просел с 10 до 4, и вся убыль пришлась на один номер: это регион.
+_bbase = [{"AS64496 RU MEGAFON-AS": 6, "AS64497 RU MF-MGSM-AS PJSC MegaFon": 4}] * 10
+_bcur = {"AS64496 RU MEGAFON-AS": 4, "AS64497 RU MF-MGSM-AS PJSC MegaFon": 0}
+_blame = S.censor_blame(S._ASN_TABLE, _bbase, _bcur, "МегаФон")
+check("падение разложено по номерам сетей", len(_blame) == 2, _blame)
+check("виновник назван первым",
+      _blame[0][1] == "AS64497 RU MF-MGSM-AS PJSC MegaFon", _blame)
+check("у виновника показано было и стало",
+      (_blame[0][2], _blame[0][3]) == (4, 0), _blame[0])
+check("чужой оператор в разбор не попадает",
+      S.censor_blame(S._ASN_TABLE, _bbase, _bcur, "МТС") == [])
 
 
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
