@@ -6136,6 +6136,11 @@ def censor_skip_reason(state, now):
     state["censor_pp"] = {"at": now, "total": total,
                           "resolved": int(st.get("pp_resolved", 0)),
                           "unresolved": int(st.get("pp_unresolved", 0))}
+    # Точки отсчёта нет — первый замер после установки или после обновления с
+    # версии, которая итог ещё не хранила. Сравнить не с чем, а значит нельзя
+    # отличить полную карту от только что пересозданной: не судим.
+    if "total" not in prev:
+        return "no_baseline", None
     if total < seen:
         return "engine_reloaded", None
     if dr < 0 or du < 0 or dr + du < CENSOR_PP_MIN_PACKETS:

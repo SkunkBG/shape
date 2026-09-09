@@ -2321,14 +2321,14 @@ def _reset_state():
 _reset_state()
 S.read_users = lambda: _users(20)
 _t0 = 1_000_000.0
-for _i in range(S.CENSOR_KEEP):
+for _i in range(S.CENSOR_KEEP + 1):
     S.censor_watch(_cfg, now=_t0 + _i * S.CENSOR_EVERY)
 check("на ровной нагрузке молчит", not _sent, _sent)
 check("истории набрано ровно столько, сколько держим",
       len((S.guard_state().get("censor") or {}).get("hist") or []) == S.CENSOR_KEEP)
 
 S.read_users = lambda: _users(1)          # первая сеть пропала, остальные целы
-_told = S.censor_watch(_cfg, now=_t0 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+_told = S.censor_watch(_cfg, now=_t0 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
 check("падение сети замечено", _told == [_N1], _told)
 check("сообщение называет именно эту сеть",
       len(_sent) == 1 and "AS64496" in _sent[0], _sent)
@@ -2337,7 +2337,7 @@ check("событие объявлено", "censor_drop" in S.EVENT_TYPES)
 check("событие записано", any(e[0] == "censor_drop" for e in _events), _events)
 
 _before = len(_sent)
-S.censor_watch(_cfg, now=_t0 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
+S.censor_watch(_cfg, now=_t0 + (S.CENSOR_KEEP + 2) * S.CENSOR_EVERY)
 check("повтор придержан кулдауном", len(_sent) == _before, _sent)
 
 # Маленькая сеть: три адреса исчезли целиком и это ничего не доказывает.
@@ -2394,6 +2394,12 @@ _pp(10, 5)
 _why2, _ = S.censor_skip_reason({"censor_pp": dict(_base)}, 2200.0)
 check("перезагрузка движка распознаётся", _why2 == "engine_reloaded", _why2)
 
+# Первый замер после установки или после обновления с версии, которая итог не
+# хранила: сравнивать не с чем, и полная карта неотличима от пересозданной.
+_pp(500000, 50000)
+_why3, _ = S.censor_skip_reason({"censor_pp": {"resolved": 1, "unresolved": 1}}, 2500.0)
+check("без точки отсчёта замер не судится", _why3 == "no_baseline", _why3)
+
 # Замер при сломанном разборе не должен попадать в историю: искажённые числа
 # занизили бы норму для следующих часов.
 _reset_state()
@@ -2442,7 +2448,7 @@ def _reg_users(fed, penza, mf):
 def _fill(fed, penza, mf, t0):
     _reset_state()
     S.read_users = lambda: _reg_users(fed, penza, mf)
-    for _i in range(S.CENSOR_KEEP):
+    for _i in range(S.CENSOR_KEEP + 1):
         S.censor_watch(_cfg4, now=t0 + _i * S.CENSOR_EVERY)
 
 _T4 = 7_000_000.0
@@ -2451,7 +2457,7 @@ check("на ровной нагрузке молчит и здесь", not _sent
 
 # Региональная сеть исчезла: у оператора это 75 -> 38, порога не проходит.
 S.read_users = lambda: _reg_users(38, 0, 30)
-_reg = S.censor_watch(_cfg4, now=_T4 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+_reg = S.censor_watch(_cfg4, now=_T4 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
 check("оператор целиком порога не проходит", "МТС" not in _reg, _reg)
 check("региональная сеть замечена",
       "AS64497 RU MTS-PENZA-AS" in _reg, _reg)
@@ -2462,7 +2468,7 @@ check("в сообщении назван и оператор",
 _T5 = 8_000_000.0
 _fill(40, 35, 30, _T5)
 S.read_users = lambda: _reg_users(5, 2, 30)
-_nat = S.censor_watch(_cfg4, now=_T5 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+_nat = S.censor_watch(_cfg4, now=_T5 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
 check("общероссийское падение отмечено на операторе", _nat == ["МТС"], _nat)
 check("и даёт ровно одно сообщение", len(_sent) == 1, len(_sent))
 check("с разбивкой по сетям внутри",
@@ -2475,7 +2481,7 @@ check("МегаФон не задет", not any("64498" in x or x == "МегаФ
 _T6 = 9_000_000.0
 _fill(40, 5, 30, _T6)
 S.read_users = lambda: _reg_users(42, 45, 30)
-_rise = S.censor_watch(_cfg4, now=_T6 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+_rise = S.censor_watch(_cfg4, now=_T6 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
 check("наплыв в региональной сети замечен",
       "AS64497 RU MTS-PENZA-AS" in _rise, _rise)
 check("сообщение говорит про наплыв, а не про падение",
@@ -2486,7 +2492,7 @@ check("сообщение говорит про наплыв, а не про п�
 _T7 = 9_500_000.0
 _fill(40, 3, 30, _T7)
 S.read_users = lambda: _reg_users(40, 7, 30)
-_small = S.censor_watch(_cfg4, now=_T7 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+_small = S.censor_watch(_cfg4, now=_T7 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
 check("мелкий наплыв ниже порога не тревожит",
       not any("64497" in x for x in _small), _small)
 
@@ -2597,12 +2603,12 @@ check("неизвестная подпись страны не даёт",
 # нет: её исчезновение к блокировке отношения не имеет.
 _reset_state()
 _t3 = 3_000_000.0
-for _i in range(S.CENSOR_KEEP):
+for _i in range(S.CENSOR_KEEP + 1):
     S.censor_watch(_cfg3, now=_t3 + _i * S.CENSOR_EVERY)
 check("на ровной нагрузке молчит и здесь", not _sent, _sent)
 
 S.read_users = lambda: {"203.0.113.9": {"seen": _now_ns}}
-_told3 = S.censor_watch(_cfg3, now=_t3 + S.CENSOR_KEEP * S.CENSOR_EVERY)
+_told3 = S.censor_watch(_cfg3, now=_t3 + (S.CENSOR_KEEP + 1) * S.CENSOR_EVERY)
 check("российская сеть при обвале помечена", "МегаФон" in _told3, _told3)
 check("иностранная сеть при том же обвале молчит",
       not any("TR" in x for x in _told3), _told3)

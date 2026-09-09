@@ -13,6 +13,18 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.99
+
+**The first sample after an install or an upgrade is not counted.**
+
+The guard from 3.98 recognises an engine reload by the counters going backwards, and for that it needs a previous sample to compare against. State written by versions before 3.98 carries no such sample, so on the first one after the upgrade there was nothing to compare with: the reload went unrecognised, and exactly that false message could arrive again.
+
+The absence of a reference point is now itself a reason not to judge. A full map and a freshly recreated one are indistinguishable at that moment, and pretending otherwise is not an option.
+
+The practical consequence: the section starts speaking an hour and five minutes after being switched on rather than an hour. The first sample goes to establishing the reference point.
+
+---
+
 ## 3.98
 
 **A sample taken right after an engine reload is not counted.**
