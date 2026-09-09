@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.95-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.96-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.95
+# Shape v3.96
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -960,6 +960,19 @@ Ungrouped networks are labelled `AS34984 TR TELLCOM-AS` — number, country,
 name. The country is not decoration: clients arrive from abroad and from behind
 other people's proxies, and such a network going down has nothing to do with
 blocking. That has to be visible while the alert is being read.
+
+**Not only drops are caught, but influxes too.** When a region goes under
+restriction, people do not disappear — they move to a node that still reaches
+them, and their network grows there. The sign arrives before the drop: on the
+losing node the loss may not clear the threshold, while on the receiving one the
+growth is severalfold. The threshold is a doubling: on a live node an operator
+grew by 59% on its own within an hour, and a one-and-a-half threshold would have
+called that an event.
+
+The size thresholds differ between a drop and an influx on purpose. You can only
+lose what you had, so a drop is judged against the normal. An influx matters by
+its result: growth from three people to seven proves nothing, from three to
+forty it does.
 
 **Two levels are judged at once.** History is kept per network number, and the
 fold into an operator happens when the verdict is made. The reason is that

@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.96
+
+**Not only a network dropping is caught, but an influx too.**
+
+When a region goes under whitelists, people do not disappear — they move to a node that still reaches them, usually the one behind a CDN, and their network grows there. The sign arrives before the drop: on the losing node the loss may not clear the threshold, while on the receiving one the growth is severalfold.
+
+The threshold is a doubling, taken from live data: on a working node MTS went from 69 to 110 within an hour on its own, a rise of 59%, and a one-and-a-half threshold would have called that an event. No doubling happened once over a day of observation.
+
+The size thresholds differ between a drop and an influx on purpose. You can only lose what you had, so a drop is judged against the normal: the network had to hold at least twenty addresses. An influx matters by its result — growth from three people to seven proves nothing, from three to forty it does — so there we look at what it became.
+
+It works on both levels, like a drop: an operator's influx carries the breakdown of which networks it came from; a single network's influx names the operator in brackets. The log records `censor_rise`.
+
+Upgrading changes nothing.
+
+---
+
 ## 3.95
 
 **Regional restrictions became visible.**

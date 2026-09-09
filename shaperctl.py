@@ -340,6 +340,7 @@ MSG = {
         "cen_bad_row": "таблица сетей: строка {n} не того вида",
         "cen_empty": "таблица сетей пуста: {p}",
         "cen_msg": "{node}: сеть {net} перестала доходить\nсейчас {n}, обычно {norm}",
+        "cen_rise": "{node}: в сети {net} наплыв\nсейчас {n}, обычно {norm}",
         "cen_tail_head": "Просели сети:",
         "cen_blame_head": "Из них по сетям:",
         "cen_tail_row": "  {net}: {n} вместо {norm}",
@@ -866,6 +867,7 @@ MSG = {
         "cen_bad_row": "network table: row {n} is malformed",
         "cen_empty": "network table is empty: {p}",
         "cen_msg": "{node}: network {net} stopped reaching us\nnow {n}, usually {norm}",
+        "cen_rise": "{node}: an influx in {net}\nnow {n}, usually {norm}",
         "cen_tail_head": "Networks down:",
         "cen_blame_head": "Broken down by network:",
         "cen_tail_row": "  {net}: {n} instead of {norm}",
@@ -2652,6 +2654,7 @@ EVENT_TYPES = {
     "censor_drop",       # отдельная сеть перестала доходить до ноды
     "censor_failed",     # таблица сетей недоступна, разбивку не считаем
     "censor_skipped",    # разбор заголовков PROXY сломан, замер пропущен
+    "censor_rise",       # в сеть пришёл наплыв: людей вытолкнуло с других нод
     # Ниже — панельные события, которые не были объявлены и потому писались
     # типом "error": log_event заменяет неизвестный тип. Отличить отказ
     # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
@@ -5686,6 +5689,17 @@ CENSOR_COLLAPSE = 0.5           # доля от нормы, ниже котор�
 # поведение, а не блокировка. Поэтому падение должно быть заметным и по
 # разбросу самой сети: не меньше стольких MAD ниже нормы.
 CENSOR_SIGMAS = 3.0
+# Во сколько раз должна вырасти сеть, чтобы это считалось наплывом.
+#
+# Наплыв — признак не менее важный, чем падение, и приходит раньше. Когда в
+# области включают белые списки, люди не исчезают, а перетекают на ноду за CDN,
+# и там соответствующая сеть растёт. Увидеть это можно до того, как на обычных
+# нодах просядет достаточно для порога.
+#
+# Порог именно вдвое: на живой ноде МТС за час сам по себе сходил с 69 до 110,
+# то есть вырос на 59%, и полуторакратный порог объявил бы это событием.
+# Удвоений за сутки наблюдения не случилось ни разу.
+CENSOR_RISE = 2.0
 CENSOR_ALERT_EVERY = 3600       # не чаще раза в час на сеть
 CENSOR_TOP = 8                  # сколько сетей показывать в списке
 # Клиент считается присутствующим, если ядро видело его пакет недавно. Карты
@@ -5936,7 +5950,7 @@ def censor_group(tab, counts):
     return out
 
 
-def censor_blame(tab, base, cur, group):
+def censor_blame(tab, base, cur, group, rising=False):
     """
     Какие номера сетей дали падение оператора: [(убыль, подпись, было, стало)].
 
@@ -5952,8 +5966,9 @@ def censor_blame(tab, base, cur, group):
             continue
         was = _median([int(h.get(key, 0)) for h in base])
         now_n = int(cur.get(key, 0))
-        if was - now_n > 0:
-            rows.append((was - now_n, key, was, now_n))
+        d = (now_n - was) if rising else (was - now_n)
+        if d > 0:
+            rows.append((d, key, was, now_n))
     rows.sort(reverse=True)
     return rows
 
@@ -6041,6 +6056,15 @@ def _mad(xs):
         return 0.0
     m = _median(xs)
     return _median([abs(x - m) for x in xs]) * 1.4826
+
+
+def _rose(cur, norm, spread):
+    """Считать ли это наплывом: и по отношению к норме, и по разбросу сети."""
+    if cur < norm * CENSOR_RISE:
+        return False
+    if spread <= 0:
+        return True
+    return cur >= norm + CENSOR_SIGMAS * spread
 
 
 def _fell(cur, norm, spread):
@@ -6163,20 +6187,27 @@ def censor_watch(cfg, now=None):
             continue
         vals = [int(h.get(key, 0)) for h in base]
         norm = _median(vals)
-        if norm < min_norm:
-            continue
+        spread = _mad(vals)
         cur = int(counts.get(key, 0))
-        if not _fell(cur, norm, _mad(vals)):
+        # У падения и наплыва разные пороги по размеру, и не случайно. Потерять
+        # можно только то, что было, поэтому там смотрим на норму. А наплыв
+        # значим по результату: рост с трёх человек до семи ничего не доказывает,
+        # с трёх до сорока — доказывает.
+        fell = norm >= min_norm and _fell(cur, norm, spread)
+        rose = cur >= min_norm and _rose(cur, norm, spread)
+        if not fell and not rose:
             said.pop(key, None)
             continue
         if now - float(said.get(key) or 0) < CENSOR_ALERT_EVERY:
             continue
         said[key] = now
         told.append(key)
-        blame = censor_blame(tab, raw_base, hist[-1], key)
-        log_event("censor_drop", net=key, now=cur, normal=norm,
+        blame = censor_blame(tab, raw_base, hist[-1], key, rising=rose)
+        log_event("censor_rise" if rose else "censor_drop",
+                  net=key, now=cur, normal=norm,
                   by=[b[1] for b in blame[:3]] or None)
-        text = t("cen_msg", node=node_label(cfg["telegram"]),
+        text = t("cen_rise" if rose else "cen_msg",
+                 node=node_label(cfg["telegram"]),
                  net=key, n=cur, norm=norm)
         # Разбивка нужна, только когда убыль пришла из нескольких сетей: у
         # оператора с единственным номером она повторяла бы заголовок.
@@ -6205,20 +6236,23 @@ def censor_watch(cfg, now=None):
             continue
         vals = [int(h.get(key, 0)) for h in raw_base]
         norm = _median(vals)
-        if norm < min_norm:
-            continue
+        spread = _mad(vals)
         cur = int(raw_now.get(key, 0))
-        if not _fell(cur, norm, _mad(vals)):
+        fell = norm >= min_norm and _fell(cur, norm, spread)
+        rose = cur >= min_norm and _rose(cur, norm, spread)
+        if not fell and not rose:
             said.pop(key, None)
             continue
         if now - float(said.get(key) or 0) < CENSOR_ALERT_EVERY:
             continue
         said[key] = now
         told.append(key)
-        log_event("censor_drop", net=key, now=cur, normal=norm,
+        log_event("censor_rise" if rose else "censor_drop",
+                  net=key, now=cur, normal=norm,
                   operator=op if op != key else None)
         shown = "%s (%s)" % (key, op) if op != key else key
-        tg_send(t("cen_msg", node=node_label(cfg["telegram"]),
+        tg_send(t("cen_rise" if rose else "cen_msg",
+                  node=node_label(cfg["telegram"]),
                   net=shown, n=cur, norm=norm), cfg)
 
     prev["said"] = said
