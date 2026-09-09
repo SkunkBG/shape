@@ -2649,6 +2649,7 @@ EVENT_TYPES = {
     "cdn_quota_low",     # у провайдера CDN кончается пакет
     "censor_drop",       # отдельная сеть перестала доходить до ноды
     "censor_failed",     # таблица сетей недоступна, разбивку не считаем
+    "censor_skipped",    # разбор заголовков PROXY сломан, замер пропущен
     # Ниже — панельные события, которые не были объявлены и потому писались
     # типом "error": log_event заменяет неизвестный тип. Отличить отказ
     # отключения от настоящей ошибки было нельзя, а в shape_events_24h всё
@@ -5690,6 +5691,20 @@ CENSOR_TOP = 8                  # сколько сетей показывать
 # этого отсечения отключившийся числился бы онлайн часами и скрывал падение,
 # ради обнаружения которого всё и написано.
 CENSOR_FRESH_NS = 300 * 10 ** 9
+# Доля неразрешённых заголовков PROXY, выше которой вердиктам верить нельзя.
+#
+# На ноде за CDN настоящий адрес клиента берётся из заголовка. Соединения, где
+# заголовок разобрать не удалось, остаются под адресом релея, а релей лежит в
+# trusted_map и из счёта исключается — то есть такие клиенты просто исчезают
+# из статистики. Если разбор деградирует, просядут все корзины разом, и это
+# будет выглядеть как блокировка у всех операторов одновременно.
+#
+# На живой CDN-ноде накопленная доля неразрешённых 19%: это начальные пакеты
+# соединений, пока заголовок ещё не пришёл, и служебный трафик самого релея.
+# Порог взят вдвое выше наблюдавшегося. На ноде без релеев счётчики стоят,
+# прирост нулевой, и проверка молчит сама собой.
+CENSOR_PP_BAD_SHARE = 0.5
+CENSOR_PP_MIN_PACKETS = 2000
 
 # Разобранная таблица: перечитываем только когда файл на диске изменился.
 _ASN_TABLE = {"path": "", "stamp": None, "starts": None, "ends": None,
@@ -5998,6 +6013,36 @@ def _fell(cur, norm, spread):
     return cur <= norm - CENSOR_SIGMAS * spread
 
 
+def censor_pp_broken(state, now):
+    """
+    Сломался ли разбор заголовков PROXY с прошлого замера.
+
+    Считаем по приросту, а не по накопленным счётчикам: накопленные помнят всё
+    с загрузки движка и на свежую поломку почти не двигаются.
+
+    Состояние своё, отдельное от relay_watch. Тот ходит по своему расписанию и
+    со своим порогом, и делить с ним запомненные значения значило бы, что
+    каждый затирает замер другого и оба считают неверные приросты.
+
+    Возвращает (сломан, доля) — доля None, когда судить не по чему.
+    """
+    try:
+        st = read_stats()
+    except Exception:
+        return False, None
+    prev = state.get("censor_pp") or {}
+    dr = int(st.get("pp_resolved", 0)) - int(prev.get("resolved") or 0)
+    du = int(st.get("pp_unresolved", 0)) - int(prev.get("unresolved") or 0)
+    state["censor_pp"] = {"at": now,
+                          "resolved": int(st.get("pp_resolved", 0)),
+                          "unresolved": int(st.get("pp_unresolved", 0))}
+    # Отрицательный прирост — движок перезагрузили, счётчики начались заново.
+    if dr < 0 or du < 0 or dr + du < CENSOR_PP_MIN_PACKETS:
+        return False, None
+    share = du / float(dr + du)
+    return share > CENSOR_PP_BAD_SHARE, share
+
+
 def censor_watch(cfg, now=None):
     """
     Не пропала ли отдельная сеть. Возвращает список номеров, о которых сказали.
@@ -6014,6 +6059,21 @@ def censor_watch(cfg, now=None):
     prev = state.get("censor") or {}
     if now - float(prev.get("at") or 0) < CENSOR_EVERY:
         return []
+
+    # Разбор заголовков сломан — считать нечего: клиенты остались под адресом
+    # релея и из счёта выпали. Замер не записываем вовсе, иначе искажённые
+    # числа осядут в истории и занизят норму для следующих часов.
+    broken, share = censor_pp_broken(state, now)
+    if broken:
+        if now - float(prev.get("pp_said") or 0) >= CENSOR_ALERT_EVERY:
+            prev["pp_said"] = now
+            log_event("censor_skipped", reason="proxy_unresolved",
+                      share=round(share, 3))
+        prev["at"] = now
+        state["censor"] = prev
+        guard_state_save(state)
+        return []
+    prev.pop("pp_said", None)
 
     try:
         counts, _unknown, _total = censor_counts(cfg)

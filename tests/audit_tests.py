@@ -2360,6 +2360,54 @@ check("о сломанной таблице сказано в журнале",
       any(e[0] == "censor_failed" for e in _events), _events)
 check("событие о поломке объявлено", "censor_failed" in S.EVENT_TYPES)
 
+# ── Сломавшийся разбор PROXY ───────────────────────────────────────────
+# На ноде за CDN клиенты с неразобранным заголовком остаются под адресом
+# релея и из счёта выпадают. Если разбор деградирует, просядут все корзины
+# разом — это выглядит как блокировка у всех операторов сразу.
+check("событие о пропуске замера объявлено", "censor_skipped" in S.EVENT_TYPES)
+
+def _pp(resolved, unresolved):
+    S.read_stats = lambda: {"pp_resolved": resolved, "pp_unresolved": unresolved}
+
+_st = {}
+_pp(0, 0)
+S.censor_pp_broken(_st, 1000.0)          # первый замер задаёт точку отсчёта
+_pp(90000, 10000)                        # 10% неразрешённых — здоровая доля
+check("здоровый разбор поломкой не считается",
+      S.censor_pp_broken(_st, 1300.0) == (False, 0.1),
+      S.censor_pp_broken(dict(_st), 1300.0))
+
+_st = {"censor_pp": {"resolved": 90000, "unresolved": 10000}}
+_pp(90500, 40000)                        # прирост: 500 против 30000
+_broken, _share = S.censor_pp_broken(_st, 1600.0)
+check("сломавшийся разбор распознаётся", _broken, (_broken, _share))
+
+# На ноде без релеев счётчики стоят: приросту нечего показывать.
+_st = {"censor_pp": {"resolved": 90000, "unresolved": 10000}}
+_pp(90000, 10000)
+check("без релеев проверка молчит",
+      S.censor_pp_broken(_st, 1900.0) == (False, None))
+
+# Перезагрузка движка обнуляет счётчики, прирост отрицательный.
+_st = {"censor_pp": {"resolved": 90000, "unresolved": 10000}}
+_pp(10, 5)
+check("перезагрузка движка поломкой не считается",
+      S.censor_pp_broken(_st, 2200.0) == (False, None))
+
+# Замер при сломанном разборе не должен попадать в историю: искажённые числа
+# занизили бы норму для следующих часов.
+_reset_state()
+_pp(0, 0); S.censor_watch(_cfg, now=5_000_000.0)
+_before = len((S.guard_state().get("censor") or {}).get("hist") or [])
+_pp(500, 60000)
+_out = S.censor_watch(_cfg, now=5_000_300.0)
+_after = len((S.guard_state().get("censor") or {}).get("hist") or [])
+check("при сломанном разборе вердиктов нет", _out == [], _out)
+check("и замер в историю не пишется", _after == _before, (_before, _after))
+check("о пропуске сказано в журнале",
+      any(e[0] == "censor_skipped" for e in _events), _events)
+_pp(0, 0)
+
 # ── Разброс сети: числа взяты с работающей ноды ────────────────────────
 # Турецкий хостинг AS47516 гулял сам по себе 6..22 при медиане 15. Одного
 # отношения к норме хватало, чтобы объявить его падением, и первая же

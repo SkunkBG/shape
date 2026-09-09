@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.93-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-3.94-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.93
+# Shape v3.94
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -923,6 +923,16 @@ What it does not do: a single node cannot tell "our address is blocked for that
 operator" from "that operator has an outage". Only comparison across nodes can,
 and that is not here. So the message says a network is gone, and does not say
 why.
+
+**On a node behind a CDN** the client's real address comes from the PROXY
+header. Connections whose header could not be parsed stay under the relay's
+address, and the relay is excluded from the count as not a client. If parsing
+degrades, clients start disappearing from the statistics in batches and every
+bucket sags at once — which looks like a block at every operator simultaneously.
+So before each sample the section looks at the growth of the `pp_resolved` and
+`pp_unresolved` counters: if the unresolved share exceeds a half, the sample is
+skipped entirely, history included. On nodes without a CDN the check stays quiet
+by itself.
 
 It needs a file of address ranges on disk: the node does not go out for it and
 asks for no keys. While the file is missing the section stays quiet and says so

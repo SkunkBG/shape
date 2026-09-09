@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.94
+
+**The section stays quiet when PROXY header parsing breaks.**
+
+On a node behind a CDN the client's real address comes from the PROXY header. Connections whose header could not be parsed stay under the relay's address, and the relay is excluded from the count as not a client. While parsing works, that is correct. If it degrades, clients start disappearing from the statistics in batches and every bucket sags at once — from the outside that is indistinguishable from a block at every operator simultaneously.
+
+Before each sample the section now looks at the growth of the `pp_resolved` and `pp_unresolved` counters the shaper already keeps. If the unresolved share of that growth exceeds a half, the sample is skipped entirely: no verdicts, and nothing written to history. The second part matters as much as the first — distorted numbers would settle into the normal and depress it for hours afterwards.
+
+The threshold is twice what was observed. On a live node behind a CDN the cumulative unresolved share is 19%, and that is the opening packets of connections before the header arrives plus the relay's own traffic, not lost clients.
+
+On nodes without a CDN the check stays quiet by itself: the counters do not move, and there is no growth to judge.
+
+A skip is recorded in the log as `censor_skipped`, at most once an hour in case parsing stays broken for a long time.
+
+---
+
 ## 3.93
 
 **Thresholds calibrated against a day of work on a live node.**
