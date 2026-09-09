@@ -6102,34 +6102,46 @@ def _fell(cur, norm, spread):
     return cur <= norm - CENSOR_SIGMAS * spread
 
 
-def censor_pp_broken(state, now):
+def censor_skip_reason(state, now):
     """
-    Сломался ли разбор заголовков PROXY с прошлого замера.
+    Почему этому замеру нельзя верить, или None, если можно.
 
-    Считаем по приросту, а не по накопленным счётчикам: накопленные помнят всё
-    с загрузки движка и на свежую поломку почти не двигаются.
+    Две причины, обе про то, что счёт клиентов сейчас не отражает
+    действительность.
 
-    Состояние своё, отдельное от relay_watch. Тот ходит по своему расписанию и
-    со своим порогом, и делить с ним запомненные значения значило бы, что
-    каждый затирает замер другого и оба считают неверные приросты.
+    Перезагрузка движка. Она пересоздаёт карты, все записи о клиентах
+    обнуляются, и первые секунды нода видит только тех, кто успел прислать
+    пакет. Выглядит это как одновременное падение всех операторов сразу —
+    настоящее событие так не выглядит, операторы не ломаются вместе. Узнаём по
+    тому, что счётчики пошли назад: внутри одной жизни движка они только
+    растут, а после перезагрузки начинаются с нуля.
 
-    Возвращает (сломан, доля) — доля None, когда судить не по чему.
+    Сломавшийся разбор заголовков PROXY. Клиенты остаются под адресом релея,
+    релей из счёта исключается, и корзины проседают все разом по той же причине.
+
+    Состояние своё, отдельное от relay_watch: тот ходит по своему расписанию и
+    со своим порогом, и общая память приростов ломала бы счёт обоим.
+
+    Возвращает (причина, доля неразрешённых) — доля None, когда судить не по чему.
     """
     try:
         st = read_stats()
     except Exception:
-        return False, None
+        return None, None
+    total = sum(int(st.get(n, 0)) for n in STAT_NAMES)
     prev = state.get("censor_pp") or {}
+    seen = int(prev.get("total") or 0)
     dr = int(st.get("pp_resolved", 0)) - int(prev.get("resolved") or 0)
     du = int(st.get("pp_unresolved", 0)) - int(prev.get("unresolved") or 0)
-    state["censor_pp"] = {"at": now,
+    state["censor_pp"] = {"at": now, "total": total,
                           "resolved": int(st.get("pp_resolved", 0)),
                           "unresolved": int(st.get("pp_unresolved", 0))}
-    # Отрицательный прирост — движок перезагрузили, счётчики начались заново.
+    if total < seen:
+        return "engine_reloaded", None
     if dr < 0 or du < 0 or dr + du < CENSOR_PP_MIN_PACKETS:
-        return False, None
+        return None, None
     share = du / float(dr + du)
-    return share > CENSOR_PP_BAD_SHARE, share
+    return ("proxy_unresolved" if share > CENSOR_PP_BAD_SHARE else None), share
 
 
 def censor_message(node, alerts):
@@ -6170,15 +6182,15 @@ def censor_watch(cfg, now=None):
     if now - float(prev.get("at") or 0) < CENSOR_EVERY:
         return []
 
-    # Разбор заголовков сломан — считать нечего: клиенты остались под адресом
-    # релея и из счёта выпали. Замер не записываем вовсе, иначе искажённые
-    # числа осядут в истории и занизят норму для следующих часов.
-    broken, share = censor_pp_broken(state, now)
-    if broken:
+    # Замеру нельзя верить — не записываем его вовсе. Искажённые числа осели бы
+    # в истории и занизили норму на следующие часы, а следом настоящее падение
+    # прошло бы незамеченным на фоне заниженной планки.
+    why, share = censor_skip_reason(state, now)
+    if why:
         if now - float(prev.get("pp_said") or 0) >= CENSOR_ALERT_EVERY:
             prev["pp_said"] = now
-            log_event("censor_skipped", reason="proxy_unresolved",
-                      share=round(share, 3))
+            log_event("censor_skipped", reason=why,
+                      share=round(share, 3) if share is not None else None)
         prev["at"] = now
         state["censor"] = prev
         guard_state_save(state)

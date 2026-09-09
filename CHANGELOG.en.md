@@ -13,6 +13,18 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 3.98
+
+**A sample taken right after an engine reload is not counted.**
+
+An upgrade restarts the engine, and the restart recreates the eBPF maps. Every client record is wiped, and for the first seconds the node only sees whoever managed to send a packet. That looks like every operator dropping at once, and the section duly reported it — right after a node upgrade came "Beeline 5 instead of 23, MegaFon 19 instead of 58, MTS 41 instead of 115, Tele2 9 instead of 60". Half a minute later the map had filled back up.
+
+A real event does not look like that: operators do not fail together. A reload is now recognised by the engine counters going backwards — within one lifetime of the engine they only grow, and after a restart they begin at zero. Such a sample is skipped entirely, history included.
+
+The check works on any node: it looks at all the engine counters, not only the PROXY parsing ones, which a node without a CDN does not have.
+
+---
+
 ## 3.97
 
 **A false influx after the upgrade is fixed, and the message flood is gone.**

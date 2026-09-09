@@ -2371,28 +2371,28 @@ def _pp(resolved, unresolved):
 
 _st = {}
 _pp(0, 0)
-S.censor_pp_broken(_st, 1000.0)          # первый замер задаёт точку отсчёта
+S.censor_skip_reason(_st, 1000.0)        # первый замер задаёт точку отсчёта
 _pp(90000, 10000)                        # 10% неразрешённых — здоровая доля
-check("здоровый разбор поломкой не считается",
-      S.censor_pp_broken(_st, 1300.0) == (False, 0.1),
-      S.censor_pp_broken(dict(_st), 1300.0))
+check("здоровый разбор причиной пропуска не считается",
+      S.censor_skip_reason(_st, 1300.0) == (None, 0.1),
+      S.censor_skip_reason(dict(_st), 1300.0))
 
-_st = {"censor_pp": {"resolved": 90000, "unresolved": 10000}}
+_base = {"total": 100000, "resolved": 90000, "unresolved": 10000}
 _pp(90500, 40000)                        # прирост: 500 против 30000
-_broken, _share = S.censor_pp_broken(_st, 1600.0)
-check("сломавшийся разбор распознаётся", _broken, (_broken, _share))
+_why, _share = S.censor_skip_reason({"censor_pp": dict(_base)}, 1600.0)
+check("сломавшийся разбор распознаётся", _why == "proxy_unresolved",
+      (_why, _share))
 
 # На ноде без релеев счётчики стоят: приросту нечего показывать.
-_st = {"censor_pp": {"resolved": 90000, "unresolved": 10000}}
 _pp(90000, 10000)
 check("без релеев проверка молчит",
-      S.censor_pp_broken(_st, 1900.0) == (False, None))
+      S.censor_skip_reason({"censor_pp": dict(_base)}, 1900.0) == (None, None))
 
-# Перезагрузка движка обнуляет счётчики, прирост отрицательный.
-_st = {"censor_pp": {"resolved": 90000, "unresolved": 10000}}
+# Живой случай: обновление перезапускает движок, тот пересоздаёт карты, и все
+# операторы проседают разом. Счётчики при этом идут назад.
 _pp(10, 5)
-check("перезагрузка движка поломкой не считается",
-      S.censor_pp_broken(_st, 2200.0) == (False, None))
+_why2, _ = S.censor_skip_reason({"censor_pp": dict(_base)}, 2200.0)
+check("перезагрузка движка распознаётся", _why2 == "engine_reloaded", _why2)
 
 # Замер при сломанном разборе не должен попадать в историю: искажённые числа
 # занизили бы норму для следующих часов.
@@ -2406,6 +2406,18 @@ check("при сломанном разборе вердиктов нет", _out
 check("и замер в историю не пишется", _after == _before, (_before, _after))
 check("о пропуске сказано в журнале",
       any(e[0] == "censor_skipped" for e in _events), _events)
+
+# Перезагрузка движка пересоздаёт карты: все клиенты пропадают из счёта разом,
+# и раздел объявил бы падение всем операторам сразу. Живой случай при
+# обновлении ноды.
+_reset_state()
+_pp(500000, 50000); S.censor_watch(_cfg, now=6_000_000.0)
+_b2 = len((S.guard_state().get("censor") or {}).get("hist") or [])
+_pp(12, 3)                                # счётчики начались заново
+_out2 = S.censor_watch(_cfg, now=6_000_300.0)
+_a2 = len((S.guard_state().get("censor") or {}).get("hist") or [])
+check("после перезагрузки движка вердиктов нет", _out2 == [], _out2)
+check("и замер в историю не пишется", _a2 == _b2, (_b2, _a2))
 _pp(0, 0)
 
 # ── Региональное ограничение против общероссийского ────────────────────
