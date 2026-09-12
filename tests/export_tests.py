@@ -475,6 +475,20 @@ check("вложение — разобранный JSON выгрузки",
       json.loads(cap.body.split("\r\n\r\n")[-1].rsplit("\r\n--", 1)[0]
                  )["kind"] == "shape-node-state")
 
+# Проверка выше берёт имя ноды из окружения, поэтому на короткой машине она
+# проходила и со сломанной обрезкой: дефект жил только там, где имя длинное.
+# Здесь длина задана явно — и ловится он всегда.
+_long = "astra-740117287-preset2"
+_name = S.backup_filename(_long)
+check("длинное имя ноды не съедает дату и расширение",
+      re.fullmatch(r"shape-" + re.escape(_long) + r"-\d{4}-\d{2}-\d{2}\.json", _name)
+      is not None, _name)
+_body, _ = S._multipart({}, _name, b"{}", mime="application/json")
+check("и до заголовка Content-Disposition оно доезжает целиком",
+      f'filename="{_name}"' in _body.decode("utf-8", "replace"), _name)
+check("а само имя ноды по-прежнему режется своей мерой",
+      len(S._safe_name("x" * 200)) == 40, len(S._safe_name("x" * 200)))
+
 print("\n\033[1m19. Секреты в Telegram не уходят ни при каких настройках\033[0m")
 check("токена бота нет в теле запроса", TOKEN not in cap.body)
 check("пароля прокси нет в теле запроса", "secretpass" not in cap.body)
