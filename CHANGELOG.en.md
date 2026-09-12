@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.0
+
+**Telegram backups get their extension and date back in the filename.**
+
+The attachment name is assembled from three parts: `shape-`, the node name, the date and `.json`. Before being sent it went through the same sanitiser used for the node name on its own — and that one truncates to forty characters. For a single part that is the right measure; for the whole assembled name it is not: what gets cut is the tail, which is exactly the date and the extension. On node `astra-740117287-preset2` the chat received a file called `shape-astra-740117287-preset2-2026-09-12` — no `.json` — and with a longer name part of the date went too.
+
+Telegram shows such a file as unknown, no editor opens it, and restoring starts with renaming it by hand. It only showed on nodes with long names, which is why it lived so long.
+
+The assembled name now has its own measure, with room to spare: at that step the sanitiser guards against unsafe characters, not against length. The same fix covers the two other attachments — the node report and the address list sent on a suspected shared account: they are assembled the same way and lost their `.txt` the same way.
+
+The node name is still truncated to forty characters — that is its own measure, and it stays.
+
+**On upgrade** nothing needs doing: settings, penalties and the whitelist stay as they are.
+
+---
+
 ## 3.99
 
 **The first sample after an install or an upgrade is not counted.**

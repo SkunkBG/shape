@@ -4586,9 +4586,15 @@ BACKUP_STATE = os.path.join(VAR_DIR, "backup.state")
 BACKUP_RETRY = 3600        # связи нет — пробуем через час, а не каждый цикл
 
 
-def _safe_name(s, fallback="node"):
-    """Имя файла без сюрпризов: только буквы, цифры, точка, дефис."""
-    s = re.sub(r"[^A-Za-z0-9._-]", "-", str(s))[:40].strip("-.")
+def _safe_name(s, fallback="node", limit=40):
+    """Имя файла без сюрпризов: только буквы, цифры, точка, дефис.
+
+    limit по умолчанию рассчитан на кусок имени — имя ноды, идентификатор
+    клиента, — а не на собранное имя файла целиком. Собранное надо резать
+    другой мерой: в нём после куска идут дата и расширение, и сорок символов
+    съедают как раз их.
+    """
+    s = re.sub(r"[^A-Za-z0-9._-]", "-", str(s))[:limit].strip("-.")
     return s or fallback
 
 
@@ -4600,6 +4606,10 @@ def _multipart(fields, filename, content, field="document",
     Своими руками, потому что весь Shape живёт на стандартной библиотеке, а
     в ней готового сборщика нет. Граница берётся из os.urandom: угадать её и
     подсунуть в имя файла или в подпись свою секцию не выйдет.
+
+    Имя файла приходит сюда уже собранным: кусок, дата, расширение. Мера
+    здесь поэтому своя, с запасом, — сюда передают целое, а не кусок. Резать
+    его по мере куска значит отрезать хвост, то есть ровно дату и расширение.
     """
     boundary = "----shape" + os.urandom(16).hex()
     out = []
@@ -4609,7 +4619,7 @@ def _multipart(fields, filename, content, field="document",
                    f"{v}\r\n".encode())
     out.append(f"--{boundary}\r\n"
                f'Content-Disposition: form-data; name="{field}"; '
-               f'filename="{_safe_name(filename, "backup.json")}"\r\n'
+               f'filename="{_safe_name(filename, "backup.json", 100)}"\r\n'
                f"Content-Type: {mime}\r\n\r\n".encode())
     out.append(content)
     out.append(f"\r\n--{boundary}--\r\n".encode())
