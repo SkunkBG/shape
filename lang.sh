@@ -532,6 +532,7 @@ ui_lang_load() {
             [tr_add_t]="Add a tunnel endpoint"
             [tr_add_r]="Add a CDN relay"
             [tr_del]="Remove address"
+            [tr_check]="Check the lists against who is connected"
             [tr_ask]="IP address"
             [tr_more]="Trusted sources (tunnels, CDN)"
 
@@ -1110,6 +1111,7 @@ ui_lang_load() {
             [tr_add_t]="Добавить конец туннеля"
             [tr_add_r]="Добавить релей CDN"
             [tr_del]="Убрать адрес"
+            [tr_check]="Сверить списки с теми, кто подключён"
             [tr_ask]="IP-адрес"
             [tr_more]="Доверенные источники (туннели, CDN)"
 

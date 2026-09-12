@@ -1991,6 +1991,80 @@ check("порог доли отделяет здоровую ноду от сл�
 check("событие объявлено", "relay_changed" in S.EVENT_TYPES)
 
 
+# ── Расхождение списков с действительностью ────────────────────────────
+# Край CDN переезжает молча: на порту с флагом PROXY заголовок разбирается от
+# любого адреса, поэтому смена адреса ничего не ломает и ничем не видна. Так
+# на боевой ноде разошлись оба списка сразу — ни один из трёх доверенных
+# адресов не обслуживал трафик, а оба работающих края не значились нигде.
+# Числа в тестах отсюда же: 1559 и 40 соединений, случайный гость — два.
+
+_tr_was, _pp_was = S.trusted_sources, S.proc_peers
+_wl_was, _log_was = S.whitelist_ips, S.log_event
+_dev = []
+S.log_event = lambda etype, **kw: _dev.append((etype, kw))
+_dcfg = {"proxy_ports": [443], "telegram": dict(S.TG_DEFAULT, node_name="Нода")}
+_empty = {"undeclared": [], "unprotected": [], "stale": []}
+
+S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
+S.whitelist_ips = lambda: {"10.0.0.2"}
+S.proc_peers = lambda ports: {"10.0.0.1": 5, "10.0.0.2": 7}
+_dports, _dpeers = S.relay_peers(_dcfg)
+check("сводка говорит про каждый адрес: сколько, доверен, защищён",
+      _dpeers == {"10.0.0.1": (5, True, False), "10.0.0.2": (7, False, True)},
+      _dpeers)
+
+_gs.clear(); _sent.clear(); _dev.clear()
+S.whitelist_ips = lambda: {"10.0.0.1"}
+S.proc_peers = lambda ports: {"10.0.0.1": 1559}
+_d = S.relay_drift(_dcfg, now=10000.0)
+check("списки сходятся — разговора нет", _d == _empty and _sent == [], (_d, _sent))
+
+# Край переехал: держит соединения, но не значится ни в одном списке.
+S.proc_peers = lambda ports: {"10.0.0.1": 1559, "10.0.0.9": 40}
+_d = S.relay_drift(_dcfg, now=10000.0 + S.DRIFT_CHECK_EVERY)
+check("новый край замечен", _d["undeclared"] == [("10.0.0.9", 40)], _d)
+check("и он же не защищён от ограничения",
+      _d["unprotected"] == [("10.0.0.9", 40)], _d)
+check("всё найденное ушло одним сообщением", len(_sent) == 1, len(_sent))
+check("в сообщении есть адрес и число соединений",
+      "10.0.0.9" in _sent[-1] and "40" in _sent[-1], _sent[-1][:200])
+check("описанный как надо адрес в сообщение не попал",
+      "10.0.0.1<" not in _sent[-1], _sent[-1][:200])
+check("оба повода объявлены событиями",
+      {e for e, _ in _dev} == {"relay_undeclared", "relay_unprotected"}, _dev)
+
+_was = len(_sent)
+S.relay_drift(_dcfg, now=10000.0 + 2 * S.DRIFT_CHECK_EVERY)
+check("второй раз подряд про то же не пишем", len(_sent) == _was, len(_sent))
+
+# Случайный гость на порту краем не считается.
+_gs.clear(); _sent.clear()
+S.proc_peers = lambda ports: {"10.0.0.1": 1559, "10.0.0.7": 2}
+_d = S.relay_drift(_dcfg, now=20000.0)
+check("пара соединений — это не край",
+      _d["undeclared"] == [] and _sent == [], (_d, _sent))
+
+# Протухшая запись. Первый проход не судит: точки отсчёта у адреса ещё нет —
+# тот же урок, что достался censor в 3.98 и 3.99.
+_gs.clear(); _sent.clear()
+S.proc_peers = lambda ports: {}
+_d = S.relay_drift(_dcfg, now=30000.0)
+check("первый проход протухшей запись не объявляет", _d["stale"] == [], _d)
+_d = S.relay_drift(_dcfg, now=30000.0 + S.DRIFT_STALE_AFTER)
+check("сутки без соединений — запись протухла",
+      _d["stale"] == ["10.0.0.1"], _d)
+
+check("где портов PROXY нет, сверять нечего",
+      S.relay_drift({"proxy_ports": [], "telegram": {}}, now=9e9) == _empty)
+check("порог края выше случайного гостя и ниже живого края",
+      2 < S.DRIFT_MIN_CONNS < 40, S.DRIFT_MIN_CONNS)
+check("новые события объявлены",
+      {"relay_undeclared", "relay_unprotected", "relay_stale"} <= S.EVENT_TYPES)
+
+S.trusted_sources, S.proc_peers = _tr_was, _pp_was
+S.whitelist_ips, S.log_event = _wl_was, _log_was
+
+
 # ── Обвал клиентов и вердикт провайдера CDN ────────────────────────────
 # Нода не может сообщить о собственной смерти, но об исчезновении клиентов —
 # может: она жива, а людей нет. И сразу говорит, чья это беда.

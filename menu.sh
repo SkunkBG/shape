@@ -1394,6 +1394,7 @@ screen_trusted() {
         echo "  [1] ${T[tr_add_t]}"
         echo "  [2] ${T[tr_add_r]}"
         echo "  [3] ${T[tr_del]}"
+        echo "  [4] ${T[tr_check]}"
         echo "  [0] ← ${T[m0]}"
         echo
         case "$(ask "${T[choice]}")" in
@@ -1403,6 +1404,7 @@ screen_trusted() {
                [[ -n "$ip" ]] && { "$CTL" trusted add "$ip" --relay; sleep 1; } ;;
             3) ip="$(ask "${T[tr_ask]}")"
                [[ -n "$ip" ]] && { "$CTL" trusted del "$ip"; sleep 1; } ;;
+            4) echo; "$CTL" trusted check; pause ;;
             0|"") return ;;
         esac
     done

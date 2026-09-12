@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-3.99-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.0-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v3.99
+# Shape v4.0
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -864,6 +864,46 @@ address, and that decision belongs to a person. A repeat about the same address
 comes no more than once every six hours. The check runs every five minutes,
 costs zero outside requests and does not apply to nodes without a CDN — it only
 switches on where PROXY ports are configured.
+
+### When the list stops matching reality
+
+The previous check catches the case where headers stopped being parsed. But if
+the port carries the trust-by-port flag, they are parsed from any address — and
+a relay move breaks nothing. The trusted list quietly stops describing reality,
+and there is nothing to notice it.
+
+By itself that does not hurt clients. Something else does: **a relay outside the
+whitelist can be given an automatic limit, and it is one relay for everyone
+behind it.** Relay traffic with no binding is counted against the relay's own
+address, the counters grow, and to the auto-limiter that is just a heavy client.
+
+So once an hour the node looks at who holds established connections on the ports
+carrying the PROXY header and compares that against both of its lists. It
+reports three causes, all in one message: an address holds connections but is
+not trusted; an address holds connections but is not on the whitelist; an
+address is trusted but has had no connections for over a day.
+
+The check costs zero outbound requests — everything comes from `/proc` and two
+files on disk. It repeats about one cause no more than once a day and only runs
+where ports with the PROXY header are configured.
+
+The threshold of five connections separates a relay from a casual visitor: a
+relay holds tens and thousands, a stranger one or two.
+
+The same thing by hand, facts only and no verdicts:
+
+```bash
+shaperctl trusted check
+```
+
+```
+who holds connections on ports 443
+  203.0.113.20                      1559  on both lists
+  203.0.113.21                        40  not trusted, not on the whitelist
+
+trusted relays with no connections right now:
+  198.51.100.20                           no connections
+```
 
 ### Clients are gone: whose fault is it
 

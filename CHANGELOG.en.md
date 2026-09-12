@@ -13,6 +13,40 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.0
+
+**The node notices when the trusted list stops matching reality.**
+
+The failure this was built for looks like this. A CDN relay moves to a new address. On a port carrying the PROXY flag the header is parsed from any address, so the move breaks nothing — and shows up nowhere. The trusted list quietly stops describing reality, and the only way to find out is by hand, comparing it against who is actually connected.
+
+That is exactly what happened on the node behind a CDN: the relay moved twice in a row, not one of the three trusted addresses was carrying traffic any more, and neither working relay was on the list. No check said a word, because there was nothing to say it: `relay_watch` catches "headers stopped being parsed", and they were being parsed.
+
+The divergence by itself does not hurt clients. Something else does: **a relay outside the whitelist can be given an automatic limit, and it is one relay for everyone behind it.** Relay traffic with no binding is counted against the relay's own address, the counters grow, and to the auto-limiter that is just a heavy client. So both lists are compared, not only the trusted one.
+
+Once an hour the node looks at who holds established connections on the ports carrying the PROXY header and compares that with what it has written down. It reports three different causes, all in one message:
+
+- an address holds connections but is not in the trusted list — the relay moved;
+- an address holds connections but is not on the whitelist — it is not protected from limiting;
+- an address is in the trusted list but has had no connections for over a day — the entry went stale.
+
+The check costs **zero outbound requests**: everything comes from `/proc` and two files on disk. It repeats about one cause no more than once a day, and it only runs where ports with the PROXY header are configured — on nodes without a CDN it does nothing.
+
+The threshold of five connections separates a relay from a casual visitor: a relay holds tens and thousands, a stranger one or two. The number comes from a live measurement where two relays held 1559 and 40 connections.
+
+A trusted address seen for the first time is not declared stale: it has no reference point yet, and "now minus zero" would produce a day of silence out of thin air. The same lesson the `censor` section learned in 3.98 and 3.99.
+
+**To look at the same thing by hand:**
+
+```bash
+shaperctl trusted check
+```
+
+It prints facts only — who is connected, how many connections, how the address is described in both lists. It passes no verdicts on a button press: there is no occasion for them there. In the menu it is item **[4]** on the trusted sources screen.
+
+**On update** nothing changes in the settings and nothing needs enabling. If the lists on your node have already diverged, the first message arrives within the hour.
+
+---
+
 ## 3.99
 
 **The first sample after an install or an upgrade is not counted.**

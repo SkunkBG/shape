@@ -618,6 +618,19 @@ MSG = {
         "tr_need_kind": "укажите --tunnel или --relay",
         "tr_tunnel": "конец туннеля",
         "tr_relay": "релей CDN",
+        "h_tr_action": "что сделать: add, del, sync, list или check — сверить списки с теми, кто подключён сейчас",
+        "trc_off": "порты с заголовком PROXY не заданы — сверять не с чем",
+        "trc_none": "на портах {ports} сейчас никто не подключён",
+        "trc_head": "кто держит соединения на портах {ports}",
+        "trc_ok": "в обоих списках",
+        "trc_untrusted": "не доверенный",
+        "trc_unprot": "не в белом списке",
+        "trc_idle_head": "доверенные релеи без соединений прямо сейчас:",
+        "trc_idle": "соединений нет",
+        "drift_msg": "⚠️ <b>{node} — список доверенных разошёлся с действительностью</b>\n\n{body}\n\nПока на портах {ports} стоит флаг PROXY, заголовок разбирается и без списка — клиенты этого не почувствуют. Но край вне белого списка может получить автоограничение, а он один на всех, кто за ним.\n\nПосмотреть: <code>shaperctl trusted check</code>",
+        "drift_new": "Держит соединения, но в доверенных не значится: <code>{ip}</code> — соединений {n}.",
+        "drift_unprot": "Не в белом списке, а значит может получить ограничение: <code>{ip}</code> — соединений {n}.",
+        "drift_stale": "В доверенных, но соединений с него нет более суток: <code>{ip}</code>.",
         "mon_title": "Монитор", "mon_hint": "обновление {i} с · Ctrl+C — выход",
         "mon_channel": "Канал сейчас", "mon_limit": "Лимит {s:g} Мбит/с на IP",
         "mon_nolimit": "Лимит не задан", "mon_loading": "нагружают канал",
@@ -1148,6 +1161,19 @@ MSG = {
         "tr_need_kind": "specify --tunnel or --relay",
         "tr_tunnel": "tunnel endpoint",
         "tr_relay": "CDN relay",
+        "h_tr_action": "what to do: add, del, sync, list, or check — compare the lists with who is connected right now",
+        "trc_off": "no ports carry the PROXY header — nothing to compare against",
+        "trc_none": "nobody is connected on ports {ports} right now",
+        "trc_head": "who holds connections on ports {ports}",
+        "trc_ok": "on both lists",
+        "trc_untrusted": "not trusted",
+        "trc_unprot": "not on the whitelist",
+        "trc_idle_head": "trusted relays with no connections right now:",
+        "trc_idle": "no connections",
+        "drift_msg": "⚠️ <b>{node} — the trusted list no longer matches reality</b>\n\n{body}\n\nWhile ports {ports} carry the PROXY flag the header is parsed without the list as well, so clients notice nothing. But a relay outside the whitelist can be given an automatic limit, and it is one relay for everyone behind it.\n\nTo look: <code>shaperctl trusted check</code>",
+        "drift_new": "Holds connections but is not in the trusted list: <code>{ip}</code> — {n} connections.",
+        "drift_unprot": "Not on the whitelist, so it can be limited: <code>{ip}</code> — {n} connections.",
+        "drift_stale": "In the trusted list but no connections for over a day: <code>{ip}</code>.",
         "mon_title": "Monitor", "mon_hint": "refresh every {i} s · Ctrl+C to exit",
         "mon_channel": "Channel now", "mon_limit": "Limit {s:g} Mbit/s per IP",
         "mon_nolimit": "No limit set", "mon_loading": "loading the channel",
@@ -2655,6 +2681,9 @@ EVENT_TYPES = {
     "api_action",        # действие через API
     "sharing_found",     # панель показала раздачу подписки
     "relay_changed",     # релей CDN сменил адрес и перестал быть доверенным
+    "relay_undeclared",  # край держит соединения, а в доверенных не значится
+    "relay_unprotected", # активный край вне белого списка — его можно ограничить
+    "relay_stale",       # доверенный край давно без соединений: запись протухла
     "clients_gone",      # клиенты пропали, хотя нода жива
     "cdn_quota_low",     # у провайдера CDN кончается пакет
     "censor_drop",       # отдельная сеть перестала доходить до ноды
@@ -3665,6 +3694,13 @@ def cmd_watch(a):
             # ноль запросов: сверяет свои же счётчики раз в пять минут.
             try:
                 relay_watch(cfg)
+            except Exception:
+                pass
+            # Разошёлся ли список доверенных с теми, кто реально подключён.
+            # Смена края на порту с флагом PROXY проходит бесследно, и это
+            # единственное место, где её видно. Раз в час, ноль запросов.
+            try:
+                relay_drift(cfg)
             except Exception:
                 pass
             # Обвал клиентов при живой ноде. Спрашивает провайдера CDN, если
@@ -6486,6 +6522,136 @@ def relay_watch(cfg, now=None):
     return ip
 
 
+# ── Расхождение списков с действительностью ────────────────────────────
+#
+# relay_watch ловит «заголовки перестали разбираться». Но он выходит первой
+# строкой при пустом proxy_ports, то есть работает ТОЛЬКО там, где на порту
+# стоит флаг PORT_PROXY, — а там заголовку верят от любого адреса, и отказ
+# «новый край не в доверенных» невозможен по построению. Получается сторож,
+# включённый ровно там, где описанной им беды не бывает.
+#
+# Чем это кончается, видно по ноде за CDN: край переехал дважды, ни один из
+# трёх доверенных адресов трафика не обслуживал, а оба работающих края в
+# списке не значились. Ни одна проверка об этом не сказала ни слова.
+#
+# Само по себе это клиентам не вредит — разбор идёт по флагу порта. Вредит
+# другое: край вне белого списка может получить автоограничение, а он один
+# на всех, кто за ним. Поэтому сверяем ОБА списка, а не только доверенные.
+#
+# Пороги. Край держит десятки и тысячи соединений, случайный гость — одно
+# или два; отсюда нижняя граница в пять. Выведена она из одного живого
+# замера (1559 и 40 соединений у двух краёв), и это надо помнить: число
+# подобрано по одной ноде, а не по парку.
+DRIFT_CHECK_EVERY = 3600           # как часто сверяем, секунд
+DRIFT_MIN_CONNS   = 5              # меньше — это не край, а случайный гость
+DRIFT_STALE_AFTER = 24 * 3600      # столько без соединений — запись протухла
+DRIFT_ALERT_EVERY = 24 * 3600      # не чаще раза в сутки на один повод
+
+
+def relay_peers(cfg):
+    """
+    Кто держит соединения на портах с заголовком PROXY и как он у нас описан.
+
+    Возвращает (порты, {адрес: (соединений, доверенный, в белом списке)}).
+    Наружу не ходит: всё берётся из /proc и двух файлов на диске.
+    """
+    ports = {int(x) for x in (cfg.get("proxy_ports") or []) if str(x).isdigit()}
+    if not ports:
+        return set(), {}
+    trusted = {ip for ip, fl in trusted_sources().items() if fl & TRUST_RELAY}
+    wl = whitelist_ips()
+    return ports, {ip: (n, ip in trusted, ip in wl)
+                   for ip, n in proc_peers(ports).items()}
+
+
+def relay_drift(cfg, now=None):
+    """
+    Не разошлись ли списки с теми, кто подключён на самом деле.
+
+    Возвращает найденное словарём, а не текстом: проверять расхождение надо
+    по фактам, а не разбирая сообщение. Наружу не ходит и ошибок не
+    выпускает — это сторожевая проверка, она не имеет права уронить цикл.
+    """
+    now = now if now is not None else time.time()
+    found = {"undeclared": [], "unprotected": [], "stale": []}
+
+    ports, peers = relay_peers(cfg)
+    if not ports:
+        return found
+
+    state = guard_state()
+    prev = state.get("drift") or {}
+    if now - float(prev.get("at") or 0) < DRIFT_CHECK_EVERY:
+        return found
+
+    trusted = {ip for ip, fl in trusted_sources().items() if fl & TRUST_RELAY}
+    seen = dict(prev.get("seen") or {})
+    for ip, (n, _tr, _wl) in peers.items():
+        if n > 0:
+            seen[ip] = now
+    # Доверенный адрес, увиденный впервые, не судим: точки отсчёта у него ещё
+    # нет, и «сейчас минус ноль» дало бы сутки молчания на ровном месте. Тот
+    # же урок, что достался censor в 3.98 и 3.99.
+    for ip in trusted:
+        seen.setdefault(ip, now)
+    # Чужие адреса в памяти не копим: держим только доверенные и тех, кого
+    # видели недавно.
+    seen = {ip: ts for ip, ts in seen.items()
+            if ip in trusted or now - float(ts or 0) < DRIFT_STALE_AFTER}
+
+    for ip, (n, tr, wl) in sorted(peers.items(), key=lambda kv: -kv[1][0]):
+        if n < DRIFT_MIN_CONNS:
+            continue
+        if not tr:
+            found["undeclared"].append((ip, n))
+        if not wl:
+            found["unprotected"].append((ip, n))
+    for ip in sorted(trusted):
+        if now - float(seen.get(ip) or now) >= DRIFT_STALE_AFTER:
+            found["stale"].append(ip)
+
+    prev.update({"at": now, "seen": seen})
+    state["drift"] = prev
+    guard_state_save(state)
+
+    # Всё найденное за проход уходит одним сообщением: три повода про один и
+    # тот же переезд — это один разговор, а не три.
+    alerted = dict(prev.get("alerted") or {})
+    report = []
+    for ip, n in found["undeclared"]:
+        report.append(("u:" + ip, t("drift_new", ip=html.escape(ip), n=n),
+                       "relay_undeclared", ip, n))
+    for ip, n in found["unprotected"]:
+        report.append(("p:" + ip, t("drift_unprot", ip=html.escape(ip), n=n),
+                       "relay_unprotected", ip, n))
+    for ip in found["stale"]:
+        report.append(("s:" + ip, t("drift_stale", ip=html.escape(ip)),
+                       "relay_stale", ip, 0))
+    # Про повод, о котором ещё не писали, сообщаем сразу. Сравнивать «сейчас
+    # минус ноль» с паузой нельзя: это работает только потому, что время —
+    # большое число, и разваливается на любом другом отсчёте. Ровно на этом
+    # уже обожглись в relay_watch.
+    report = [r for r in report
+              if alerted.get(r[0]) is None
+              or now - float(alerted[r[0]]) >= DRIFT_ALERT_EVERY]
+    if not report:
+        return found
+
+    for key, _line, etype, ip, n in report:
+        alerted[key] = now
+        log_event(etype, ip=ip, conns=n)
+    alerted = {k: v for k, v in alerted.items()
+               if now - float(v or 0) < DRIFT_ALERT_EVERY * 4}
+    prev["alerted"] = alerted
+    state["drift"] = prev
+    guard_state_save(state)
+
+    tg_send(t("drift_msg", node=node_label(cfg["telegram"]),
+              ports=", ".join(str(p) for p in sorted(ports)),
+              body="\n".join(r[1] for r in report)), cfg)
+    return found
+
+
 def panel_report_due(cfg, now=None):
     """
     Раз в цикл сторожа: не пора ли отправить отчёт по ноде.
@@ -8447,6 +8613,40 @@ def cmd_trusted(a):
                     print(f"{C['yel']}⚠ {t('tr_bad', s=s[:60])}{C['r']}")
         print(t("tr_loaded", n=len(entries)))
 
+    elif a.action == "check":
+        # Только факты: сколько соединений и как адрес описан у нас. Вердикты
+        # вроде «край переехал» уместны там, где есть повод их делать; по
+        # кнопке в меню повода нет.
+        cfg = load_config()
+        ports, peers = relay_peers(cfg)
+        if not ports:
+            print(f"  {C['gry']}{t('trc_off')}{C['r']}")
+            return
+        plist = ", ".join(str(p) for p in sorted(ports))
+        if not peers:
+            print(f"  {C['gry']}{t('trc_none', ports=plist)}{C['r']}")
+        else:
+            print(f"  {C['b']}{t('trc_head', ports=plist)}{C['r']}")
+            for ip, (n, tr, wl) in sorted(peers.items(),
+                                          key=lambda kv: (-kv[1][0], kv[0])):
+                notes = []
+                if not tr:
+                    notes.append(t("trc_untrusted"))
+                if not wl:
+                    notes.append(t("trc_unprot"))
+                col = C["yel"] if notes else C["grn"]
+                print(f"  {ip:<39} {n:>6}  "
+                      f"{col}{', '.join(notes) or t('trc_ok')}{C['r']}")
+        # Про доверенные без соединений говорим отдельно и вслух: молча
+        # пропущенная протухшая запись — ровно то, чего не заметили дважды.
+        idle = sorted(ip for ip, fl in trusted_sources().items()
+                      if (fl & TRUST_RELAY) and ip not in peers)
+        if idle:
+            print()
+            print(f"  {C['gry']}{t('trc_idle_head')}{C['r']}")
+            for ip in idle:
+                print(f"  {ip:<39} {C['gry']}{t('trc_idle')}{C['r']}")
+
     elif a.action == "list":
         entries = trusted_sources()
         if not entries:
@@ -9163,7 +9363,8 @@ def build_parser():
     cn.set_defaults(func=cmd_censor)
 
     tr = sub.add_parser("trusted", help=t("h_trusted"))
-    tr.add_argument("action", choices=["add", "del", "sync", "list"])
+    tr.add_argument("action", choices=["add", "del", "sync", "list", "check"],
+                    help=t("h_tr_action"))
     tr.add_argument("ip", nargs="?", default="")
     tr.add_argument("--tunnel", action="store_true", help=t("h_tr_tunnel"))
     tr.add_argument("--relay", action="store_true", help=t("h_tr_relay"))

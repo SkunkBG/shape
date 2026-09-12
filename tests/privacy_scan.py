@@ -57,7 +57,13 @@ SAFE_NUMBERS = {
 }
 
 EXTS = (".md", ".py", ".sh", ".json", ".c", ".service", ".timer")
-SKIP_DIRS = {"__pycache__", ".git", ".github"}
+# .work — рабочие заметки, которые в репозиторий не уезжают: там живые
+# адреса нод и незакрытых инцидентов, и это единственное место, где им
+# можно быть. Пропуск не бесплатный: ниже проверяется, что каталог
+# действительно закрыт .gitignore. Перестанет быть закрытым — набор
+# покраснеет, а не промолчит.
+WORK_DIR = ".work"
+SKIP_DIRS = {"__pycache__", ".git", ".github", WORK_DIR}
 SELF = os.path.basename(__file__)
 
 IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
@@ -105,9 +111,27 @@ def scan(root):
     return problems
 
 
+def work_dir_ignored(root):
+    """Закрыт ли .work в .gitignore. Каталога нет — вопрос не стоит."""
+    if not os.path.isdir(os.path.join(root, WORK_DIR)):
+        return True
+    try:
+        with open(os.path.join(root, ".gitignore"), encoding="utf-8") as f:
+            lines = [ln.split("#")[0].strip().strip("/") for ln in f]
+    except OSError:
+        return False
+    return WORK_DIR in lines
+
+
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))
+    if not work_dir_ignored(root):
+        print(f"  \033[31m✗ каталог {WORK_DIR}/ не закрыт .gitignore\033[0m")
+        print(f"    Он пропускается при проверке, потому что не публикуется. "
+              f"Раз он больше не закрыт — либо закройте, либо уберите "
+              f"{WORK_DIR} из SKIP_DIRS.")
+        return 1
     problems = scan(root)
     if not problems:
         print("  \033[32m✓\033[0m данных живых людей не найдено")
