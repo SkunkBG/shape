@@ -627,10 +627,18 @@ MSG = {
         "trc_unprot": "не в белом списке",
         "trc_idle_head": "доверенные релеи без соединений прямо сейчас:",
         "trc_idle": "соединений нет",
-        "drift_msg": "⚠️ <b>{node} — список доверенных разошёлся с действительностью</b>\n\n{body}\n\nПока на портах {ports} стоит флаг PROXY, заголовок разбирается и без списка — клиенты этого не почувствуют. Но край вне белого списка может получить автоограничение, а он один на всех, кто за ним.\n\nПосмотреть: <code>shaperctl trusted check</code>",
-        "drift_new": "Держит соединения, но в доверенных не значится: <code>{ip}</code> — соединений {n}.",
-        "drift_unprot": "Не в белом списке, а значит может получить ограничение: <code>{ip}</code> — соединений {n}.",
-        "drift_stale": "В доверенных, но соединений с него нет более суток: <code>{ip}</code>.",
+        "drift_msg": "⚠️ <b>{node} — список доверенных разошёлся с действительностью</b>\n\n{body}\n\nВсё сразу: <code>shaperctl trusted check</code>",
+        "drift_row": "<code>{ip}</code> — соединений {n}",
+        "drift_more": "…и ещё {n}",
+        "drift_new_head": "Держат соединения, но в доверенных не значатся:",
+        "drift_new_note": "Разбор на портах {ports} от этого не зависит — там стоит флаг PROXY. Если это ваш край, внесите его:",
+        "drift_new_cmd": "<code>shaperctl trusted add {ip} --relay</code>",
+        "drift_unprot_head": "Держат соединения, но не в белом списке:",
+        "drift_unprot_note": "Такой край может получить автоограничение, а он один на всех, кто за ним. Если это ваш край, защитите его:",
+        "drift_unprot_cmd": "<code>shaperctl whitelist add {ip}</code>",
+        "drift_stale_head": "В доверенных, но соединений нет больше суток:",
+        "drift_stale_note": "Разбор на портах {ports} от этого не зависит — там стоит флаг PROXY. Если край не вернётся, запись можно убрать:",
+        "drift_stale_cmd": "<code>shaperctl trusted del {ip}</code>",
         "mon_title": "Монитор", "mon_hint": "обновление {i} с · Ctrl+C — выход",
         "mon_channel": "Канал сейчас", "mon_limit": "Лимит {s:g} Мбит/с на IP",
         "mon_nolimit": "Лимит не задан", "mon_loading": "нагружают канал",
@@ -1170,10 +1178,18 @@ MSG = {
         "trc_unprot": "not on the whitelist",
         "trc_idle_head": "trusted relays with no connections right now:",
         "trc_idle": "no connections",
-        "drift_msg": "⚠️ <b>{node} — the trusted list no longer matches reality</b>\n\n{body}\n\nWhile ports {ports} carry the PROXY flag the header is parsed without the list as well, so clients notice nothing. But a relay outside the whitelist can be given an automatic limit, and it is one relay for everyone behind it.\n\nTo look: <code>shaperctl trusted check</code>",
-        "drift_new": "Holds connections but is not in the trusted list: <code>{ip}</code> — {n} connections.",
-        "drift_unprot": "Not on the whitelist, so it can be limited: <code>{ip}</code> — {n} connections.",
-        "drift_stale": "In the trusted list but no connections for over a day: <code>{ip}</code>.",
+        "drift_msg": "⚠️ <b>{node} — the trusted list no longer matches reality</b>\n\n{body}\n\nEverything at once: <code>shaperctl trusted check</code>",
+        "drift_row": "<code>{ip}</code> — {n} connections",
+        "drift_more": "…and {n} more",
+        "drift_new_head": "Holding connections but not in the trusted list:",
+        "drift_new_note": "Parsing on ports {ports} does not depend on this — they carry the PROXY flag. If this is your relay, add it:",
+        "drift_new_cmd": "<code>shaperctl trusted add {ip} --relay</code>",
+        "drift_unprot_head": "Holding connections but not on the whitelist:",
+        "drift_unprot_note": "Such a relay can be given an automatic limit, and it is one relay for everyone behind it. If this is your relay, protect it:",
+        "drift_unprot_cmd": "<code>shaperctl whitelist add {ip}</code>",
+        "drift_stale_head": "In the trusted list but no connections for over a day:",
+        "drift_stale_note": "Parsing on ports {ports} does not depend on this — they carry the PROXY flag. If the relay is not coming back, the entry can be removed:",
+        "drift_stale_cmd": "<code>shaperctl trusted del {ip}</code>",
         "mon_title": "Monitor", "mon_hint": "refresh every {i} s · Ctrl+C to exit",
         "mon_channel": "Channel now", "mon_limit": "Limit {s:g} Mbit/s per IP",
         "mon_nolimit": "No limit set", "mon_loading": "loading the channel",
@@ -6546,6 +6562,11 @@ DRIFT_CHECK_EVERY = 3600           # как часто сверяем, секу�
 DRIFT_MIN_CONNS   = 5              # меньше — это не край, а случайный гость
 DRIFT_STALE_AFTER = 24 * 3600      # столько без соединений — запись протухла
 DRIFT_ALERT_EVERY = 24 * 3600      # не чаще раза в сутки на один повод
+# Сколько адресов одного повода показывать поимённо. Telegram не примет текст
+# длиннее 4096 знаков, а отказ доставки теперь повторяется каждый час — длинное
+# сообщение не ушло бы никогда. Столько краёв у одной ноды не бывает; бывает
+# столько прямых клиентов на порту с флагом PROXY, и тогда хватит и пяти.
+DRIFT_MAX_ROWS    = 5
 
 
 def relay_peers(cfg):
@@ -6614,41 +6635,72 @@ def relay_drift(cfg, now=None):
     state["drift"] = prev
     guard_state_save(state)
 
-    # Всё найденное за проход уходит одним сообщением: три повода про один и
-    # тот же переезд — это один разговор, а не три.
+    # Всё найденное за проход уходит одним сообщением, но разложенным по
+    # поводам: у каждого своё пояснение и своя готовая команда. В 4.0 хвост
+    # был общий, и сообщение про протухшие записи — адреса без единого
+    # соединения — пугало автоограничением, которое к ним не относится.
     alerted = dict(prev.get("alerted") or {})
-    report = []
-    for ip, n in found["undeclared"]:
-        report.append(("u:" + ip, t("drift_new", ip=html.escape(ip), n=n),
-                       "relay_undeclared", ip, n))
-    for ip, n in found["unprotected"]:
-        report.append(("p:" + ip, t("drift_unprot", ip=html.escape(ip), n=n),
-                       "relay_unprotected", ip, n))
-    for ip in found["stale"]:
-        report.append(("s:" + ip, t("drift_stale", ip=html.escape(ip)),
-                       "relay_stale", ip, 0))
-    # Про повод, о котором ещё не писали, сообщаем сразу. Сравнивать «сейчас
-    # минус ноль» с паузой нельзя: это работает только потому, что время —
-    # большое число, и разваливается на любом другом отсчёте. Ровно на этом
-    # уже обожглись в relay_watch.
-    report = [r for r in report
-              if alerted.get(r[0]) is None
-              or now - float(alerted[r[0]]) >= DRIFT_ALERT_EVERY]
-    if not report:
-        return found
+    logged = dict(prev.get("logged") or {})
 
-    for key, _line, etype, ip, n in report:
-        alerted[key] = now
-        log_event(etype, ip=ip, conns=n)
-    alerted = {k: v for k, v in alerted.items()
-               if now - float(v or 0) < DRIFT_ALERT_EVERY * 4}
-    prev["alerted"] = alerted
+    def due(key, marks):
+        # Про повод, о котором ещё не писали, — сразу. «Сейчас минус ноль» с
+        # паузой не сравниваем: работает только потому, что время — большое
+        # число. На этом уже обожглись в relay_watch, и эта же правка в 4.0.
+        return marks.get(key) is None or \
+            now - float(marks[key]) >= DRIFT_ALERT_EVERY
+
+    plist = ", ".join(str(p) for p in sorted(ports))
+    groups = (("u:", "relay_undeclared", "drift_new", found["undeclared"]),
+              ("p:", "relay_unprotected", "drift_unprot", found["unprotected"]),
+              ("s:", "relay_stale", "drift_stale",
+               [(ip, None) for ip in found["stale"]]))
+    blocks, pending = [], []
+    for prefix, etype, msg, items in groups:
+        items = [(ip, n) for ip, n in items if due(prefix + ip, alerted)]
+        if not items:
+            continue
+        for ip, n in items:
+            # Событие — запись о находке, а не о доставке. Пока Telegram
+            # недоступен, отправка повторяется каждый час, а событие одно.
+            if due(prefix + ip, logged):
+                log_event(etype, ip=ip, conns=n or 0)
+                logged[prefix + ip] = now
+            pending.append(prefix + ip)
+        shown = items[:DRIFT_MAX_ROWS]
+        lines = [t(msg + "_head")]
+        lines += [t("drift_row", ip=html.escape(ip), n=n) if n is not None
+                  else f"<code>{html.escape(ip)}</code>" for ip, n in shown]
+        if len(items) > len(shown):
+            lines.append(t("drift_more", n=len(items) - len(shown)))
+        lines += ["", t(msg + "_note", ports=plist)]
+        lines += [t(msg + "_cmd", ip=html.escape(ip)) for ip, _n in shown]
+        blocks.append("\n".join(lines))
+
+    if blocks:
+        tg = cfg.get("telegram") or {}
+        if tg.get("enabled") and tg.get("token") and tg.get("chat_id"):
+            ok, err = tg_send(t("drift_msg", node=node_label(tg),
+                                body="\n\n".join(blocks)), cfg)
+        else:
+            # Отправлять некому — это не отказ доставки. Находка уже лежит в
+            # журнале событий, а повторять каждый час и писать об этом в
+            # журнал сторожа на ноде без Telegram было бы шумом.
+            ok, err = True, ""
+        if ok:
+            for key in pending:
+                alerted[key] = now
+        else:
+            # Не глушим. Отметку о доставке не ставим — следующий часовой
+            # проход повторит отправку, — а причину пишем в журнал сторожа.
+            print(f"relay_drift: telegram: {err}", flush=True)
+
+    keep = DRIFT_ALERT_EVERY * 4
+    prev["alerted"] = {k: v for k, v in alerted.items()
+                       if now - float(v or 0) < keep}
+    prev["logged"] = {k: v for k, v in logged.items()
+                      if now - float(v or 0) < keep}
     state["drift"] = prev
     guard_state_save(state)
-
-    tg_send(t("drift_msg", node=node_label(cfg["telegram"]),
-              ports=", ".join(str(p) for p in sorted(ports)),
-              body="\n".join(r[1] for r in report)), cfg)
     return found
 
 

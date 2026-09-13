@@ -1998,11 +1998,14 @@ check("событие объявлено", "relay_changed" in S.EVENT_TYPES)
 # адресов не обслуживал трафик, а оба работающих края не значились нигде.
 # Числа в тестах отсюда же: 1559 и 40 соединений, случайный гость — два.
 
-_tr_was, _pp_was = S.trusted_sources, S.proc_peers
+_tr_was, _pp_was, _tg_was = S.trusted_sources, S.proc_peers, S.tg_send
 _wl_was, _log_was = S.whitelist_ips, S.log_event
 _dev = []
 S.log_event = lambda etype, **kw: _dev.append((etype, kw))
-_dcfg = {"proxy_ports": [443], "telegram": dict(S.TG_DEFAULT, node_name="Нода")}
+S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
+_dtg = dict(S.TG_DEFAULT, node_name="Нода", enabled=True,
+            token="123456789:AAF-test", chat_id="-1001234567890")
+_dcfg = {"proxy_ports": [443], "telegram": _dtg}
 _empty = {"undeclared": [], "unprotected": [], "stale": []}
 
 S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
@@ -2026,10 +2029,17 @@ check("новый край замечен", _d["undeclared"] == [("10.0.0.9", 40
 check("и он же не защищён от ограничения",
       _d["unprotected"] == [("10.0.0.9", 40)], _d)
 check("всё найденное ушло одним сообщением", len(_sent) == 1, len(_sent))
+_m = _sent[-1] if _sent else ""
 check("в сообщении есть адрес и число соединений",
-      "10.0.0.9" in _sent[-1] and "40" in _sent[-1], _sent[-1][:200])
+      "10.0.0.9" in _m and "40" in _m, _m[:300])
 check("описанный как надо адрес в сообщение не попал",
-      "10.0.0.1<" not in _sent[-1], _sent[-1][:200])
+      "10.0.0.1<" not in _m, _m[:300])
+check("для недоверенного — готовая команда внести его",
+      "shaperctl trusted add 10.0.0.9 --relay" in _m, _m[:400])
+check("для незащищённого — готовая команда в белый список",
+      "shaperctl whitelist add 10.0.0.9" in _m, _m[:400])
+check("предупреждение про автоограничение — там, где есть незащищённый",
+      "автоограничение" in _m, _m[:400])
 check("оба повода объявлены событиями",
       {e for e, _ in _dev} == {"relay_undeclared", "relay_unprotected"}, _dev)
 
@@ -2053,6 +2063,67 @@ check("первый проход протухшей запись не объяв
 _d = S.relay_drift(_dcfg, now=30000.0 + S.DRIFT_STALE_AFTER)
 check("сутки без соединений — запись протухла",
       _d["stale"] == ["10.0.0.1"], _d)
+_m = _sent[-1] if _sent else ""
+# Так выглядело сообщение 4.0 на боевой ноде: три адреса без единого
+# соединения, а в хвосте — предупреждение про автоограничение, к ним не
+# относящееся. Вердикт без повода.
+check("про протухшие записи автоограничением не пугаем",
+      _m and "автоограничение" not in _m, _m[:400])
+check("для протухшей записи — готовая команда её убрать",
+      "shaperctl trusted del 10.0.0.1" in _m, _m[:400])
+
+# Telegram недоступен. В 4.0 отметка о доставке ставилась до отправки, и
+# потерянное сообщение молча подавлялось на сутки.
+_gs.clear(); _sent.clear(); _dev.clear()
+S.whitelist_ips = lambda: set()
+S.proc_peers = lambda ports: {"10.0.0.1": 1559}
+_tries = []
+S.tg_send = lambda text, cfg=None, **kw: (_tries.append(text), (False, "HTTP 502"))[1]
+_out = _io.StringIO()
+with _ctx.redirect_stdout(_out):
+    S.relay_drift(_dcfg, now=40000.0)
+check("отказ доставки не глушится — строка в журнал сторожа",
+      "relay_drift" in _out.getvalue() and "HTTP 502" in _out.getvalue(),
+      _out.getvalue())
+_was_ev = len(_dev)
+with _ctx.redirect_stdout(_io.StringIO()):
+    S.relay_drift(_dcfg, now=40000.0 + S.DRIFT_CHECK_EVERY)
+check("через час отправка повторяется", len(_tries) == 2, len(_tries))
+check("а событие о находке одно, не на каждый повтор",
+      len(_dev) == _was_ev == 1, _dev)
+S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
+S.relay_drift(_dcfg, now=40000.0 + 2 * S.DRIFT_CHECK_EVERY)
+check("Telegram ожил — сообщение ушло", len(_sent) == 1, len(_sent))
+S.relay_drift(_dcfg, now=40000.0 + 3 * S.DRIFT_CHECK_EVERY)
+check("после доставки повтор подавлен как обычно", len(_sent) == 1, len(_sent))
+
+# Нода без Telegram: отправлять некому, и это не отказ. Писать в журнал
+# сторожа каждый час бесконечно было бы шумом.
+_gs.clear(); _dev.clear(); _tries.clear()
+S.tg_send = lambda text, cfg=None, **kw: (_tries.append(text), (False, "off"))[1]
+_off = {"proxy_ports": [443], "telegram": dict(S.TG_DEFAULT, enabled=False)}
+_out = _io.StringIO()
+with _ctx.redirect_stdout(_out):
+    S.relay_drift(_off, now=50000.0)
+    S.relay_drift(_off, now=50000.0 + S.DRIFT_CHECK_EVERY)
+check("без Telegram отправка даже не пробуется", _tries == [], _tries)
+check("и журнал сторожа не засоряется", _out.getvalue() == "", _out.getvalue())
+check("находка всё равно записана событием — один раз",
+      [e for e, _ in _dev] == ["relay_unprotected"], _dev)
+
+# Прямые клиенты на порту с флагом PROXY — их может быть много, и длинное
+# сообщение Telegram не примет. Поимённо показываем не больше предела.
+_gs.clear(); _sent.clear()
+S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
+S.whitelist_ips = lambda: {"10.0.0.1"}
+S.proc_peers = lambda ports: dict({"10.0.0.1": 1559},
+                                  **{f"10.0.1.{i}": 10 + i for i in range(12)})
+S.relay_drift(_dcfg, now=60000.0)
+_m = _sent[-1] if _sent else ""
+check("поимённо не больше предела на повод",
+      _m.count("shaperctl trusted add ") == S.DRIFT_MAX_ROWS, _m.count("trusted add"))
+check("про остальных сказано числом", "ещё 7" in _m, _m[-300:])
+check("сообщение укладывается в предел Telegram", len(_m) < 4096, len(_m))
 
 check("где портов PROXY нет, сверять нечего",
       S.relay_drift({"proxy_ports": [], "telegram": {}}, now=9e9) == _empty)
@@ -2061,7 +2132,7 @@ check("порог края выше случайного гостя и ниже 
 check("новые события объявлены",
       {"relay_undeclared", "relay_unprotected", "relay_stale"} <= S.EVENT_TYPES)
 
-S.trusted_sources, S.proc_peers = _tr_was, _pp_was
+S.trusted_sources, S.proc_peers, S.tg_send = _tr_was, _pp_was, _tg_was
 S.whitelist_ips, S.log_event = _wl_was, _log_was
 
 

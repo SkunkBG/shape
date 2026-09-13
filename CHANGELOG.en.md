@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.1
+
+**The list-divergence message talks about what it found, and no longer gets lost silently.**
+
+The first live run of 4.0 on the node behind a CDN went as designed: the first pass passed no judgement, and a day later one message arrived about three stale entries. But reading it showed two things the code did not, and a third turned up on review.
+
+**The tail of the message was not about what was found.** Three addresses with not a single connection — and at the end a warning that a relay outside the whitelist can be given an automatic limit. That has nothing to do with stale entries: the text was written for another cause and shown every time. The message is now split by cause, each with its own explanation. The automatic-limit warning appears only where a relay outside the whitelist was found.
+
+**There was no ready command.** What to do about each cause is known in advance, so now every address gets one: `trusted add … --relay` for a relay missing from the trusted list, `whitelist add …` for an unprotected one, `trusted del …` for a stale entry. At most five addresses per cause are listed by name and the rest are given as a count: Telegram will not accept text longer than 4096 characters.
+
+**A failed delivery was swallowed silently.** The "already reported" mark was set before sending, and Telegram's answer was never checked. If Telegram was unreachable at that minute, the message vanished, the repeat was suppressed for a day, and the watchdog journal said nothing. Now the mark is set only after delivery, the reason for the failure goes to the watchdog journal, and the next hourly pass tries again. The event about the finding stays single: it records what was found, not whether it was delivered.
+
+A node without Telegram does not even try to send and does not litter the journal: having nobody to send to is not a delivery failure.
+
+**On update** nothing changes in the settings. Messages already sent will not arrive again: the marks from 4.0 are read as they are.
+
+---
+
 ## 4.0
 
 **The node notices when the trusted list stops matching reality.**

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-4.0-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.1-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v4.0
+# Shape v4.1
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -881,7 +881,9 @@ So once an hour the node looks at who holds established connections on the ports
 carrying the PROXY header and compares that against both of its lists. It
 reports three causes, all in one message: an address holds connections but is
 not trusted; an address holds connections but is not on the whitelist; an
-address is trusted but has had no connections for over a day.
+address is trusted but has had no connections for over a day. Each cause gets
+its own explanation and a ready command, and if delivery fails the reason goes
+to the watchdog journal and sending is retried an hour later.
 
 The check costs zero outbound requests — everything comes from `/proc` and two
 files on disk. It repeats about one cause no more than once a day and only runs
