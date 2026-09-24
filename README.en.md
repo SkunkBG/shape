@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-4.2-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.3-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v4.2
+# Shape v4.3
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -906,6 +906,15 @@ who holds connections on ports 443
 trusted relays with no connections right now:
   198.51.100.20                           no connections
 ```
+
+The node protects CDN relays itself. An address whose PROXY header it has
+parsed goes on the whitelist without a command: otherwise, between a relay
+move and your intervention it stays exposed to an automatic limit, and a relay
+is one for everyone behind it. The signal is a binding in the map of parsed
+headers, not a number of connections: the whitelist removes the limit, and
+granting it for holding many connections would one day grant it to a heavy
+direct client. Every addition is reported with a ready command to remove the
+address. Switch it off with `shaperctl apply --relay-autowl off`.
 
 ### Clients are gone: whose fault is it
 

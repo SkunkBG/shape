@@ -13,6 +13,32 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.3
+
+**The node protects a CDN relay by itself, without waiting for a command.**
+
+A relay changes its address every week or two, and every time the new address ended up unprotected. Unparsed relay traffic is counted against the relay's own address, the counters grow, and to the auto-limiter that is just a heavy client. And a relay is one for everyone behind it: a mistake here costs a shared limit for a hundred people.
+
+Detection was solved in 4.0: a move is noticed within the hour. But between the finding and a human command a day or more would pass — the last time, the relay went unprotected for three days while messages arrived daily.
+
+Now the node adds such an address to the whitelist itself. The signal is **a binding in the map of parsed headers**, not a number of connections. The difference matters: the whitelist removes the limit, and granting it for holding many connections would one day grant it to a heavy direct client. A record appears in that map only where the PROXY header was parsed and bound to a real client — proof that the address speaks PROXY protocol.
+
+This grants nobody new rights. Where the port carries the trust-by-port flag, the header is already trusted from any address: such an address can already claim someone else's and bypass its own limit — that price is stated plainly in 3.77. Where the flag is absent, a binding appears only for trusted sources, that is, for those a human added.
+
+Every addition is reported to Telegram together with a ready command to remove the address if it is not your relay, and recorded as a `whitelist_auto` event. In the whitelist file the line gets a note saying where it came from.
+
+It can be switched off, because this is an action and not an observation:
+
+```bash
+shaperctl apply --relay-autowl off
+```
+
+The current state is shown by `shaperctl show` next to the ports where the header is parsed.
+
+**On update** nothing needs doing. Auto-protection is on by default and only runs where ports with the PROXY header are configured: on nodes without a CDN it does nothing.
+
+---
+
 ## 4.2
 
 **Telegram backups get their extension and date back in the filename.**

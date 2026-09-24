@@ -2006,7 +2006,7 @@ S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
 _dtg = dict(S.TG_DEFAULT, node_name="Нода", enabled=True,
             token="123456789:AAF-test", chat_id="-1001234567890")
 _dcfg = {"proxy_ports": [443], "telegram": _dtg}
-_empty = {"undeclared": [], "unprotected": [], "stale": []}
+_empty = {"undeclared": [], "unprotected": [], "stale": [], "autowl": []}
 
 S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
 S.whitelist_ips = lambda: {"10.0.0.2"}
@@ -2131,6 +2131,73 @@ check("порог края выше случайного гостя и ниже 
       2 < S.DRIFT_MIN_CONNS < 40, S.DRIFT_MIN_CONNS)
 check("новые события объявлены",
       {"relay_undeclared", "relay_unprotected", "relay_stale"} <= S.EVENT_TYPES)
+
+# ── Автозащита краёв CDN ───────────────────────────────────────────────
+# Край меняет адрес раз в неделю-полторы, и до внесения руками он без защиты:
+# неразобранный трафик копится на его собственный адрес, и автоограничение
+# видит обычного жирного клиента. На боевой ноде так вышло трижды, последний
+# раз край ходил незащищённым трое суток.
+#
+# Признак внесения — привязка в pp_conn_map, а не число соединений. Белый
+# список снимает лимит: выдать его за число соединений значит однажды выдать
+# его тяжёлому прямому клиенту.
+
+_wl_add_was, _bound_was = S.whitelist_add, S.relay_bound_peers
+_wl_now = set()
+S.whitelist_ips = lambda: set(_wl_now)
+S.whitelist_add = lambda ip, note="": _wl_now.add(ip)
+S.trusted_sources = lambda: {}
+S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
+
+_gs.clear(); _sent.clear(); _dev.clear(); _wl_now.clear()
+S.proc_peers = lambda ports: {"10.0.0.9": 1837}
+S.relay_bound_peers = lambda: {"10.0.0.9": 900}
+_d = S.relay_drift(_dcfg, now=70000.0)
+check("край с разобранным заголовком внесён сам",
+      _d["autowl"] == ["10.0.0.9"] and "10.0.0.9" in _wl_now, (_d, _wl_now))
+check("и в незащищённые он уже не попал", _d["unprotected"] == [], _d)
+check("но в недоверенных остался — это другой список",
+      _d["undeclared"] == [("10.0.0.9", 1837)], _d)
+check("внесение записано событием",
+      ("whitelist_auto", {"ip": "10.0.0.9", "conns": 1837, "bound": 900}) in _dev,
+      _dev)
+_m = _sent[-1] if _sent else ""
+check("в сообщении сказано, что внесли сами", "10.0.0.9" in _m and
+      ("сами" in _m or "automatically" in _m), _m[:300])
+check("и дана команда убрать, если это не край",
+      "shaperctl whitelist del 10.0.0.9" in _m, _m[:400])
+
+# Главное: белый список не выдаётся за число соединений.
+_gs.clear(); _sent.clear(); _dev.clear(); _wl_now.clear()
+S.proc_peers = lambda ports: {"10.0.0.8": 5000}
+S.relay_bound_peers = lambda: {}
+_d = S.relay_drift(_dcfg, now=80000.0)
+check("без разобранного заголовка в белый список не вносим",
+      _d["autowl"] == [] and _wl_now == set(), (_d, _wl_now))
+check("зато про него сказано как про незащищённого",
+      _d["unprotected"] == [("10.0.0.8", 5000)], _d)
+
+# Одной привязки мало: разовый разбор краем не делает.
+_gs.clear(); _wl_now.clear()
+S.relay_bound_peers = lambda: {"10.0.0.8": 1}
+_d = S.relay_drift(_dcfg, now=90000.0)
+check("одной привязки для внесения мало", _d["autowl"] == [], _d)
+
+# Выключатель.
+_gs.clear(); _wl_now.clear()
+S.relay_bound_peers = lambda: {"10.0.0.8": 900}
+_off_cfg = dict(_dcfg, relay_autowl=False)
+_d = S.relay_drift(_off_cfg, now=100000.0)
+check("с выключенной автозащитой ничего не вносится",
+      _d["autowl"] == [] and _wl_now == set(), (_d, _wl_now))
+check("и адрес снова числится незащищённым",
+      _d["unprotected"] == [("10.0.0.8", 5000)], _d)
+
+check("автозащита включена по умолчанию",
+      S.load_config().get("relay_autowl") is True)
+check("событие внесения объявлено", "whitelist_auto" in S.EVENT_TYPES)
+
+S.whitelist_add, S.relay_bound_peers = _wl_add_was, _bound_was
 
 S.trusted_sources, S.proc_peers, S.tg_send = _tr_was, _pp_was, _tg_was
 S.whitelist_ips, S.log_event = _wl_was, _log_was

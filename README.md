@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.2-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.3-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--3.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v4.2
+# Shape v4.3
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -904,6 +904,15 @@ shaperctl trusted check
 доверенные релеи без соединений прямо сейчас:
   198.51.100.20                           соединений нет
 ```
+
+Края CDN нода защищает сама. Адрес, чей заголовок PROXY она разобрала,
+вносится в белый список без команды: иначе между переездом края и вашим
+вмешательством он остаётся под угрозой автоограничения, а край один на всех,
+кто за ним. Признак — привязка в карте разобранных заголовков, а не число
+соединений: белый список снимает лимит, и выдавать его за количество
+соединений значит однажды выдать его тяжёлому прямому клиенту. О каждом
+внесении приходит сообщение с готовой командой убрать адрес. Выключается
+через `shaperctl apply --relay-autowl off`.
 
 ### Клиенты пропали: чья это беда
 
