@@ -633,19 +633,10 @@ MSG = {
         "drift_new_head": "Держат соединения, но в доверенных не значатся:",
         "drift_new_note": "Разбор на портах {ports} от этого не зависит — там стоит флаг PROXY. Если это ваш край, внесите его:",
         "drift_new_cmd": "<code>shaperctl trusted add {ip} --relay</code>",
-        "drift_unprot_head": "Держат соединения, но не в белом списке:",
-        "drift_unprot_note": "Такой край может получить автоограничение, а он один на всех, кто за ним. Если это ваш край, защитите его:",
-        "drift_unprot_cmd": "<code>shaperctl whitelist add {ip}</code>",
         "drift_stale_head": "В доверенных, но соединений нет больше суток:",
         "drift_stale_note": "Разбор на портах {ports} от этого не зависит — там стоит флаг PROXY. Если край не вернётся, запись можно убрать:",
         "drift_stale_cmd": "<code>shaperctl trusted del {ip}</code>",
-        "drift_auto_head": "Внесены в белый список сами — их заголовок PROXY нода разбирает:",
-        "drift_auto_note": "Край один на всех, кто за ним, и без белого списка мог бы получить автоограничение. Если это не ваш край — уберите его:",
-        "drift_auto_cmd": "<code>shaperctl whitelist del {ip}</code>",
-        "wl_note_relay": "внесён автоматически: релей CDN, заголовок PROXY разобран",
-        "h_relay_autowl": "вносить ли края CDN в белый список самостоятельно",
-        "auto_wl_on": "— края CDN нода вносит в белый список сама",
-        "auto_wl_off": "— края CDN сама в белый список не вносит",
+        "relay_prot": "— и пока адрес работает релеем, штраф ему не выдаётся",
         "mon_title": "Монитор", "mon_hint": "обновление {i} с · Ctrl+C — выход",
         "mon_channel": "Канал сейчас", "mon_limit": "Лимит {s:g} Мбит/с на IP",
         "mon_nolimit": "Лимит не задан", "mon_loading": "нагружают канал",
@@ -1191,19 +1182,10 @@ MSG = {
         "drift_new_head": "Holding connections but not in the trusted list:",
         "drift_new_note": "Parsing on ports {ports} does not depend on this — they carry the PROXY flag. If this is your relay, add it:",
         "drift_new_cmd": "<code>shaperctl trusted add {ip} --relay</code>",
-        "drift_unprot_head": "Holding connections but not on the whitelist:",
-        "drift_unprot_note": "Such a relay can be given an automatic limit, and it is one relay for everyone behind it. If this is your relay, protect it:",
-        "drift_unprot_cmd": "<code>shaperctl whitelist add {ip}</code>",
         "drift_stale_head": "In the trusted list but no connections for over a day:",
         "drift_stale_note": "Parsing on ports {ports} does not depend on this — they carry the PROXY flag. If the relay is not coming back, the entry can be removed:",
         "drift_stale_cmd": "<code>shaperctl trusted del {ip}</code>",
-        "drift_auto_head": "Added to the whitelist automatically — the node parses their PROXY header:",
-        "drift_auto_note": "A relay is one for everyone behind it, and outside the whitelist it could be given an automatic limit. If this is not your relay, remove it:",
-        "drift_auto_cmd": "<code>shaperctl whitelist del {ip}</code>",
-        "wl_note_relay": "added automatically: CDN relay, PROXY header parsed",
-        "h_relay_autowl": "whether to add CDN relays to the whitelist automatically",
-        "auto_wl_on": "— the node adds CDN relays to the whitelist itself",
-        "auto_wl_off": "— the node does not add CDN relays to the whitelist",
+        "relay_prot": "— and while an address works as a relay it is never penalised",
         "mon_title": "Monitor", "mon_hint": "refresh every {i} s · Ctrl+C to exit",
         "mon_channel": "Channel now", "mon_limit": "Limit {s:g} Mbit/s per IP",
         "mon_nolimit": "No limit set", "mon_loading": "loading the channel",
@@ -1940,10 +1922,6 @@ def load_config():
                    if str(x).strip().isdigit()]
     return {"ports": cfg.get("ports", [443]),
             "proxy_ports": proxy_ports,
-            # Края CDN меняют адрес сами и без предупреждения; по умолчанию
-            # нода их защищает, не дожидаясь команды. Выключатель есть,
-            # потому что это действие, а не наблюдение.
-            "relay_autowl": bool(cfg.get("relay_autowl", True)),
             "speed_mbps": float(cfg.get("speed_mbps", 0)),
             "guard": guard, "telegram": tg, "panel": panel, "metrics": met,
             "cdn": cdn, "censor": cen}
@@ -2029,8 +2007,6 @@ def cmd_apply(a):
         if not ports:
             die(t("no_ports"))
         cfg["ports"] = ports
-    if getattr(a, "relay_autowl", None) is not None:
-        cfg["relay_autowl"] = a.relay_autowl == "on"
     if getattr(a, "proxy_ports", None) is not None:
         pp = parse_ports(a.proxy_ports) if a.proxy_ports.strip() else []
         unknown = [p for p in pp if p not in cfg["ports"]]
@@ -2073,8 +2049,7 @@ def cmd_show(a):
     if cfg.get("proxy_ports"):
         pp = ", ".join(map(str, cfg["proxy_ports"]))
         print(f"  {t('pp_ports'):<9}: {pp} {C['gry']}{t('pp_hint')}{C['r']}")
-        key = "auto_wl_on" if cfg.get("relay_autowl", True) else "auto_wl_off"
-        print(f"  {'':<9}  {C['gry']}{t(key)}{C['r']}")
+        print(f"  {'':<9}  {C['gry']}{t('relay_prot')}{C['r']}")
     # Предупреждение стоит здесь, на самом ходовом экране: нода без fq
     # выглядит здоровой во всём остальном, и заметить это больше негде.
     ready, bad = edt_ready()
@@ -2720,9 +2695,7 @@ EVENT_TYPES = {
     "sharing_found",     # панель показала раздачу подписки
     "relay_changed",     # релей CDN сменил адрес и перестал быть доверенным
     "relay_undeclared",  # край держит соединения, а в доверенных не значится
-    "relay_unprotected", # активный край вне белого списка — его можно ограничить
     "relay_stale",       # доверенный край давно без соединений: запись протухла
-    "whitelist_auto",    # край внесён в белый список сам: заголовок разобран
     "clients_gone",      # клиенты пропали, хотя нода жива
     "cdn_quota_low",     # у провайдера CDN кончается пакет
     "censor_drop",       # отдельная сеть перестала доходить до ноды
@@ -3804,6 +3777,10 @@ def cmd_watch(a):
             active_floor = cap * 0.25 if cap > 0 else 1.0
             need_score = g["score_needed"]
             wl = whitelist_ips()
+            # Край CDN штрафовать нельзя: он один на всех, кто за ним, и
+            # неразобранный трафик копится на его собственный адрес — для
+            # автоограничения это обычный жирный клиент.
+            relays = relay_now(cfg)
 
             for ip, s in sample.items():
                 # суточные счётчики ведём для всех, даже для уже наказанных
@@ -3849,7 +3826,7 @@ def cmd_watch(a):
 
                 # Адрес с персональной скоростью автоограничению не подлежит:
                 # решение по нему уже принято человеком.
-                if not guard_on or ip in pens or ip in wl:
+                if not guard_on or ip in pens or ip in wl or ip in relays:
                     continue
 
                 # Уровень уведомления по объёму отдачи. Один раз в сутки на
@@ -6635,46 +6612,50 @@ def relay_bound_peers():
     return out
 
 
-def relay_autowhitelist(cfg, peers):
-    """
-    Сам вносит в белый список края, чей заголовок PROXY нода разобрала.
+# Кого прямо сейчас нельзя штрафовать: адреса, которые в эту минуту работают
+# релеем. Защита не выдаётся записью в белом списке, а живёт ровно столько,
+# сколько адрес держит соединения.
+#
+# Почему не белым списком. Запись в нём постоянная и действует на весь трафик
+# адреса, на всех портах и при любых будущих настройках. А признак «прислал
+# заголовок PROXY» на порту с флагом PORT_PROXY доступен кому угодно: на живой
+# ноде в карте привязок нашлись пять посторонних адресов выше любого разумного
+# порога. Постоянное право по такому признаку выдавать нельзя, временное —
+# можно: оно само исчезает вместе с соединениями.
+#
+# Признак складывается из двух частей, и обе нужны:
+#   привязки в pp_conn_map — адрес говорит по PROXY protocol. Запись там
+#     переживает соединение (удаляется по RST и двум FIN, остальное ждёт
+#     вытеснения), поэтому сама по себе она про прошлое;
+#   живые соединения из /proc — вот это про «сейчас».
+#
+# Дорого только второе вместе с дампом карты, поэтому считаем не чаще раза
+# в пять минут: сторож ходит по кругу каждые несколько секунд.
+RELAY_NOW_TTL = 300
+_relay_now = {"at": 0.0, "ips": frozenset()}
 
-    Зачем. Край CDN меняет адрес раз в неделю-полторы. До внесения руками он
-    остаётся без защиты: неразобранный трафик копится на его собственный
-    адрес, счётчики растут, и автоограничение видит обычного жирного клиента.
-    Край один на всех, кто за ним, поэтому цена ошибки — общий лимит на сотню
-    человек. Обнаружение закрыто проверкой расхождения, но между находкой и
-    командой человека проходили сутки и больше.
 
-    Почему по привязкам, а не по числу соединений. Белый список снимает
-    лимит. Выдать его за число соединений значит однажды выдать его тяжёлому
-    прямому клиенту. Привязка в pp_conn_map — другое: она есть только там,
-    где заголовок PROXY разобран.
-
-    Новых прав это никому не даёт. Там, где на порту стоит PORT_PROXY,
-    заголовку и так верят от любого адреса: такой адрес уже может назваться
-    чужим и обойти свой лимит — об этой цене сказано прямо в 3.77. Там, где
-    флага нет, привязка появляется только у доверенных, то есть у внесённых
-    человеком.
-    """
-    bound = relay_bound_peers()
-    wl = whitelist_ips()
-    added = []
-    for ip, (n, _tr, in_wl) in sorted(peers.items()):
-        if in_wl or ip in wl or n < DRIFT_MIN_CONNS:
-            continue
-        if bound.get(ip, 0) < DRIFT_MIN_CONNS:
-            continue
-        try:
-            whitelist_add(ip, note=t("wl_note_relay"))
-        except Exception as e:
-            # Молча пропустить нельзя: край останется без защиты, а причина
-            # этого не должна теряться.
-            print(f"relay_drift: {ip} в белый список не внесён: {e}", flush=True)
-            continue
-        log_event("whitelist_auto", ip=ip, conns=n, bound=bound.get(ip, 0))
-        added.append(ip)
-    return added
+def relay_now(cfg, now=None):
+    """Адреса, работающие релеем прямо сейчас. Пустое множество — если CDN нет."""
+    now = now if now is not None else time.time()
+    ports = {int(x) for x in (cfg.get("proxy_ports") or []) if str(x).isdigit()}
+    if not ports:
+        return frozenset()
+    if now - float(_relay_now["at"]) < RELAY_NOW_TTL:
+        return _relay_now["ips"]
+    try:
+        bound = relay_bound_peers()
+        live = proc_peers(ports)
+        ips = frozenset(ip for ip, n in live.items()
+                        if n >= DRIFT_MIN_CONNS
+                        and bound.get(ip, 0) >= DRIFT_MIN_CONNS)
+    except Exception:
+        # Сорвалось — отдаём прошлый ответ, а не пустоту: пустота означала бы
+        # «релеев нет», то есть сняла бы защиту именно тогда, когда что-то
+        # пошло не так.
+        return _relay_now["ips"]
+    _relay_now.update({"at": now, "ips": ips})
+    return ips
 
 
 def relay_drift(cfg, now=None):
@@ -6686,7 +6667,7 @@ def relay_drift(cfg, now=None):
     выпускает — это сторожевая проверка, она не имеет права уронить цикл.
     """
     now = now if now is not None else time.time()
-    found = {"undeclared": [], "unprotected": [], "stale": [], "autowl": []}
+    found = {"undeclared": [], "stale": []}
 
     ports, peers = relay_peers(cfg)
     if not ports:
@@ -6696,14 +6677,6 @@ def relay_drift(cfg, now=None):
     prev = state.get("drift") or {}
     if now - float(prev.get("at") or 0) < DRIFT_CHECK_EVERY:
         return found
-
-    # Сначала защитить, потом жаловаться. Иначе край, который нода в этом же
-    # проходе внесёт в белый список, попал бы в сообщение как незащищённый.
-    found["autowl"] = (relay_autowhitelist(cfg, peers)
-                       if cfg.get("relay_autowl", True) else [])
-    if found["autowl"]:
-        peers = {ip: (n, tr, wl or ip in found["autowl"])
-                 for ip, (n, tr, wl) in peers.items()}
 
     trusted = {ip for ip, fl in trusted_sources().items() if fl & TRUST_RELAY}
     seen = dict(prev.get("seen") or {})
@@ -6725,8 +6698,6 @@ def relay_drift(cfg, now=None):
             continue
         if not tr:
             found["undeclared"].append((ip, n))
-        if not wl:
-            found["unprotected"].append((ip, n))
     for ip in sorted(trusted):
         if now - float(seen.get(ip) or now) >= DRIFT_STALE_AFTER:
             found["stale"].append(ip)
@@ -6750,10 +6721,7 @@ def relay_drift(cfg, now=None):
             now - float(marks[key]) >= DRIFT_ALERT_EVERY
 
     plist = ", ".join(str(p) for p in sorted(ports))
-    groups = (("a:", "whitelist_auto", "drift_auto",
-               [(ip, peers[ip][0]) for ip in found["autowl"] if ip in peers]),
-              ("u:", "relay_undeclared", "drift_new", found["undeclared"]),
-              ("p:", "relay_unprotected", "drift_unprot", found["unprotected"]),
+    groups = (("u:", "relay_undeclared", "drift_new", found["undeclared"]),
               ("s:", "relay_stale", "drift_stale",
                [(ip, None) for ip in found["stale"]]))
     blocks, pending = [], []
@@ -6765,10 +6733,7 @@ def relay_drift(cfg, now=None):
             # Событие — запись о находке, а не о доставке. Пока Telegram
             # недоступен, отправка повторяется каждый час, а событие одно.
             if due(prefix + ip, logged):
-                # У внесённых автоматически событие уже записано в момент
-                # действия: оно про сделанное, а не про доставку сообщения.
-                if prefix != "a:":
-                    log_event(etype, ip=ip, conns=n or 0)
+                log_event(etype, ip=ip, conns=n or 0)
                 logged[prefix + ip] = now
             pending.append(prefix + ip)
         shown = items[:DRIFT_MAX_ROWS]
@@ -6965,6 +6930,10 @@ def panel_limit(p, ips, mbps=None, uid=None, person=None):
     возможно, человеком.
     """
     wl = whitelist_ips()
+    # cfg сюда не передают — здесь только панельный раздел. Чтение с диска
+    # не в тягость: путь редкий, а relay_now всё равно держит свой ответ
+    # пять минут.
+    relays = relay_now(load_config())
     known = set(read_users())
     pens = load_penalties()
     mbps = float(mbps if mbps is not None else (p.get("limit_mbps") or 1))
@@ -6973,7 +6942,7 @@ def panel_limit(p, ips, mbps=None, uid=None, person=None):
 
     done = []
     for ip in ips:
-        if ip in wl or ip in pens or ip not in known:
+        if ip in wl or ip in relays or ip in pens or ip not in known:
             continue
         try:
             penalty_apply(ip, mbps, until)
@@ -9087,17 +9056,17 @@ def validate_export(data):
     return state, problems
 
 
-def whitelist_add(ip, note=""):
+def whitelist_add(ip):
     """
     Вносит адрес в белый список: и в файл, и в карту ядра.
 
-    Общий для команды и для автозащиты краёв — чтобы «внесено» означало одно
-    и то же в обоих случаях. Комментарий в строке нужен человеку, который
-    однажды откроет файл и спросит, откуда взялся этот адрес.
+    Список ведёт человек: постоянное снятие лимита — не то право, которое
+    нода выдаёт сама. Край CDN защищён иначе, временно и по факту работы,
+    см. relay_now().
     """
     if ip not in whitelist_ips():
         with open(WL_FILE, "a") as f:
-            f.write(f"{ip}  # {note}\n" if note else ip + "\n")
+            f.write(ip + "\n")
     map_update("whitelist_map", ip_key(ip), b"\x01")
 
 
@@ -9292,9 +9261,6 @@ def build_parser():
     a.add_argument("--ports", default=None, help=t("h_ports"))
     a.add_argument("--proxy-ports", dest="proxy_ports", default=None,
                    help=t("h_proxy_ports"))
-    a.add_argument("--relay-autowl", dest="relay_autowl",
-                   choices=["on", "off"], default=None,
-                   help=t("h_relay_autowl"))
     a.add_argument("--speed", type=float, default=None,
                    help=t("h_speed"))
     a.add_argument("--quiet", action="store_true")

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-4.3-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.4-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v4.3
+# Shape v4.4
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -907,14 +907,16 @@ trusted relays with no connections right now:
   198.51.100.20                           no connections
 ```
 
-The node protects CDN relays itself. An address whose PROXY header it has
-parsed goes on the whitelist without a command: otherwise, between a relay
-move and your intervention it stays exposed to an automatic limit, and a relay
-is one for everyone behind it. The signal is a binding in the map of parsed
-headers, not a number of connections: the whitelist removes the limit, and
-granting it for holding many connections would one day grant it to a heavy
-direct client. Every addition is reported with a ready command to remove the
-address. Switch it off with `shaperctl apply --relay-autowl off`.
+The node protects CDN relays itself, but not with a list entry. The watchdog
+does not penalise an address that is **working as a relay at this minute**: it
+has both bindings in the map of parsed headers — so it speaks PROXY protocol —
+and live connections on the ports carrying the header. Both parts are
+required. A permanent right must not be granted on the single signal of
+"sent a header": on a port with the trust flag anyone can earn it, and on a
+live node that is exactly what happened.
+
+The protection lasts exactly as long as the address works: nothing permanent
+is granted, there is nothing to clean up, and the whitelist stays yours.
 
 ### Clients are gone: whose fault is it
 

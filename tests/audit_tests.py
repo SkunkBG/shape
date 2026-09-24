@@ -2006,7 +2006,7 @@ S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
 _dtg = dict(S.TG_DEFAULT, node_name="Нода", enabled=True,
             token="123456789:AAF-test", chat_id="-1001234567890")
 _dcfg = {"proxy_ports": [443], "telegram": _dtg}
-_empty = {"undeclared": [], "unprotected": [], "stale": [], "autowl": []}
+_empty = {"undeclared": [], "stale": []}
 
 S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
 S.whitelist_ips = lambda: {"10.0.0.2"}
@@ -2026,8 +2026,6 @@ check("списки сходятся — разговора нет", _d == _empt
 S.proc_peers = lambda ports: {"10.0.0.1": 1559, "10.0.0.9": 40}
 _d = S.relay_drift(_dcfg, now=10000.0 + S.DRIFT_CHECK_EVERY)
 check("новый край замечен", _d["undeclared"] == [("10.0.0.9", 40)], _d)
-check("и он же не защищён от ограничения",
-      _d["unprotected"] == [("10.0.0.9", 40)], _d)
 check("всё найденное ушло одним сообщением", len(_sent) == 1, len(_sent))
 _m = _sent[-1] if _sent else ""
 check("в сообщении есть адрес и число соединений",
@@ -2036,12 +2034,8 @@ check("описанный как надо адрес в сообщение не 
       "10.0.0.1<" not in _m, _m[:300])
 check("для недоверенного — готовая команда внести его",
       "shaperctl trusted add 10.0.0.9 --relay" in _m, _m[:400])
-check("для незащищённого — готовая команда в белый список",
-      "shaperctl whitelist add 10.0.0.9" in _m, _m[:400])
-check("предупреждение про автоограничение — там, где есть незащищённый",
-      "автоограничение" in _m, _m[:400])
-check("оба повода объявлены событиями",
-      {e for e, _ in _dev} == {"relay_undeclared", "relay_unprotected"}, _dev)
+check("повод объявлен событием",
+      {e for e, _ in _dev} == {"relay_undeclared"}, _dev)
 
 _was = len(_sent)
 S.relay_drift(_dcfg, now=10000.0 + 2 * S.DRIFT_CHECK_EVERY)
@@ -2075,6 +2069,7 @@ check("для протухшей записи — готовая команда 
 # Telegram недоступен. В 4.0 отметка о доставке ставилась до отправки, и
 # потерянное сообщение молча подавлялось на сутки.
 _gs.clear(); _sent.clear(); _dev.clear()
+S.trusted_sources = lambda: {}
 S.whitelist_ips = lambda: set()
 S.proc_peers = lambda ports: {"10.0.0.1": 1559}
 _tries = []
@@ -2096,10 +2091,12 @@ S.relay_drift(_dcfg, now=40000.0 + 2 * S.DRIFT_CHECK_EVERY)
 check("Telegram ожил — сообщение ушло", len(_sent) == 1, len(_sent))
 S.relay_drift(_dcfg, now=40000.0 + 3 * S.DRIFT_CHECK_EVERY)
 check("после доставки повтор подавлен как обычно", len(_sent) == 1, len(_sent))
+S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
 
 # Нода без Telegram: отправлять некому, и это не отказ. Писать в журнал
 # сторожа каждый час бесконечно было бы шумом.
 _gs.clear(); _dev.clear(); _tries.clear()
+S.trusted_sources = lambda: {}
 S.tg_send = lambda text, cfg=None, **kw: (_tries.append(text), (False, "off"))[1]
 _off = {"proxy_ports": [443], "telegram": dict(S.TG_DEFAULT, enabled=False)}
 _out = _io.StringIO()
@@ -2109,7 +2106,8 @@ with _ctx.redirect_stdout(_out):
 check("без Telegram отправка даже не пробуется", _tries == [], _tries)
 check("и журнал сторожа не засоряется", _out.getvalue() == "", _out.getvalue())
 check("находка всё равно записана событием — один раз",
-      [e for e, _ in _dev] == ["relay_unprotected"], _dev)
+      [e for e, _ in _dev] == ["relay_undeclared"], _dev)
+S.trusted_sources = lambda: {"10.0.0.1": S.TRUST_RELAY}
 
 # Прямые клиенты на порту с флагом PROXY — их может быть много, и длинное
 # сообщение Telegram не примет. Поимённо показываем не больше предела.
@@ -2130,74 +2128,72 @@ check("где портов PROXY нет, сверять нечего",
 check("порог края выше случайного гостя и ниже живого края",
       2 < S.DRIFT_MIN_CONNS < 40, S.DRIFT_MIN_CONNS)
 check("новые события объявлены",
-      {"relay_undeclared", "relay_unprotected", "relay_stale"} <= S.EVENT_TYPES)
+      {"relay_undeclared", "relay_stale"} <= S.EVENT_TYPES)
 
-# ── Автозащита краёв CDN ───────────────────────────────────────────────
-# Край меняет адрес раз в неделю-полторы, и до внесения руками он без защиты:
-# неразобранный трафик копится на его собственный адрес, и автоограничение
-# видит обычного жирного клиента. На боевой ноде так вышло трижды, последний
-# раз край ходил незащищённым трое суток.
-#
-# Признак внесения — привязка в pp_conn_map, а не число соединений. Белый
-# список снимает лимит: выдать его за число соединений значит однажды выдать
-# его тяжёлому прямому клиенту.
+# ── Кого нельзя штрафовать: край CDN, работающий прямо сейчас ──────────
+# Край меняет адрес раз в неделю-полторы, и до 4.4 новый адрес оставался без
+# защиты до команды человека — в последний раз трое суток. Защита выдаётся не
+# записью в белом списке, а по факту работы: постоянное право по признаку
+# «прислал заголовок PROXY» выдавать нельзя, потому что на порту с флагом
+# PORT_PROXY этот признак доступен кому угодно. На живой ноде в карте привязок
+# нашлись пять посторонних адресов выше любого разумного порога.
 
-_wl_add_was, _bound_was = S.whitelist_add, S.relay_bound_peers
-_wl_now = set()
-S.whitelist_ips = lambda: set(_wl_now)
-S.whitelist_add = lambda ip, note="": _wl_now.add(ip)
-S.trusted_sources = lambda: {}
-S.tg_send = lambda text, cfg=None, **kw: (_sent.append(text), (True, ""))[1]
+_bound_was, _peers_was = S.relay_bound_peers, S.proc_peers
+_rcfg = {"proxy_ports": [443]}
 
-_gs.clear(); _sent.clear(); _dev.clear(); _wl_now.clear()
-S.proc_peers = lambda ports: {"10.0.0.9": 1837}
-S.relay_bound_peers = lambda: {"10.0.0.9": 900}
-_d = S.relay_drift(_dcfg, now=70000.0)
-check("край с разобранным заголовком внесён сам",
-      _d["autowl"] == ["10.0.0.9"] and "10.0.0.9" in _wl_now, (_d, _wl_now))
-check("и в незащищённые он уже не попал", _d["unprotected"] == [], _d)
-check("но в недоверенных остался — это другой список",
-      _d["undeclared"] == [("10.0.0.9", 1837)], _d)
-check("внесение записано событием",
-      ("whitelist_auto", {"ip": "10.0.0.9", "conns": 1837, "bound": 900}) in _dev,
-      _dev)
-_m = _sent[-1] if _sent else ""
-check("в сообщении сказано, что внесли сами", "10.0.0.9" in _m and
-      ("сами" in _m or "automatically" in _m), _m[:300])
-check("и дана команда убрать, если это не край",
-      "shaperctl whitelist del 10.0.0.9" in _m, _m[:400])
+def _reset_relay_now():
+    S._relay_now.update({"at": 0.0, "ips": frozenset()})
 
-# Главное: белый список не выдаётся за число соединений.
-_gs.clear(); _sent.clear(); _dev.clear(); _wl_now.clear()
-S.proc_peers = lambda ports: {"10.0.0.8": 5000}
+_reset_relay_now()
+S.relay_bound_peers = lambda: {"10.0.0.9": 900, "10.0.0.8": 0}
+S.proc_peers = lambda ports: {"10.0.0.9": 1837, "10.0.0.8": 5000}
+check("край с привязками и соединениями защищён",
+      S.relay_now(_rcfg, now=1000.0) == frozenset({"10.0.0.9"}),
+      S.relay_now(_rcfg, now=1000.0))
+
+# Главное. Тяжёлый прямой клиент держит соединений даже больше края, но
+# заголовков не шлёт — и защиты не получает.
+_reset_relay_now()
 S.relay_bound_peers = lambda: {}
-_d = S.relay_drift(_dcfg, now=80000.0)
-check("без разобранного заголовка в белый список не вносим",
-      _d["autowl"] == [] and _wl_now == set(), (_d, _wl_now))
-check("зато про него сказано как про незащищённого",
-      _d["unprotected"] == [("10.0.0.8", 5000)], _d)
+check("много соединений без привязок защиты не дают",
+      S.relay_now(_rcfg, now=2000.0) == frozenset(), S.relay_now(_rcfg, now=2000.0))
 
-# Одной привязки мало: разовый разбор краем не делает.
-_gs.clear(); _wl_now.clear()
-S.relay_bound_peers = lambda: {"10.0.0.8": 1}
-_d = S.relay_drift(_dcfg, now=90000.0)
-check("одной привязки для внесения мало", _d["autowl"] == [], _d)
+# И наоборот: привязки есть, а соединений сейчас нет. Записи в pp_conn_map
+# переживают соединение, поэтому сами по себе они про прошлое.
+_reset_relay_now()
+S.relay_bound_peers = lambda: {"10.0.0.7": 156}
+S.proc_peers = lambda ports: {}
+check("одних привязок без живых соединений мало",
+      S.relay_now(_rcfg, now=3000.0) == frozenset(), S.relay_now(_rcfg, now=3000.0))
 
-# Выключатель.
-_gs.clear(); _wl_now.clear()
-S.relay_bound_peers = lambda: {"10.0.0.8": 900}
-_off_cfg = dict(_dcfg, relay_autowl=False)
-_d = S.relay_drift(_off_cfg, now=100000.0)
-check("с выключенной автозащитой ничего не вносится",
-      _d["autowl"] == [] and _wl_now == set(), (_d, _wl_now))
-check("и адрес снова числится незащищённым",
-      _d["unprotected"] == [("10.0.0.8", 5000)], _d)
+# Ответ держится пять минут: сторож ходит по кругу каждые несколько секунд,
+# а дамп карты ядра стоит дорого.
+_reset_relay_now()
+_calls = []
+S.relay_bound_peers = lambda: (_calls.append(1), {"10.0.0.9": 900})[1]
+S.proc_peers = lambda ports: {"10.0.0.9": 1837}
+S.relay_now(_rcfg, now=4000.0)
+S.relay_now(_rcfg, now=4000.0 + S.RELAY_NOW_TTL - 1)
+check("в пределах пяти минут карту не дёргаем", len(_calls) == 1, len(_calls))
+S.relay_now(_rcfg, now=4000.0 + S.RELAY_NOW_TTL)
+check("а после — пересчитываем", len(_calls) == 2, len(_calls))
 
-check("автозащита включена по умолчанию",
-      S.load_config().get("relay_autowl") is True)
-check("событие внесения объявлено", "whitelist_auto" in S.EVENT_TYPES)
+# Сорвалось чтение — отдаём прошлый ответ, а не пустоту: пустота сняла бы
+# защиту именно тогда, когда что-то пошло не так.
+def _boom():
+    raise OSError("карта недоступна")
+S.relay_bound_peers = _boom
+check("при отказе держим прошлый ответ, а не снимаем защиту",
+      S.relay_now(_rcfg, now=9000.0) == frozenset({"10.0.0.9"}),
+      S.relay_now(_rcfg, now=9000.0))
 
-S.whitelist_add, S.relay_bound_peers = _wl_add_was, _bound_was
+check("где CDN нет, считать нечего",
+      S.relay_now({"proxy_ports": []}, now=9e9) == frozenset())
+check("белый список нода сама больше не пополняет",
+      not hasattr(S, "relay_autowhitelist"))
+
+S.relay_bound_peers, S.proc_peers = _bound_was, _peers_was
+_reset_relay_now()
 
 S.trusted_sources, S.proc_peers, S.tg_send = _tr_was, _pp_was, _tg_was
 S.whitelist_ips, S.log_event = _wl_was, _log_was

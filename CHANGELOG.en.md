@@ -13,6 +13,30 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.4
+
+**A CDN relay is protected while it works, not by a whitelist entry.**
+
+In 4.3 the node added a relay to the whitelist itself. The signal was a binding in the map of parsed headers: if a PROXY header from an address is parsed, it must be a relay. On a live node the signal turned out to be the wrong one.
+
+The map held eleven addresses with bindings, and five of them have nothing to do with the CDN — ten to twenty-six bindings each, above any sensible threshold. The explanation is simple: on a port with the trust flag the header is believed **from any address**, so anyone can send one and get a binding. That price is stated plainly in 3.77, and here it came due.
+
+For claiming someone else's address within a single connection this really changes nothing — whoever sends the header can do that anyway. But the whitelist is different: it is a **permanent** removal of the limit from all traffic of that address, on every port and under any future settings. A permanent right must not be granted on a signal available to anyone.
+
+The same signal has a second flaw: records outlive their connections. They are removed on RST and on two FINs, while those that died by timeout wait for eviction. On the live node a relay that had moved away still had 156 bindings with zero connections — the signal was speaking about the past.
+
+**Auto-adding is gone.** With it goes the `--relay-autowl` switch: there is nothing left to switch off. Entries 4.3 managed to add stay in the file — they carry a note saying where they came from, and if the address is not your relay, remove it with `whitelist del`.
+
+Instead the watchdog simply **does not penalise an address that is working as a relay at this minute**. The signal has two parts and both are required: bindings in the map — the address speaks PROXY protocol; live connections from `/proc` — it is doing so now. Nothing permanent is granted, no rubbish accumulates, the whitelist stays what a human keeps, and a relay is protected from the first minute of a move.
+
+It is computed at most once every five minutes: the watchdog goes round every few seconds and dumping a kernel map is expensive. If the read fails the previous answer stands — emptiness would mean "there are no relays" and would drop the protection exactly when something went wrong.
+
+**The "not on the whitelist" cause is gone from the divergence message.** It warned about a danger that no longer exists, and a verdict without an occasion is precisely what these messages were fixed for in 4.1.
+
+**On update** nothing needs doing. The protection only runs where ports with the PROXY header are configured.
+
+---
+
 ## 4.3
 
 **The node protects a CDN relay by itself, without waiting for a command.**
