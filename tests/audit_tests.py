@@ -2923,5 +2923,82 @@ check("чужой оператор в разбор не попадает",
       S.censor_blame(S._ASN_TABLE, _bbase, _bcur, "МТС") == [])
 
 
+# ── Нода за CDN, которой не задали порт PROXY ──────────────────────────
+# Три переустановки подряд порт забывали: чистый конфиг его не содержит, а в
+# меню пункта не было. Лимит на одного при этом делился на всех клиентов края,
+# и ни одна проверка не говорила ничего. Числа из боевых замеров: 416
+# соединений с одного края, 1837 и 91 — с двух.
+_cs_was = S.proc_peers
+_ccfg = {"ports": [443], "proxy_ports": []}
+
+S.proc_peers = lambda ports: {"10.0.0.9": 416}
+_s = S.cdn_suspect(_ccfg)
+check("один край на порту без PROXY замечен",
+      _s == {"ports": [443], "total": 416, "top": [("10.0.0.9", 416)]}, _s)
+_h = S.cdn_hint_lines(_ccfg)
+check("подсказка — три строки: цифры, причина, команда", len(_h) == 3, _h)
+check("в цифрах адрес и число соединений",
+      "10.0.0.9" in _h[0] and "416" in _h[0], _h[:1])
+check("команда названа целиком и с портом",
+      "shaperctl apply --proxy-ports 443" in _h[2], _h[2:])
+
+S.proc_peers = lambda ports: dict({"10.0.0.9": 1837, "10.0.0.8": 91},
+                                  **{"10.1.0.%d" % i: 1 for i in range(20)})
+_s = S.cdn_suspect(_ccfg)
+check("два края названы оба, гости рядом не мешают",
+      _s and _s["top"] == [("10.0.0.9", 1837), ("10.0.0.8", 91)], _s)
+check("про два адреса сказано во множественном числе",
+      "10.0.0.8" in S.cdn_hint_lines(_ccfg)[0], S.cdn_hint_lines(_ccfg)[:1])
+
+S.proc_peers = lambda ports: dict({"10.0.0.9": 416, "10.0.0.7": 2})
+_s = S.cdn_suspect(_ccfg)
+check("случайный гость вторым краем не считается",
+      _s and _s["top"] == [("10.0.0.9", 416)], _s)
+
+S.proc_peers = lambda ports: {"10.2.%d.%d" % (i // 250, i % 250): 2
+                              for i in range(300)}
+check("прямая нода: соединения размазаны по адресам — молчим",
+      S.cdn_suspect(_ccfg) is None, S.cdn_suspect(_ccfg))
+check("и подсказки на прямой ноде нет", S.cdn_hint_lines(_ccfg) == [])
+
+S.proc_peers = lambda ports: dict({"10.0.0.9": 300},
+                                  **{"10.1.0.%d" % i: 2 for i in range(100)})
+check("край вперемешку с прямыми клиентами — не наш случай",
+      S.cdn_suspect(_ccfg) is None, S.cdn_suspect(_ccfg))
+
+S.proc_peers = lambda ports: {"10.0.0.9": 30}
+check("маленькая нода с одним клиентом не выглядит нодой за CDN",
+      S.cdn_suspect(_ccfg) is None, S.cdn_suspect(_ccfg))
+
+S.proc_peers = lambda ports: {"10.0.0.9": 416}
+check("порт PROXY уже задан — говорить не о чем",
+      S.cdn_suspect({"ports": [443], "proxy_ports": [443]}) is None)
+check("лимит на все порты: флаг вешать не на что",
+      S.cdn_suspect({"ports": [0], "proxy_ports": []}) is None)
+
+_seen_ports = []
+S.proc_peers = lambda ports: (_seen_ports.append(set(ports)), {"10.0.0.9": 416})[1]
+_s = S.cdn_suspect({"ports": [443, 8443], "proxy_ports": [443]})
+check("смотрим только порты без флага",
+      _seen_ports == [{8443}] and _s and _s["ports"] == [8443],
+      (_seen_ports, _s))
+
+def _boom(ports):
+    raise OSError("нет /proc")
+S.proc_peers = _boom
+check("сбой чтения /proc подсказку не роняет",
+      S.cdn_suspect(_ccfg) is None and S.cdn_hint_lines(_ccfg) == [])
+S.proc_peers = _cs_was
+
+# Пресет «Нода за CDN» в меню: порт PROXY раньше задавался только командой.
+_menu = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "..", "menu.sh"), encoding="utf-8").read()
+check("пресет CDN включает порт PROXY на ограничиваемых портах",
+      '"$CTL" apply --proxy-ports "$pports" --quiet' in _menu)
+check("выключение пресета по умолчанию «нет»",
+      '[[ "$ans" =~ ^[YyДд] ]] || continue' in _menu)
+check("главный экран показывает порт PROXY", "${T[st_pp]} ${pp}" in _menu)
+
+
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

@@ -271,6 +271,10 @@ MSG = {
         "pp_ports": "PROXY",
         "pp_hint": "— на этих портах заголовку верят от любого адреса",
         "pp_not_shaped": "порт {p} не в списке ограничиваемых — доверять PROXY там не на чем",
+        "cdn_hint_one": "на портах {ports} сейчас {total} соединений, из них {n} с одного адреса {ip}",
+        "cdn_hint_two": "на портах {ports} сейчас {total} соединений, из них {n} с двух адресов: {ips}",
+        "cdn_hint_why": "если нода стоит за CDN, это его край: порт PROXY не задан, и один лимит делится на всех, кто за ним",
+        "cdn_hint_fix": "включить: shaperctl apply --proxy-ports {ports}   или пресет «Нода за CDN» в меню",
         "h_proxy_ports": "порты, где заголовку PROXY верят от любого адреса (только для портов CDN)",
         "eth_off": "НИЧЕГО НЕ ОГРАНИЧИВАЕТСЯ: {iface} не Ethernet (type={t})",
         "eth_fix": "фильтр читает L2-заголовок, а на туннельных и tun-устройствах его нет. Задайте физический интерфейс в IFACE",
@@ -820,6 +824,10 @@ MSG = {
         "pp_ports": "PROXY",
         "pp_hint": "— on these ports the header is trusted from any address",
         "pp_not_shaped": "port {p} is not in the shaped list — there is nothing to trust PROXY on",
+        "cdn_hint_one": "ports {ports} carry {total} connections right now, {n} of them from the single address {ip}",
+        "cdn_hint_two": "ports {ports} carry {total} connections right now, {n} of them from two addresses: {ips}",
+        "cdn_hint_why": "if this node sits behind a CDN, that is its edge: no PROXY port is set, so one limit is shared by everyone behind it",
+        "cdn_hint_fix": "enable: shaperctl apply --proxy-ports {ports}   or the “Node behind a CDN” preset in the menu",
         "h_proxy_ports": "ports where the PROXY header is trusted from any address (CDN ports only)",
         "eth_off": "NOTHING IS LIMITED: {iface} is not Ethernet (type={t})",
         "eth_fix": "the filter reads an L2 header, and tunnel or tun devices have none. Set a physical interface in IFACE",
@@ -2050,6 +2058,13 @@ def cmd_show(a):
         pp = ", ".join(map(str, cfg["proxy_ports"]))
         print(f"  {t('pp_ports'):<9}: {pp} {C['gry']}{t('pp_hint')}{C['r']}")
         print(f"  {'':<9}  {C['gry']}{t('relay_prot')}{C['r']}")
+    # Нода за CDN без порта PROXY выглядит здоровой во всём остальном:
+    # шейпер работает, лимит стоит, а делится он на всех клиентов разом.
+    hint = cdn_hint_lines(cfg)
+    if hint:
+        print(f"  {C['yel']}⚠ {hint[0]}{C['r']}")
+        for line in hint[1:]:
+            print(f"    {C['gry']}{line}{C['r']}")
     # Предупреждение стоит здесь, на самом ходовом экране: нода без fq
     # выглядит здоровой во всём остальном, и заметить это больше негде.
     ready, bad = edt_ready()
@@ -6595,6 +6610,73 @@ def relay_peers(cfg):
                    for ip, n in proc_peers(ports).items()}
 
 
+# Нода за CDN, которой забыли сказать, что она за CDN.
+#
+# Чистая установка порта PROXY не задаёт, и задать его можно было только
+# командой: в меню такого пункта не было. На новом сервере это забывали три
+# раза подряд, и каждый раз одинаково: лимит и автоограничение включены
+# пресетом, а все клиенты приходят с адреса края — в мониторе один адрес при
+# полутора сотнях в панели, и лимит на одного делится на всех. Ни одна
+# проверка этого не видела: и сторож смены релея, и защита края выходят
+# первой строкой, когда порт PROXY пуст.
+#
+# Признак берётся из того же /proc: на прямой ноде соединения размазаны по
+# сотням адресов, за CDN почти все идут с одного-двух. Сама нода ничего не
+# включает — флаг означает доверие заголовку от любого адреса, и такое
+# решение принимает владелец. Она только называет цифры.
+#
+# Пороги. Пятьдесят соединений — чтобы нода с одним-двумя клиентами не
+# выглядела как нода за CDN; девять десятых — потому что рядом с краем на
+# порту всегда есть сканеры и случайные гости. Краёв бывает два (на боевой
+# ноде 1837 и 91 соединение), поэтому складываем двух первых.
+CDN_HINT_MIN_CONNS = 50
+CDN_HINT_SHARE     = 0.9
+
+
+def cdn_suspect(cfg):
+    """
+    Похоже ли, что нода стоит за CDN, а порт PROXY не задан.
+
+    Возвращает {"ports", "total", "top": [(адрес, соединений), …]} или None.
+    Наружу не ходит и ошибок не выпускает.
+    """
+    def _ports(key):
+        return {int(x) for x in (cfg.get(key) or [])
+                if str(x).isdigit() and int(x) > 0}
+    ports = _ports("ports") - _ports("proxy_ports")
+    if not ports:
+        return None
+    try:
+        peers = proc_peers(ports)
+    except Exception:
+        return None
+    total = sum(peers.values())
+    if total < CDN_HINT_MIN_CONNS:
+        return None
+    top = sorted(peers.items(), key=lambda kv: (-kv[1], kv[0]))[:2]
+    # Второй адрес берём, только если он сам похож на край, а не на гостя.
+    top = top[:1] + [x for x in top[1:] if x[1] >= DRIFT_MIN_CONNS]
+    if sum(n for _ip, n in top) < total * CDN_HINT_SHARE:
+        return None
+    return {"ports": sorted(ports), "total": total, "top": top}
+
+
+def cdn_hint_lines(cfg):
+    """Строки подсказки для экрана. Пустой список — говорить не о чем."""
+    s = cdn_suspect(cfg)
+    if not s:
+        return []
+    ports = ",".join(map(str, s["ports"]))
+    n = sum(c for _ip, c in s["top"])
+    if len(s["top"]) == 1:
+        head = t("cdn_hint_one", ports=ports, total=s["total"], n=n,
+                 ip=s["top"][0][0])
+    else:
+        head = t("cdn_hint_two", ports=ports, total=s["total"], n=n,
+                 ips=", ".join(ip for ip, _c in s["top"]))
+    return [head, t("cdn_hint_why"), t("cdn_hint_fix", ports=ports)]
+
+
 def relay_bound_peers():
     """
     Адреса, чей заголовок PROXY нода разобрала сама: {адрес: сколько привязок}.
@@ -8744,6 +8826,13 @@ def cmd_trusted(a):
         ports, peers = relay_peers(cfg)
         if not ports:
             print(f"  {C['gry']}{t('trc_off')}{C['r']}")
+            # «Сверять не с чем» — правда, но не вся: порт мог остаться
+            # незаданным на ноде, которая за CDN стоит.
+            hint = cdn_hint_lines(cfg)
+            if hint:
+                print(f"  {C['yel']}⚠ {hint[0]}{C['r']}")
+                for line in hint[1:]:
+                    print(f"    {C['gry']}{line}{C['r']}")
             return
         plist = ", ".join(str(p) for p in sorted(ports))
         if not peers:

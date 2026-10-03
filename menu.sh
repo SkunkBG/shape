@@ -94,7 +94,7 @@ screen_lang() {
 # Все значения читаются одним вызовом python: экран перерисовывается часто,
 # плодить по семь процессов на кадр незачем. Разделитель — вертикальная черта.
 read_state() {
-    python3 - <<'PY' 2>/dev/null || echo "0|?|0|50|15|10|1|60|3|50|0|0"
+    python3 - <<'PY' 2>/dev/null || echo "0|?|0|50|15|10|1|60|3|50|0|0|"
 import json
 try:
     c = json.load(open("/etc/shaper/config.json"))
@@ -115,12 +115,13 @@ print("|".join([
     f"{g['penalty_mbps']:g}", f"{g['penalty_min']:g}", f"{g['score_needed']:g}",
     f"{g['download_gb_per_day']:g}", f"{g['download_gb_per_hour']:g}",
     f"{g['upload_ratio_percent']:g}",
+    ", ".join(map(str, c.get("proxy_ports") or [])),
 ]))
 PY
 }
 
 status_line() {
-    local ifc speed ports g_on bdl bul bmin pen dur score dgb dgbh urp
+    local ifc speed ports g_on bdl bul bmin pen dur score dgb dgbh urp pp
     local dlv ulv vol
     local auto_on=0 run_on=0
 
@@ -131,7 +132,7 @@ status_line() {
     [[ -z "$ifc" ]] && ifc="$(ip route get 1.1.1.1 2>/dev/null |
                               sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)"
 
-    IFS='|' read -r speed ports g_on bdl bul bmin pen dur score dgb dgbh urp \
+    IFS='|' read -r speed ports g_on bdl bul bmin pen dur score dgb dgbh urp pp \
         <<< "$(read_state)"
     [[ "$ports" == "*" ]] && ports="${T[st_all]}"
 
@@ -152,7 +153,14 @@ status_line() {
     else
         echo -e "  🚀  ${T[st_speed]} ${B}${speed} Mbit/s${N} ${D}${T[st_peruser]}${N}"
     fi
-    echo -e "  🔌  ${T[st_port]} ${B}${ports}${N}"
+    # Порт PROXY на главном экране: без него нода за CDN выглядит здоровой,
+    # а лимит на одного делится на всех клиентов края. Заметить это больше
+    # было негде — три переустановки подряд порт забывали задать.
+    if [[ -n "$pp" ]]; then
+        echo -e "  🔌  ${T[st_port]} ${B}${ports}${N}   ${D}${T[st_pp]} ${pp}${N}"
+    else
+        echo -e "  🔌  ${T[st_port]} ${B}${ports}${N}"
+    fi
 
     if [[ "$g_on" == "1" ]]; then
         if [[ "$speed" == "0" ]]; then
@@ -352,7 +360,7 @@ guard_preset() {
     # Поэтому каждый пресет настраивает политику ноды целиком, включая
     # раздачу. Настраивать её отдельно на другом экране означало забыть
     # половину — что и происходило.
-    local speed ans gbh gbd full soft
+    local speed ans gbh gbd full soft pports pp_now
     speed="$(cfg speed_mbps 0)"
     while :; do
         title "${T[gp_title]}"
@@ -366,6 +374,20 @@ guard_preset() {
         echo -e "  ${B}[2]${N} 🖥  ${T[gp_home]}"
         echo -e "      ${D}${T[gp_home_d1]}${N}"
         echo -e "      ${D}${T[gp_home_d2]}${N}"
+        echo
+        # Третий пресет не про клиентов, а про то, где стоит нода, и потому
+        # ставится поверх любого из двух. Отдельной строкой он здесь затем,
+        # что порт PROXY нельзя было задать из меню вовсе — только командой,
+        # и на новом сервере про неё забывали.
+        pp_now="$(cfg proxy_ports '[]' | tr -d '[] ')"
+        echo -e "  ${D}${T[gp_cdn_over]}${N}"
+        echo -e "  ${B}[3]${N} 🌐 ${T[gp_cdn]}"
+        echo -e "      ${D}${T[gp_cdn_d1]}${N}"
+        if [[ -n "$pp_now" ]]; then
+            echo -e "      ${G}${T[gp_cdn_on]} ${pp_now}${N}"
+        else
+            echo -e "      ${D}${T[gp_cdn_d2]}${N}"
+        fi
         echo
         echo -e "  ${B}[0]${N} ← ${T[m0]}"
         echo
@@ -411,6 +433,44 @@ guard_preset() {
                "$CTL" panel set --threshold 20 --window 10 \
                    --minutes 60 --per-device 4 --action-set block >/dev/null || true
                echo -e "  ${G}✓ ${T[gp_done]}${N}"
+               pause; return ;;
+
+            3) pports="$(cfg ports '[443]' | tr -d '[] ')"
+               echo
+               if [[ -n "$pp_now" ]]; then
+                   # Уже включено: показываем, кто подключён, и даём выключить.
+                   # Выключение по умолчанию «нет» — на ноде за CDN оно в ту
+                   # же секунду сложит всех клиентов в один лимит.
+                   "$CTL" trusted check
+                   echo
+                   echo -e "  ${Y}${T[gp_cdn_off_w]}${N}"
+                   read -rp "  ${T[gp_cdn_off_q]}: " ans
+                   [[ "$ans" =~ ^[YyДд] ]] || continue
+                   "$CTL" apply --proxy-ports "" --quiet || { pause; continue; }
+                   echo -e "  ${G}✓ ${T[gp_cdn_off_done]}${N}"
+                   pause; return
+               fi
+               if [[ -z "$pports" || "$pports" == "0" ]]; then
+                   # Флаг вешается на порт, а «все порты» — это не порт.
+                   echo -e "  ${Y}${T[gp_cdn_allports]}${N}"
+                   pause; continue
+               fi
+               echo -e "  ${T[gp_will]}:"
+               echo -e "  ${D}  · ${T[gp_cdn_w1]} ${B}${pports}${N}"
+               echo -e "  ${D}  · ${T[gp_cdn_w2]}${N}"
+               echo -e "  ${D}  · ${T[gp_cdn_w3]}${N}"
+               echo
+               echo -e "  ${D}${T[gp_cdn_need]}${N}"
+               echo -e "  ${D}${T[gp_cdn_cost]}${N}"
+               echo
+               # Факты с самой ноды: сколько соединений и с каких адресов.
+               "$CTL" trusted check
+               echo
+               read -rp "  ${T[apply_q]}: " ans
+               [[ "$ans" =~ ^[NnНн] ]] && continue
+               "$CTL" apply --proxy-ports "$pports" --quiet || { pause; continue; }
+               echo -e "  ${G}✓ ${T[gp_cdn_done]}${N}"
+               echo -e "  ${D}${T[gp_cdn_after]}${N}"
                pause; return ;;
 
             2) # Домашний канал шире мобильного в пять-десять раз, и фиксированный

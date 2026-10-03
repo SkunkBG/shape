@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-4.4-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.5-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v4.4
+# Shape v4.5
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -630,7 +630,7 @@ hour — half of a three-gigabyte threshold — so you can watch all day.
 That is why the hourly rule should be the main one and the daily one should be
 kept high, purely as a backstop.
 
-### Presets: two, by node type
+### Presets: two by node type and one for a CDN
 
 Both do the same job — torrents and shared subscriptions. Only the channel
 differs, and what sits behind it.
@@ -683,6 +683,29 @@ window is then capped by the node, not by the setting.
 A preset configures **both the auto-limiter and sharing** at once. Leaving the
 other half of the policy to a different screen meant forgetting it — which is
 exactly what happened.
+### The third preset: a node behind a CDN
+
+It is not about clients but about where the node sits, so it goes **on top of
+either of the two**. On a node behind a CDN every client arrives from the edge
+address, and the real one is in the PROXY header. Until the node reads that
+header it sees one client instead of a hundred and fifty — and one client's
+limit is shared by all of them.
+
+The preset turns header parsing on for every shaped port — the same thing as
+`shaperctl apply --proxy-ports 443`. A clean install does not do this: the flag
+means trusting the header from any address, and it must not be set on a node
+nothing is known about.
+
+The CDN has to send PROXY protocol and the Xray inbound has to accept it. The
+price is the one named in the section on clients behind a CDN: there must be no
+direct clients on these ports.
+
+**The node notices when the preset was forgotten.** If a shaped port carries
+fifty connections or more, nine tenths of them come from one or two addresses,
+and no PROXY port is set, `shaperctl show` and `shaperctl trusted check` state
+the numbers and the command. The node switches nothing on by itself. An enabled
+port is shown in the menu header next to the port.
+
 ### A Steam purchase is not a torrent
 
 An hourly threshold set as a share of the channel fires **after exactly thirty

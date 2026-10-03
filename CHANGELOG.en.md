@@ -13,6 +13,28 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.5
+
+**A “Node behind a CDN” preset — and the node notices when it was forgotten.**
+
+On a node behind a CDN every client arrives from the edge address, and the real one is in the PROXY header. For the node to read it a port needs the trust flag — `shaperctl apply --proxy-ports 443`. A clean install does not set it, and rightly so: the flag means trusting the header from any address. But it could **only** be set from the command line — the menu had no such item at all.
+
+Hence the rake that was stepped on three times in a row. The server changes, the shaper is installed afresh, the limit and the auto-limiter are switched on by a preset from the menu, and nobody remembers the command. The node meanwhile looks healthy in every respect: the shaper runs, the limit is in place. Only the monitor shows one address against a hundred and fifty in the panel, and ten megabits for one client are shared by all of them.
+
+No check saw this. Both the relay-change watchdog and the relay protection from 4.4 return on their first line when no PROXY port is set — that is, they stay silent exactly where it is empty by mistake. The edge is not protected from the auto-limiter either.
+
+**A third preset.** The presets screen gained a “Node behind a CDN” item. It is not about clients but about where the node sits, so it goes on top of the phone or the home preset. It turns header parsing on for every shaped port, and before that states what will be set, what it needs and what it costs, and shows who is connected right now. Entering the item again shows the state and offers to turn it off — the default is “no”: on a node behind a CDN turning it off puts every client under one limit at once.
+
+**The node notices by itself.** The signal comes from `/proc` and makes no outside calls: on a direct node connections are spread over hundreds of addresses, behind a CDN almost all come from one or two. If a shaped port carries fifty connections or more, nine tenths of them from one or two addresses, and no PROXY port is set, `shaperctl show` and `shaperctl trusted check` state the numbers, the reason and the full command. The second address counts as an edge only if it holds five connections or more: there is always a stray guest next to an edge.
+
+The node switches nothing on by itself. It is numbers and a hint only: a port with one heavy client looks similar, and the decision stays with the owner.
+
+**The PROXY port is shown in the menu header**, next to the port. The main screen used to say nothing about it, and the only way to tell whether it was set was a command.
+
+**On upgrade** nothing needs doing and nothing changes: settings stay as they were. On a node behind a CDN with the port already set, the header gains a line about it. On a node where the port was forgotten, `shaperctl show` will say so.
+
+---
+
 ## 4.4
 
 **A CDN relay is protected while it works, not by a whitelist entry.**
