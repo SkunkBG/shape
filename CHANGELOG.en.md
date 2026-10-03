@@ -13,6 +13,18 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.6
+
+**The “Node behind a CDN” preset no longer turns anything off.**
+
+In 4.5 entering the preset a second time showed the state and asked “turn off?”. It was meant as a convenience and turned out to be a trap. A preset is chosen to switch something on: a person opens the item to make sure everything is in place, sees a question, answers “yes” — and the node behind a CDN puts every client back under one limit that very second. Defaulting to “no” did not help: a question that looks like a confirmation gets a yes.
+
+An already enabled preset now says “already enabled, nothing to change”, shows who is connected and names the command that turns it off — `shaperctl apply --proxy-ports ""`. It cannot be turned off from the menu at all: an action that chokes every client on a live node at once must not sit one keypress away from “enable”.
+
+**On upgrade** nothing needs doing. If the PROXY port on a node behind a CDN ended up switched off, `shaperctl show` will say so — apply the preset again.
+
+---
+
 ## 4.5
 
 **A “Node behind a CDN” preset — and the node notices when it was forgotten.**

@@ -2995,8 +2995,13 @@ _menu = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "..", "menu.sh"), encoding="utf-8").read()
 check("пресет CDN включает порт PROXY на ограничиваемых портах",
       '"$CTL" apply --proxy-ports "$pports" --quiet' in _menu)
-check("выключение пресета по умолчанию «нет»",
-      '[[ "$ans" =~ ^[YyДд] ]] || continue' in _menu)
+# В 4.5 повторный вход в пресет спрашивал «выключить?» — и его выключали,
+# думая, что включают. Пресет не должен уметь выключать вообще.
+check("пресет CDN из меню ничего не выключает",
+      'apply --proxy-ports ""' not in _menu
+      and 'gp_cdn_off_q' not in _menu, "в меню остался путь выключения")
+check("уже включённый пресет говорит об этом и называет команду",
+      "T[gp_cdn_already]" in _menu and "T[gp_cdn_off_cmd]" in _menu)
 check("главный экран показывает порт PROXY", "${T[st_pp]} ${pp}" in _menu)
 
 
