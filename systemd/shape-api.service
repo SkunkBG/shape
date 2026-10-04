@@ -7,14 +7,18 @@ Documentation=https://github.com/SkunkBG/shape
 # ни в одну сторону: API сам сообщает клиенту 503, если движок не поднят.
 After=network.target shaper.service
 
+# Флуд запросами не должен превратиться в бесконечный перезапуск.
+# Обе строки живут в [Unit], а не в [Service]: там systemd ключ
+# StartLimitIntervalSec не знает и молча его пропускает — потолок не
+# действовал, пока строки стояли ниже.
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
 [Service]
 Type=simple
 ExecStart=/opt/shaper/api/server.py
 Restart=always
 RestartSec=5
-# Флуд запросами не должен превратиться в бесконечный перезапуск.
-StartLimitIntervalSec=60
-StartLimitBurst=10
 
 # Права root нужны только для чтения и записи карт BPF через bpftool.
 # Всё остальное закрываем. Своего пространства монтирования это не мешает

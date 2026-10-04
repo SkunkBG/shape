@@ -362,7 +362,7 @@ echo -e "\n${B}Выбор действия для раздачи${N}"
 check "действие выбирается списком, а не вводом строки" \
       '! grep -q "ask \"\${T\[pn_set_act\]}\" \"\$act\"" "$SRC/menu.sh"'
 for a in notify drop limit block; do
-    check "в списке есть «$a»" \
+    check "в списке есть «${a}»" \
           "grep -qE -- '--action-set $a +>' \"\$SRC/menu.sh\""
 done
 check "у каждого пункта есть пояснение" \
@@ -482,6 +482,16 @@ check "экран доступен из белого списка" \
 check "туннель и релей добавляются разными ключами" \
       'grep -q "trusted add .* --tunnel" "$SRC/menu.sh" &&
        grep -q "trusted add .* --relay" "$SRC/menu.sh"'
+
+# Потолок перезапусков systemd читает только из [Unit]. В [Service] ключ
+# StartLimitIntervalSec он не знает и пропускает с одной строкой в журнале —
+# сторож и API жили без потолка, пока это не всплыло на живой ноде.
+check "потолок перезапусков не лежит в [Service]" \
+      '! awk "/^\[Service\]/{s=1} /^\[(Unit|Install)\]/{s=0} s && /^StartLimit/{f=1} END{exit !f}" \
+           "$SRC"/systemd/*.service'
+check "у сторожа потолок задан в [Unit]" \
+      'awk "/^\[Unit\]/{u=1} /^\[Service\]/{u=0} u && /^StartLimitIntervalSec=300/{f=1} END{exit !f}" \
+           "$SRC/systemd/shaper-watch.service"'
 
 echo -e "\n${B}Итог: $ok пройдено, $fail провалено${N}"
 [[ $fail -eq 0 ]]

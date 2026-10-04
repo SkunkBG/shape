@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.8
+
+**The restart cap for the watchdog and the API finally takes effect.**
+
+The auto-limit watchdog has a cap written into its unit: no more than ten restarts in five minutes. It is there so that a recurring error — a full penalty map, a `bpftool` failure — does not turn into an endless loop every fifteen seconds. The API has the same, over one minute.
+
+Neither worked. The lines sat in the `[Service]` section, while systemd reads `StartLimitIntervalSec` only from `[Unit]`: it skips an unknown key with one line in the journal and carries on. This was found on a live node during an upgrade — the journal said `Unknown key 'StartLimitIntervalSec' in section [Service], ignoring` three times in a row.
+
+The lines were moved to `[Unit]` in both files. The test suite now checks that no service file keeps the cap in `[Service]`.
+
+**What changes in behaviour.** A watchdog that keeps crashing will stop after the tenth restart within five minutes and stay in the `failed` state — it used to restart forever. Auto-limiting does not work until the watchdog is started by hand: `systemctl reset-failed shaper-watch && systemctl start shaper-watch`. The shaper is not affected: the speed limit is held by the engine, not the watchdog.
+
+**On upgrade** nothing needs doing, the installer puts the new unit files in place.
+
+---
+
 ## 4.7
 
 **The shaper no longer overwrites the departure time set by TCP.**
