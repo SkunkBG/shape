@@ -118,6 +118,16 @@ static int run_pkt(int len, int direction) {
     return direction == 0 ? shaper_down(&skb) : shaper_up(&skb);
 }
 
+/* То же, но у пакета уже стоит время отправки — как у TCP, которому pacing
+ * назначил его ещё до qdisc. */
+static int run_pkt_ts(int len, int direction, unsigned long long ts) {
+    skb.data = (unsigned long)pkt;
+    skb.data_end = (unsigned long)pkt + len;
+    skb.len = len;
+    skb.tstamp = ts;
+    return direction == 0 ? shaper_down(&skb) : shaper_up(&skb);
+}
+
 /* IPv4 + TCP/UDP. frag_off — сырое значение поля (в хостовом порядке). */
 static int build_v4(unsigned proto, unsigned sport, unsigned dport,
                     unsigned frag_off, int payload, unsigned dst, unsigned src)
@@ -774,6 +784,50 @@ int main(void)
     }
     check("переполненное ведро отдачи роняет пакет", ushot);
     check("и этот дроп посчитан", stat_get(STAT_UP_DROP) > 0);
+
+    /* Время отправки, назначенное самим TCP, шейпер затирать не вправе.
+     *
+     * Живой случай: лимит 100 Мбит/с, один поток к клиенту идёт 4–10 Мбит/с
+     * при канале ноды в гигабит. У TCP-пакета на egress уже стоит время
+     * отправки — его назначил pacing. Шейпер ставил вместо него своё,
+     * «сейчас плюс длина на скорость», то есть почти сейчас, и пакет уходил
+     * раньше, чем считал TCP. RTT ядро меряет от запланированного времени,
+     * поэтому выходило «настоящий RTT минус задержка pacing»: min_rtt 0,5–1 мс
+     * при настоящих 85. BBR считает окно как скорость на min_rtt — и окно
+     * схлопывалось до десятков пакетов. */
+    printf("\n\033[1mВремя отправки, назначенное TCP\033[0m\n");
+    struct config fast = { .bytes_per_sec = 100 * 125000 };    /* 100 Мбит/с */
+    map_put(&config_map, &zero, &fast);
+    unsigned PACED = v4("203.0.113.240");
+    fake_now = 9000000000ULL;
+    len = build_v4(IPPROTO_TCP, 443, 53000, 0, 1400, PACED, SERVER);
+    run_pkt(len, 0);                                /* завести запись */
+
+    unsigned long long tcp_edt = fake_now + 20000000ULL;        /* +20 мс */
+    run_pkt_ts(len, 0, tcp_edt);
+    check("пакет не уходит раньше времени, назначенного TCP",
+          skb.tstamp == tcp_edt);
+
+    /* Свой учёт шейпера при этом идёт своим шагом: pacing одного потока не
+     * должен задерживать остальные потоки того же адреса. */
+    run_pkt(len, 0); t0 = skb.tstamp;
+    check("учёт шейпера не уехал вслед за временем TCP",
+          t0 < fake_now + 1000000ULL);
+
+    /* Когда шейпер строже TCP, решает шейпер — лимит должен держаться. */
+    run_pkt_ts(len, 0, fake_now); t1 = skb.tstamp;
+    check("время TCP раньше нашего — ставим своё", t1 > t0);
+    run_pkt_ts(len, 0, fake_now - 5000000ULL);
+    check("время в прошлом — ставим своё", skb.tstamp > t1);
+
+    /* В поле может лежать и не время отправки: у пересланного пакета там
+     * бывает отметка приёма по настенным часам. Поверить ей значило бы
+     * отложить пакет на годы — fq выбросил бы его за горизонтом. */
+    t0 = skb.tstamp;
+    run_pkt_ts(len, 0, 1700000000000000000ULL);
+    check("время за горизонтом не принимается на веру",
+          skb.tstamp > t0 && skb.tstamp < fake_now + 1000000ULL);
+    map_put(&config_map, &zero, &cfg);
 
     printf("\n\033[1mИтог: %d пройдено, %d провалено\033[0m\n", ok, fail);
     return fail ? 1 : 0;

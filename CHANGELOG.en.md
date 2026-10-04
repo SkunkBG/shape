@@ -13,6 +13,28 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.7
+
+**The shaper no longer overwrites the departure time set by TCP.**
+
+On a node with a 100 Mbit/s limit a single flow to a client ran at 4–10 Mbit/s — with a gigabit uplink on the node and 55–68 Mbit/s for the client directly. Video stalled. The same client through the same server over UDP got 22–57 Mbit/s. There were no penalties and the limit was not being reached.
+
+A measurement on the node showed why: `min_rtt` on the connections was 0.5–1 ms against a real 85 ms by ping. Of 62 connections that had sent more than two megabytes, 44 looked like that. The socket meanwhile kept hitting its window while three megabytes waited to be sent.
+
+**The cause is one line.** On egress a TCP packet already carries a departure time: pacing sets it, and `fq` releases the packet exactly then. The shaper put its own in its place — “now plus length over rate”, which with a wide limit is almost “now”. The packet left earlier than TCP believed. The kernel measures RTT from the scheduled time, so the result was “real RTT minus the pacing delay” — down to fractions of a millisecond. BBR sizes its window as rate times `min_rtt`: at one millisecond that is a few dozen packets, and the flow is then capped not by the limit but by that window.
+
+The wider the limit relative to what the client can pull, the stronger the effect: while the shaper is itself the bottleneck, its time is later than TCP's and there is almost no distortion. UDP was not affected at all — that field is empty there and the application sets the pace.
+
+**Now the later of the two times is used.** If TCP set a time later than ours, it stays. If earlier, ours goes in as before. The limit and the penalties hold exactly as they did: a packet never leaves before our time. The shaper keeps its own accounting at its own step, otherwise the pacing of one flow would delay the other flows of the same address.
+
+A time further than the two-second horizon is not taken on trust: that field sometimes holds not a departure time but a wall-clock receive stamp, and believing it would park the packet for years.
+
+**Verified on the test bench**, not on a live node: a packet with a time already set passes untouched, the limit still holds, rubbish in the field is rejected. The cause of the slowdown was derived from a measurement and the code; at release time it has not been confirmed by a direct experiment on the node — that is the first thing to do after upgrading: `ss -tin` on busy connections should show a `minrtt` close to ping.
+
+**On upgrade** the engine is reloaded, as with any eBPF change. Struct layouts did not change, so bindings of clients behind a CDN are restored as usual.
+
+---
+
 ## 4.6
 
 **The “Node behind a CDN” preset no longer turns anything off.**
