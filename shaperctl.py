@@ -6775,7 +6775,7 @@ def relay_drift(cfg, now=None):
     seen = {ip: ts for ip, ts in seen.items()
             if ip in trusted or now - float(ts or 0) < DRIFT_STALE_AFTER}
 
-    for ip, (n, tr, wl) in sorted(peers.items(), key=lambda kv: -kv[1][0]):
+    for ip, (n, tr, _wl) in sorted(peers.items(), key=lambda kv: -kv[1][0]):
         if n < DRIFT_MIN_CONNS:
             continue
         if not tr:
