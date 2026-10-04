@@ -279,8 +279,10 @@ check "мобильный остаётся на 35" \
       'grep -qE -- "--upload-ratio 35 --upload-ratio-mb 300" "$SRC/menu.sh"'
 check "у каждого пресета своя строка про пропорцию" \
       'grep -q "gp_w_ratio50" "$SRC/menu.sh" && grep -q "gp_w_ratio\]" "$SRC/lang.sh"'
+# Три вопроса: мобильный, домашний и «нода за CDN» (с 4.5). Каждый пресет
+# сначала показывает, что поставит, и только потом спрашивает.
 check "числа показываются до применения" \
-      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 2 ]]'
+      '[[ $(sed -n "/^guard_preset()/,/^}/p" "$SRC/menu.sh" | grep -c "apply_q") -eq 3 ]]'
 check "после применения сказано, что настроено всё" \
       '[[ $(grep -c "gp_done" "$SRC/menu.sh") -eq 2 ]]'
 
