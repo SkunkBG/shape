@@ -3542,6 +3542,22 @@ def guard_state_save(state):
         pass
 
 
+def guard_state_merge(notified, owners, noticed, upd):
+    """
+    Сохранить свою часть состояния сторожа, не трогая чужую.
+
+    В том же файле держат память периодические проверки: clients_watch,
+    censor_watch, relay_watch, relay_drift, cdn_quota_watch. Сторож писал
+    файл целиком из своих четырёх ключей — и каждый штраф или уведомление
+    стирали им всё накопленное: история замеров начиналась заново, отсчёт
+    суток у протухших записей сбрасывался, а уже сказанное говорилось снова.
+    """
+    state = guard_state()
+    state.update({"notified": {k: list(v) for k, v in notified.items()},
+                  "owners": owners, "noticed": noticed, "update": upd})
+    guard_state_save(state)
+
+
 def owner_remember(cache, ip, who, now=None):
     """Запомнить владельца адреса: панель знает его только пока он на ноде."""
     if not isinstance(who, dict) or not who:
@@ -3703,10 +3719,7 @@ def cmd_watch(a):
             # Раз в шесть часов, и только если что-то изменилось: сохраняем
             # состояние проверки обновлений тем же файлом, что и остальное.
             if update_due(cfg, upd):
-                guard_state_save({"notified": {k: list(v) for k, v
-                                               in notified.items()},
-                                  "owners": owners_seen, "noticed": noticed,
-                                  "update": upd})
+                guard_state_merge(notified, owners_seen, noticed, upd)
             # Опрос панели. Сторож она не роняет — внутри свой дедлайн и
             # своя пауза после ошибки. Но проход растягивает: POST плюс опрос
             # задачи до PANEL_JOB_DEADLINE, причём дедлайн проверяется ПОСЛЕ
@@ -3886,10 +3899,7 @@ def cmd_watch(a):
                                       subject=(nwho or {}).get("label"))
                             tg_upload_hours(cfg, ip, subject=nsubject,
                                             unknown=nunknown, day=d)
-                    guard_state_save({"notified": {k: list(v) for k, v
-                                                   in notified.items()},
-                                      "owners": owners_seen,
-                                      "noticed": noticed, "update": upd})
+                    guard_state_merge(notified, owners_seen, noticed, upd)
 
                 # счётчики с допуском: короткий провал не обнуляет наблюдение
                 both = s["dl"] >= dl_floor and s["ul"] >= ul_floor
@@ -3973,12 +3983,12 @@ def cmd_watch(a):
                             m=g["penalty_min"]) +
                           f" [{score}: {','.join(reasons)}]", flush=True)
                     # Ограничение выдаётся каждый раз, а рассказываем о нём
-                    # не чаще раза в шесть часов.
-                    guard_state_save({"notified": {k: list(v) for k, v
-                                                   in notified.items()},
-                                      "owners": owners_seen,
-                                      "noticed": noticed, "update": upd})
-                    if notify_due(notified, ip, reasons):
+                    # не чаще раза в шесть часов. Сохраняем ПОСЛЕ отметки:
+                    # иначе она доезжала до диска только со следующим
+                    # сохранением, и перезапуск в этом окне давал повтор.
+                    due = notify_due(notified, ip, reasons)
+                    guard_state_merge(notified, owners_seen, noticed, upd)
+                    if due:
                         tg_penalty(cfg, ip, mbps, g["penalty_min"],
                                    reasons, subject=entry.get("subject"),
                                    unknown=unknown, day=daily.get(ip))
@@ -8893,7 +8903,8 @@ EXPORT_SECTIONS = ("config", "whitelist", "penalties", "owners", "history")
 # а в строке прокси почти всегда есть пароль. По умолчанию не выгружаются.
 SECRET_PATHS = (("telegram", "token"), ("telegram", "proxy"),
                 ("panel", "token"), ("panel", "proxy"),
-                ("metrics", "push_token"), ("metrics", "push_proxy"))
+                ("metrics", "push_token"), ("metrics", "push_proxy"),
+                ("cdn", "token"), ("cdn", "proxy"))
 
 
 def _strip_secrets(cfg):
@@ -9053,6 +9064,13 @@ def validate_export(data):
                 clean["ports"] = good
         elif ports is not None:
             problems.append(t("imp_bad_ports"))
+        # Порты PROXY едут вместе с портами. Без них нода за CDN,
+        # восстановленная из копии, получала лимит без разбора заголовков —
+        # один на всех клиентов за краем. Берём только те, что есть среди
+        # ограничиваемых: то же правило, что у `apply --proxy-ports`.
+        pp = cfg.get("proxy_ports")
+        if isinstance(pp, list) and "ports" in clean:
+            clean["proxy_ports"] = [p for p in clean["ports"] if p in pp]
         for name, defaults in (("guard", GUARD_DEFAULT), ("telegram", TG_DEFAULT)):
             sect = cfg.get(name)
             if isinstance(sect, dict):
@@ -9202,10 +9220,17 @@ def apply_import(state, only=None, replace_wl=False, keep_secrets=True):
             # ноде уже настроено, нельзя: уведомления молча замолчали бы.
             current = load_config()
             for section, field in SECRET_PATHS:
-                incoming = (cfg.get(section) or {}).get(field, "")
+                # Раздела в файле нет — не заводим его ради одного секрета.
+                # save_config сливает с диском по верхнему уровню, и раздел
+                # из одного поля заменил бы собой настроенный целиком: так
+                # импорт собственной копии оставлял от panel и metrics один
+                # токен, и опрос панели с отправкой метрик молча вставали.
+                if not isinstance(cfg.get(section), dict):
+                    continue
+                incoming = cfg[section].get(field, "")
                 have = (current.get(section) or {}).get(field, "")
                 if not incoming and have:
-                    cfg.setdefault(section, {})[field] = have
+                    cfg[section][field] = have
         save_config(cfg)
         done["config"] = 1
 

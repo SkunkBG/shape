@@ -528,6 +528,19 @@ static __always_inline int process_packet(struct __sk_buff *skb,
             ck.port = (direction == 0) ? dport : sport;
 
             struct pp_conn *conn = bpf_map_lookup_elem(&pp_conn_map, &ck);
+            __u8 flags = ((__u8 *)tcp)[13];
+
+            /* Релей открывает НОВОЕ соединение с порта, за которым у нас ещё
+             * числится прежнее: оно умерло без FIN и RST, и запись ждала
+             * вытеснения. Оставить её — значит отдать трафик нового клиента
+             * в учёт, под лимит и под штраф прежнему: заголовок нового
+             * разбирается только для свободного ключа. SYN без ACK приходит
+             * ровно один раз, в начале соединения, — по нему и сбрасываем. */
+            if (conn && direction == 1 && (flags & 0x12) == 0x02) {
+                bpf_map_delete_elem(&pp_conn_map, &ck);
+                conn = 0;
+            }
+
             if (conn) {
                 __builtin_memcpy(key.addr, conn->client.addr, sizeof(key.addr));
             } else if (direction == 1) {
@@ -554,7 +567,6 @@ static __always_inline int process_packet(struct __sk_buff *skb,
             else
                 relay_unresolved = 1;
 
-            __u8 flags = ((__u8 *)tcp)[13];
             if (flags & 0x04) {                     /* RST */
                 bpf_map_delete_elem(&pp_conn_map, &ck);
             } else if ((flags & 0x01) && conn) {    /* FIN */

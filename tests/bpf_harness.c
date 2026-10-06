@@ -829,6 +829,45 @@ int main(void)
           skb.tstamp > t0 && skb.tstamp < fake_now + 1000000ULL);
     map_put(&config_map, &zero, &cfg);
 
+    /* Порт релея переиспользован. Прежнее соединение умерло без FIN и RST,
+     * привязка осталась; релей открывает новое с того же порта. Без сброса
+     * по SYN заголовок нового клиента не разбирался бы вовсе, и его трафик
+     * шёл бы в учёт и под лимит прежнему. */
+    {
+        unsigned RELAY2 = v4("198.51.100.77");
+        struct ip_key kr2 = {0}; kr2.addr[0] = RELAY2;
+        unsigned char tf2[1] = { TRUST_RELAY };
+        map_put(&trusted_map, &kr2, tf2);
+        struct pp_key ck2 = {0}; ck2.addr[0] = RELAY2; ck2.port = 61000;
+        unsigned char pp2[128];
+        int n2 = ppv2_tcp4(pp2, "203.0.113.31");
+        int l2 = build_tcp_raw(SERVER, RELAY2, 61000, 9080, 0x18, pp2, n2);
+        run_pkt(l2, 1);
+        struct pp_conn *c2 = bpf_map_lookup_elem(&pp_conn_map, &ck2);
+        check("привязка первого клиента создана",
+              c2 && c2->client.addr[0] == v4("203.0.113.31"));
+
+        /* SYN+ACK от ноды привязку не трогает: это не новое соединение. */
+        l2 = build_tcp_raw(RELAY2, SERVER, 9080, 61000, 0x12, NULL, 0);
+        run_pkt(l2, 0);
+        check("SYN+ACK на выходе привязку не сбрасывает",
+              bpf_map_lookup_elem(&pp_conn_map, &ck2) != NULL);
+
+        l2 = build_tcp_raw(SERVER, RELAY2, 61000, 9080, 0x02, NULL, 0);
+        run_pkt(l2, 1);
+        check("новый SYN с того же порта релея сбрасывает прежнюю привязку",
+              bpf_map_lookup_elem(&pp_conn_map, &ck2) == NULL);
+
+        n2 = ppv2_tcp4(pp2, "203.0.113.32");
+        l2 = build_tcp_raw(SERVER, RELAY2, 61000, 9080, 0x18, pp2, n2);
+        run_pkt(l2, 1);
+        c2 = bpf_map_lookup_elem(&pp_conn_map, &ck2);
+        struct ip_key kb2 = {0}; kb2.addr[0] = v4("203.0.113.32");
+        check("заголовок нового клиента разобран, трафик идёт ему",
+              c2 && c2->client.addr[0] == v4("203.0.113.32")
+              && bpf_map_lookup_elem(&user_state_map_up, &kb2) != NULL);
+    }
+
     printf("\n\033[1mИтог: %d пройдено, %d провалено\033[0m\n", ok, fail);
     return fail ? 1 : 0;
 }

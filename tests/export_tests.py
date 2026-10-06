@@ -923,5 +923,82 @@ check("при этом отпечаток прежний",
       f'config_hash="{S.config_hash()}"' in
       [ln for ln in metrics.splitlines() if ln.startswith("shape_info{")][0])
 
+# ── 4.9: импорт не стирает разделы, которых в копии не было ──────────────
+# validate_export берёт из конфига только скорость, порты, guard и telegram.
+# Раньше импорт дописывал к этому сохранённые секреты и тем заводил разделы
+# panel и metrics из одного поля — а save_config заменял ими настроенные.
+print("\n\033[1mИмпорт и чужие разделы\033[0m")
+seed()
+CDN_KEY = "cdnkey-" + "0123456789abcdef"
+S.save_config({
+    "proxy_ports": [443],
+    "panel": dict(S.PANEL_DEFAULT, enabled=True, url="https://panel.example.com",
+                  token="paneltoken-0123456789", exempt=["42"]),
+    "metrics": dict(S.METRICS_DEFAULT, push_url="https://push.example.com/x",
+                    push_token="pushtoken-0123456789"),
+    "cdn": dict(S.CDN_DEFAULT, enabled=True, url="https://api.example.com",
+                token=CDN_KEY, resource_id="12345"),
+})
+_exp = S.build_export()
+_plain = json.dumps(_exp)
+check("ключа провайдера CDN в обычной выгрузке нет", CDN_KEY not in _plain)
+check("остальные настройки CDN при этом сохранены",
+      _exp["state"]["config"]["cdn"]["resource_id"] == "12345")
+check("ключ CDN в списке секретов", ("cdn", "token") in S.SECRET_PATHS
+      and ("cdn", "proxy") in S.SECRET_PATHS)
+check("scrub прячет ключ CDN из текста ошибки",
+      CDN_KEY not in S.scrub("отказ: " + CDN_KEY, S.load_config()))
+
+_state, _problems = S.validate_export(json.loads(_plain))
+quiet(S.apply_import, _state)
+_after = S.load_config()
+check("после импорта своей копии панель осталась включённой",
+      _after["panel"]["enabled"] is True
+      and _after["panel"]["url"] == "https://panel.example.com",
+      str(_after["panel"]))
+check("токен и исключения панели на месте",
+      _after["panel"]["token"] == "paneltoken-0123456789"
+      and _after["panel"]["exempt"] == ["42"])
+check("адрес отправки метрик на месте",
+      _after["metrics"]["push_url"] == "https://push.example.com/x"
+      and _after["metrics"]["push_token"] == "pushtoken-0123456789")
+check("раздел CDN на месте вместе с ключом",
+      _after["cdn"]["enabled"] is True and _after["cdn"]["token"] == CDN_KEY)
+check("токен бота импорт по-прежнему не затирает",
+      _after["telegram"]["token"] == TOKEN)
+
+check("порты PROXY попадают в разобранное состояние",
+      _state["config"].get("proxy_ports") == [443], str(_state["config"]))
+S.save_config({"proxy_ports": []})
+quiet(S.apply_import, _state)
+check("порты PROXY восстанавливаются из копии",
+      S.load_config()["proxy_ports"] == [443])
+_bad = json.loads(_plain)
+_bad["state"]["config"]["proxy_ports"] = [443, 9999, "x"]
+_st2, _ = S.validate_export(_bad)
+check("порт PROXY вне списка ограничиваемых отбрасывается",
+      _st2["config"].get("proxy_ports") == [443])
+
+# ── 4.9: сторож не стирает память периодических проверок ────────────────
+print("\n\033[1mguard.state: слияние\033[0m")
+S.guard_state_save({"censor": {"hist": [1, 2, 3]}, "drift": {"at": 5},
+                    "notified": {"203.0.113.1": [1.0, "old"]}})
+S.guard_state_merge({"203.0.113.9": (2.0, "packet")}, {}, {"203.0.113.9": "d"},
+                    {"seen": "4.9"})
+_gs = S.guard_state()
+check("память censor пережила сохранение сторожа",
+      _gs.get("censor") == {"hist": [1, 2, 3]}, str(_gs))
+check("память relay_drift пережила сохранение сторожа",
+      _gs.get("drift") == {"at": 5})
+check("своя часть записана целиком, а не дописана к старой",
+      _gs.get("notified") == {"203.0.113.9": [2.0, "packet"]}
+      and _gs.get("update") == {"seen": "4.9"})
+import inspect as _inspect
+_watch = _inspect.getsource(S.cmd_watch)
+check("сторож нигде не пишет guard.state целиком",
+      "guard_state_save(" not in _watch and _watch.count("guard_state_merge(") == 3)
+check("отметка об уведомлении ставится до сохранения",
+      _watch.index("due = notify_due(") < _watch.rindex("guard_state_merge("))
+
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

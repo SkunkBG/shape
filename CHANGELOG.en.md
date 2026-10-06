@@ -13,6 +13,26 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.9
+
+**Four bugs from the audit: another client's traffic in the accounting behind a CDN, wiped check state, the provider key in the backup, and an import that switched the panel off.**
+
+All four were found by reading the code, not by an incident. Each was reproduced by a test before the fix.
+
+**A client binding behind a CDN was not reset when the relay opened a new connection from the same port.** The node remembers the pair "relay address + its port" and uses it to attribute traffic to the real client. The entry is removed on RST or on two FINs. If a connection died without them, the entry stayed until eviction — while the relay handed the same port to another client. The PROXY header of the new connection was not parsed at all: it is read only for a free key. The new client's traffic was accounted, limited and penalised as the previous one. A SYN from the relay now resets the previous entry. Map layouts did not change, bindings survive the upgrade as before.
+
+**The watchdog wiped the memory of the other checks.** One state file holds both the watchdog's marks and what the checks accumulate: client-count history, operator-network history, the 24-hour countdown for stale trusted entries, the time of the last provider poll. On every penalty and every notice the watchdog wrote the whole file from its own four keys. On a node with more than one penalty an hour the client and network checks never collected the twelve samples they need and never judged, and the quota and undeclared-edge warnings repeated after each penalty. The watchdog now writes its own part without touching the rest. The "already told about this address" mark is also saved immediately rather than with the next write: a restart in that window produced a repeat message.
+
+**The CDN provider API key ended up in the backup.** The list of secrets used to clean an export knew the bot, panel and metrics tokens, but not the `cdn` section. The key went into a plain `shaperctl export` and into the weekly Telegram backup; the last check before sending used the same list and could not catch it. The key and proxy of the `cdn` section are now on the list.
+
+**Importing a node's own backup switched off the panel and metrics push.** A backup without secrets carries no tokens, and import keeps the ones already configured on the node. It did so by creating a one-field section — and that section replaced the configured one entirely. After `shaperctl import`, `panel` was left with only a token: panel polling and metrics push stopped silently. Import no longer touches a section that is absent from the backup. PROXY ports are now carried over together with ports: without them a CDN node restored from a backup got one limit shared by every client behind the edge.
+
+**What changes in behaviour.** On a node behind a CDN some clients will stop sharing a limit with whoever held the relay port before them; how many was not measured. The client and network checks on nodes with frequent penalties will start producing verdicts — their first messages may arrive an hour after the upgrade.
+
+**On upgrade.** If the `cdn` section is configured and backups were sent to Telegram, the provider key is already in the chat and is worth reissuing in the provider's dashboard. Direct nodes upgrade for free; on a node behind a CDN, as always, part of the traffic goes without header parsing for the first minutes.
+
+---
+
 ## 4.8
 
 **The restart cap for the watchdog and the API finally takes effect.**
