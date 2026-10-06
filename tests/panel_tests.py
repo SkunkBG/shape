@@ -71,6 +71,8 @@ PANEL = {
     "pages": 0,           # сколько страниц справочника запросили
     "by_id": 0,           # сколько раз спросили одного пользователя
     "users_code": 0,      # не ноль — отвечать этим кодом на /api/users
+    "agents": [],         # с каким User-Agent приходили запросы
+    "strict_agent": False,  # отбивать «Python-urllib», как защита перед панелью
 }
 
 
@@ -87,6 +89,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _guard(self):
+        PANEL["agents"].append(self.headers.get("User-Agent") or "")
+        # Защита перед панелью: клиента без своего имени не пускает вовсе.
+        if PANEL["strict_agent"] and \
+                (self.headers.get("User-Agent") or "").startswith("Python-urllib"):
+            self._send(403, {"title": "Error 1010: Access denied",
+                             "error_code": 1010})
+            return False
         if PANEL["http_code"]:
             self._send(PANEL["http_code"], {"message": "подстроенная ошибка"})
             return False
@@ -1523,6 +1532,28 @@ _pen_store = {"10.0.0.3": {"until": now40 + 3600, "source": "panel",
 check("мусор в штрафах не роняет", S.panel_sharing_held(now40) == set(),
       S.panel_sharing_held(now40))
 _pen_store = {}
+
+# ── 4.10: нода называет себя в запросах к панели ────────────────────────
+# Без своего имени уходит «Python-urllib/3.x», и защита перед панелью
+# отвечает 403 ещё до неё. В бою это читалось как отказ токену.
+print("\n\033[1mИмя клиента в запросах\033[0m")
+drop_state()
+PANEL.update(users=make_users({7: 2}), http_code=0, job_fails=False,
+             never_ready=False, strict_agent=True)
+PANEL["agents"].clear()
+try:
+    _got = S.panel_fetch(conf())
+    _err = ""
+except S.PanelError as e:
+    _got, _err = None, str(e)
+check("панель за защитой от безымянных клиентов отвечает", _got is not None, _err)
+check("каждый запрос к панели подписан именем Shape и версией",
+      bool(PANEL["agents"]) and all(a == "Shape/" + S.shape_version()
+                                    for a in PANEL["agents"]),
+      str(set(PANEL["agents"])))
+check("под браузер не маскируемся",
+      "Mozilla" not in S.user_agent() and S.user_agent().startswith("Shape/"))
+PANEL["strict_agent"] = False
 
 srv.shutdown()
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")

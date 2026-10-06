@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.10
+
+**The node names itself in requests to the panel — the protection in front of the panel no longer takes it for a bot.**
+
+On a new node the link to the Remnawave panel did not come up: Telegram got "the panel denied access: Forbidden", and sharing detection stopped. It looked like a wrong token or missing permissions.
+
+The token had nothing to do with it. The reply came not from the panel but from Cloudflare in front of it — error 1010, "access denied based on your browser's signature". Shape did not name itself in requests, so the default `Python-urllib/3.x` went out, which such protection rejects as plainly not a browser. The request never reached the panel. The same request with the same token but with a client name was accepted at once.
+
+Requests to the panel and the CDN provider API now carry `User-Agent: Shape/<version>`. It is also added to Telegram requests, the update check and metrics push when they go directly or through an http proxy; the socks5 path is unchanged. The name is honest: Shape does not pose as a browser, which makes it easier for the panel owner both to allow these requests and to find them in the logs.
+
+**What changes in behaviour.** Where the panel sits behind Cloudflare or similar protection and the link failed with 403, it will start working with no changes on the protection side. Where the link worked, nothing changes.
+
+**On upgrade** nothing needs doing. If the panel still refuses after the upgrade, it is the token or its permissions; check with `shaperctl panel test`.
+
+---
+
 ## 4.9
 
 **Four bugs from the audit: another client's traffic in the accounting behind a CDN, wiped check state, the provider key in the backup, and an import that switched the panel off.**

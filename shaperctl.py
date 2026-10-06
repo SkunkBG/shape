@@ -4147,7 +4147,8 @@ def _get(url, proxy="", timeout=15):
 
     opener = urllib.request.build_opener(urllib.request.ProxyHandler(
         {"http": proxy, "https": proxy} if proxy else {}))
-    with opener.open(urllib.request.Request(url), timeout=timeout) as r:
+    req = urllib.request.Request(url, headers={"User-Agent": user_agent()})
+    with opener.open(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
 
 
@@ -4178,7 +4179,7 @@ def _post(url, data, proxy="", content_type="application/x-www-form-urlencoded",
             except Exception:
                 pass
 
-    head = {"Content-Type": content_type}
+    head = {"Content-Type": content_type, "User-Agent": user_agent()}
     head.update(headers or {})
     req = urllib.request.Request(url, data=data, headers=head)
     # Открыватель строим всегда, даже без прокси. Раньше в этой ветке стоял
@@ -4956,6 +4957,7 @@ def cdn_call(c, path):
     req = urllib.request.Request(base + path, method="GET")
     req.add_header("Authorization", "Bearer " + token)
     req.add_header("Accept", "application/json")
+    req.add_header("User-Agent", user_agent())
     opener = urllib.request.build_opener(urllib.request.ProxyHandler(
         {"http": proxy, "https": proxy} if proxy else {}))
     try:
@@ -5117,6 +5119,19 @@ def panel_scrub(text, p=None):
     return s
 
 
+def user_agent():
+    """
+    Имя клиента в запросах наружу: «Shape/<версия>».
+
+    Без него уходит стандартное «Python-urllib/3.x», а его защита перед
+    панелью режет как «не браузер»: Cloudflare отвечал 403 с ошибкой 1010
+    ещё до панели, и это читалось как отказ токену. Называемся честно, под
+    браузер не маскируемся — владельцу панели так проще и разрешить, и найти
+    наши запросы в журнале.
+    """
+    return "Shape/" + shape_version()
+
+
 def panel_call(p, method, path, body=None):
     """
     Один запрос к панели. Возвращает распакованный ответ словарём.
@@ -5144,6 +5159,7 @@ def panel_call(p, method, path, body=None):
     req = urllib.request.Request(base + path, data=data, method=method)
     req.add_header("Authorization", "Bearer " + token)
     req.add_header("Accept", "application/json")
+    req.add_header("User-Agent", user_agent())
     if data is not None:
         req.add_header("Content-Type", "application/json")
 
