@@ -315,6 +315,28 @@ MSG = {
         "pn_scan_found": "Найдено раздающих: {n}",
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
+        "h_setup": "настроить ноду целиком; без ключей — показать словами, что настроено",
+        "h_su_cdn": "нода стоит за CDN: yes или no",
+        "h_su_heavy": "ограничивать торренты и перегруз канала: on или off",
+        "h_su_sharing": "ловить раздачу подписки: on или off",
+        "h_su_probe": "только определить, похожа ли нода на стоящую за CDN",
+        "su_probe_set": "порт PROXY уже задан: {p}",
+        "su_probe_none": "соединений на портах сейчас нет — определить не по чему",
+        "su_probe_cdn": "{n} из {total} соединений идут с одного адреса {ip} — так выглядит край CDN",
+        "su_probe_direct": "{total} соединений с {ips} разных адресов — так выглядят прямые клиенты",
+        "su_allports": "для ноды за CDN нужен конкретный порт, а задано «все порты»: shaperctl apply --ports 443",
+        "su_heavy_nospeed": "ограничивать тяжёлых можно только при заданной скорости",
+        "su_done": "Нода настроена.",
+        "su_sharing_skipped": "ловля раздачи не включена:",
+        "su_st_cdn": "Нода стоит за CDN: настоящий адрес клиента берётся из заголовка PROXY на порту {p}.",
+        "su_st_direct": "Нода обычная: клиенты подключаются напрямую.",
+        "su_st_speed": "Скорость: {s} Мбит/с каждому клиенту, в обе стороны.",
+        "su_st_nospeed": "Скорость не ограничена — и пока так, нода ничего не считает и никого не ловит.",
+        "su_st_heavy": "Торренты и перегруз канала: {s} Мбит/с на {m} мин.",
+        "su_st_noheavy": "Торренты и перегруз канала не ограничиваются.",
+        "su_st_nopanel": "Раздача подписки не ловится: панель Remnawave не подключена.",
+        "su_st_tg": "Сообщения приходят в Telegram.",
+        "su_st_notg": "Telegram не настроен: о происходящем на ноде никто не узнает.",
         "h_sharing": "ловля раздачи подписки одной командой: on, off, status",
         "h_sh_after": "через сколько минут отключать подписку; 0 — не отключать",
         "h_sh_minutes": "на сколько минут перекрывать доступ",
@@ -892,6 +914,28 @@ MSG = {
         "pn_scan_found": "Sharing found: {n}",
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
+        "h_setup": "set up the whole node; with no options — say in words what is set up",
+        "h_su_cdn": "the node is behind a CDN: yes or no",
+        "h_su_heavy": "limit torrents and channel overload: on or off",
+        "h_su_sharing": "catch subscription sharing: on or off",
+        "h_su_probe": "only tell whether the node looks like it is behind a CDN",
+        "su_probe_set": "a PROXY port is already set: {p}",
+        "su_probe_none": "no connections on the ports right now — nothing to judge by",
+        "su_probe_cdn": "{n} of {total} connections come from one address {ip} — that is what a CDN edge looks like",
+        "su_probe_direct": "{total} connections from {ips} different addresses — that is what direct clients look like",
+        "su_allports": "a node behind a CDN needs a specific port, but \"all ports\" is set: shaperctl apply --ports 443",
+        "su_heavy_nospeed": "heavy users can only be limited when a speed is set",
+        "su_done": "The node is set up.",
+        "su_sharing_skipped": "sharing detection was not enabled:",
+        "su_st_cdn": "The node is behind a CDN: the real client address comes from the PROXY header on port {p}.",
+        "su_st_direct": "A regular node: clients connect directly.",
+        "su_st_speed": "Speed: {s} Mbit/s per client, both ways.",
+        "su_st_nospeed": "Speed is not limited — and while it is so, the node counts nothing and catches no one.",
+        "su_st_heavy": "Torrents and channel overload: {s} Mbit/s for {m} min.",
+        "su_st_noheavy": "Torrents and channel overload are not limited.",
+        "su_st_nopanel": "Subscription sharing is not caught: the Remnawave panel is not connected.",
+        "su_st_tg": "Messages arrive in Telegram.",
+        "su_st_notg": "Telegram is not set up: nobody will learn what happens on the node.",
         "h_sharing": "catch subscription sharing with one command: on, off, status",
         "h_sh_after": "minutes until the subscription is disabled; 0 — never",
         "h_sh_minutes": "minutes to cut off access for",
@@ -7976,6 +8020,187 @@ def cmd_sharing(a):
     print()
 
 
+# ── Настройка ноды четырьмя ответами ───────────────────────────────────
+#
+# Настроек семьдесят пять, экранов двадцать один, и чтобы нода за CDN с
+# ловлей раздачи заработала, надо попасть в полдюжины из них в правильном
+# порядке. Владелец ноды сказал прямо: нужно выбрать «за CDN или обычная»,
+# задать скорость — и всё. Остальное из этих двух ответов выводится.
+#
+# Вопросов четыре, все простые: где стоит нода, какая скорость, ограничивать
+# ли тяжёлых, ловить ли раздачу. Слов «block», «limit» и «drop» здесь нет.
+SETUP_MOBILE_MAX = 20       # до этой скорости числа берём «мобильные»
+
+
+def setup_guard_values(speed):
+    """
+    Числа автоограничения для этой скорости — те же, что ставят пресеты меню.
+
+    Узкий канал — телефонные пороги числами: смысл там в том, сколько нужно
+    человеку. Широкий — часовой порог от канала: три гигабайта в час на
+    стомегабитной ноде это один фильм.
+    """
+    g = {"enabled": True, "score_needed": 3, "both_dl_percent": 10,
+         "both_ul_percent": 3, "both_ways_min": 10, "packet_bytes": 600,
+         "require_packet": True, "hours_per_day": 4, "upload_gb_per_day": 2,
+         "upload_ratio_min_mb": 3000, "upload_ratio_min_hours": 2,
+         "ratio_needs_packet": True, "upload_hours": 6,
+         "upload_hours_mbps": 0.05, "penalty_mbps": 1, "penalty_min": 60}
+    if speed <= SETUP_MOBILE_MAX:
+        g.update({"download_gb_per_day": 25, "download_gb_per_hour": 3,
+                  "upload_ratio_percent": 35, "volume_needs_upload": False,
+                  "volume_penalty_mbps": 0, "upload_gb_per_hour": 3,
+                  "upload_day_gb": 25, "upload_warn_gb": 0})
+    else:
+        g.update({"download_gb_per_day": 150,
+                  "download_gb_per_hour": round(speed / 8 / 1000 * 3600 * 0.5, 1),
+                  "upload_ratio_percent": 50, "volume_needs_upload": True,
+                  "volume_penalty_mbps": float(round(speed * 0.3)),
+                  "upload_gb_per_hour": 0, "upload_day_gb": 30,
+                  "upload_warn_gb": 10})
+    return g
+
+
+def setup_probe(cfg):
+    """Похожа ли нода на стоящую за CDN: ("cdn" | "direct", пояснение)."""
+    ports = {int(x) for x in (cfg.get("ports") or [])
+             if str(x).isdigit() and int(x) > 0}
+    if cfg.get("proxy_ports"):
+        return "cdn", t("su_probe_set",
+                        p=",".join(map(str, cfg["proxy_ports"])))
+    try:
+        peers = proc_peers(ports) if ports else {}
+    except Exception:
+        peers = {}
+    total = sum(peers.values())
+    if not total:
+        return "direct", t("su_probe_none")
+    top_ip, top_n = max(peers.items(), key=lambda kv: kv[1])
+    if total >= CDN_HINT_MIN_CONNS and top_n >= total * CDN_HINT_SHARE:
+        return "cdn", t("su_probe_cdn", n=top_n, total=total, ip=top_ip)
+    return "direct", t("su_probe_direct", total=total, ips=len(peers))
+
+
+def setup_lines(cfg):
+    """Вся нода словами. Список пар (текст, тревожно ли)."""
+    out = []
+    g, tg = cfg["guard"], cfg["telegram"]
+    speed = cfg["speed_mbps"]
+    if cfg.get("proxy_ports"):
+        out.append((t("su_st_cdn", p=",".join(map(str, cfg["proxy_ports"]))),
+                    False))
+    else:
+        out.append((t("su_st_direct"), False))
+        try:
+            if cdn_suspect(cfg):
+                out.append((t("sh_cdn"), True))
+        except Exception:
+            pass
+    if speed > 0:
+        out.append((t("su_st_speed", s=f"{speed:g}"), False))
+    else:
+        out.append((t("su_st_nospeed"), True))
+    if g.get("enabled") and speed > 0:
+        out.append((t("su_st_heavy", s=f"{float(g['penalty_mbps']):g}",
+                      m=g["penalty_min"]), False))
+    else:
+        out.append((t("su_st_noheavy"), False))
+    p = cfg["panel"]
+    if not (p.get("url") and p.get("token") and p.get("node_uuid")):
+        out.append((t("su_st_nopanel"), False))
+    else:
+        for text, alarm in sharing_lines(cfg):
+            # Про CDN и Telegram скажем один раз, своими строками.
+            if text in (t("sh_cdn"), t("sh_no_tg")):
+                continue
+            out.append((text, alarm))
+    if tg.get("enabled") and tg.get("token") and tg.get("chat_id"):
+        out.append((t("su_st_tg"), False))
+    else:
+        out.append((t("su_st_notg"), True))
+    try:
+        ready, bad = edt_ready()
+        if engine_loaded() and not ready:
+            out.append((t("edt_off", kinds=bad), True))
+    except Exception:
+        pass
+    return out
+
+
+def cmd_setup(a):
+    cfg = load_config()
+
+    if a.probe:
+        kind, why = setup_probe(cfg)
+        print(kind)
+        print(why)
+        return
+
+    touched = any(v is not None for v in (a.cdn, a.speed, a.heavy, a.sharing))
+    if touched:
+        ports = [int(x) for x in (cfg.get("ports") or [])]
+        speed = cfg["speed_mbps"] if a.speed is None else a.speed
+        if speed != speed or speed in (float("inf"), float("-inf")) \
+                or speed < 0:
+            die(t("neg_speed"))
+        if speed > MAX_MBPS:
+            die(t("too_fast", v=speed))
+        if 0 < speed < 0.05:
+            die(t("too_slow", v=speed))
+        if a.cdn == "yes":
+            # Флаг вешается на порт, а «все порты» — это не порт.
+            if not ports or 0 in ports:
+                die(t("su_allports"))
+            cfg["proxy_ports"] = list(ports)
+        elif a.cdn == "no":
+            cfg["proxy_ports"] = []
+        cfg["speed_mbps"] = float(speed)
+
+        # Порт PROXY и скорость уходят в ядро одной операцией. По отдельности
+        # получается ловушка: при нулевой скорости фильтр ничего не считает и
+        # заголовков не разбирает, а скорость без порта на ноде за CDN — это
+        # один лимит на всех клиентов за краем.
+        write_to_kernel(cfg)
+
+        if a.heavy == "on":
+            if speed <= 0:
+                die(t("su_heavy_nospeed"))
+            cfg["guard"].update(setup_guard_values(speed))
+            # Порог раздачи от тарифа ставят и пресеты меню: офис с большим
+            # тарифом не должен попадать под правило для перепродавцов.
+            cfg["panel"].update({"ip_threshold": 20, "window_min": 10,
+                                 "per_device": 4})
+        elif a.heavy == "off":
+            cfg["guard"]["enabled"] = False
+
+        refused = []
+        if a.sharing == "on":
+            refused = sharing_blockers(cfg)
+            if not refused:
+                cfg["panel"].update({"enabled": True, "action": "block",
+                                     "limit_min": SHARING_MINUTES,
+                                     "disable_after_min": float(SHARING_AFTER)})
+        elif a.sharing == "off":
+            cfg["panel"].update({"action": "notify", "disable_after_min": 0})
+
+        save_config(cfg)
+        log_event("config_changed", source="manual",
+                  message=f"setup: cdn={a.cdn} speed={speed:g} "
+                          f"heavy={a.heavy} sharing={a.sharing}")
+        print(f"\n  {C['grn']}✓ {t('su_done')}{C['r']}")
+        if refused:
+            print(f"  {C['yel']}⚠ {t('su_sharing_skipped')}{C['r']}")
+            for line in refused:
+                print(f"    {C['yel']}· {line}{C['r']}")
+    else:
+        print()
+
+    for text, alarm in setup_lines(load_config()):
+        mark = f"{C['yel']}⚠ " if alarm else "  "
+        print(f"  {mark}{text}{C['r']}")
+    print()
+
+
 def cmd_telegram(a):
     cfg = load_config()
     tg = cfg["telegram"]
@@ -9748,6 +9973,17 @@ def build_parser():
                     help=t("h_pn_dry"))
     pn.add_argument("--json", action="store_true")
     pn.set_defaults(func=cmd_panel)
+
+    su = sub.add_parser("setup", help=t("h_setup"))
+    su.add_argument("--cdn", choices=["yes", "no"], default=None,
+                    help=t("h_su_cdn"))
+    su.add_argument("--speed", type=float, default=None, help=t("h_speed"))
+    su.add_argument("--heavy", choices=["on", "off"], default=None,
+                    help=t("h_su_heavy"))
+    su.add_argument("--sharing", choices=["on", "off"], default=None,
+                    help=t("h_su_sharing"))
+    su.add_argument("--probe", action="store_true", help=t("h_su_probe"))
+    su.set_defaults(func=cmd_setup)
 
     sh = sub.add_parser("sharing", help=t("h_sharing"))
     sh.add_argument("action", choices=["on", "off", "status"], nargs="?",

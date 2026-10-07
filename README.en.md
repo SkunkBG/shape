@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-4.11-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.12-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v4.11
+# Shape v4.12
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -72,6 +72,28 @@ With the optional API:
 ```bash
 bash /tmp/shape/install.sh --with-api
 ```
+
+### Set up in four answers
+
+After installing, open `shaper` and pick the first item — **Quick setup**.
+There are four questions:
+
+1. **Where the node sits** — regular or behind a CDN. The answer is suggested:
+   the node looks at which addresses the connections come from.
+2. **Speed per client** — 10, 100 or your own number.
+3. **Whether to limit those who torrent** and overload the channel.
+4. **Whether to catch those who share a subscription.** If yes and the
+   Remnawave panel and Telegram are not connected yet, it asks for them there.
+
+Everything else is derived from the answers. The same as one command:
+
+```bash
+shaperctl setup --cdn yes --speed 10 --heavy on --sharing on
+shaperctl setup          # no options: in words, what is set up and what is missing
+```
+
+Any single number can still be tuned on the other screens — they are all still
+there.
 
 ### Requirements
 

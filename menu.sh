@@ -2266,6 +2266,117 @@ screen_service() {
     done
 }
 
+# ── Быстрая настройка ─────────────────────────────────────────────────
+# Четыре простых вопроса вместо двадцати экранов. Всё, что здесь выбирается,
+# применяет одна команда `shaperctl setup`: порт PROXY и скорость уходят в
+# ядро разом, и ловушки «лимит без порта» и «порт без лимита» не возникает.
+# Слов «block», «limit» и «drop» на этом экране нет намеренно.
+su_have() {
+    python3 -c "
+import json, sys
+try: c = json.load(open(sys.argv[1]))
+except Exception: c = {}
+p, t = c.get('panel') or {}, c.get('telegram') or {}
+print('%d|%d' % (bool(p.get('url') and p.get('token') and p.get('node_uuid')),
+                 bool(t.get('token') and t.get('chat_id'))))" \
+        "$ETC_DIR/config.json" 2>/dev/null || echo "0|0"
+}
+
+screen_setup() {
+    local pr kind why v cdn speed cur heavy sharing has_pn has_tg ans a b c
+    title "${T[su_title]}"
+    echo -e "  ${D}${T[su_h1]}${N}"
+    echo -e "  ${D}${T[su_h2]}${N}"
+    echo
+
+    # 1. Где стоит нода. Ответ подсказываем по тому, кто сейчас подключён.
+    pr="$("$CTL" setup --probe 2>/dev/null || true)"
+    kind="${pr%%$'\n'*}"
+    why="${pr#*$'\n'}"
+    echo -e "  ${B}1/4 · ${T[su_q_where]}${N}"
+    [[ -n "$why" && "$why" != "$pr" ]] && echo -e "  ${D}${why}${N}"
+    echo -e "  [1] ${T[su_direct]}"
+    echo -e "  [2] ${T[su_cdn]}"
+    v="$(ask "${T[su_pick]}" "$([[ "$kind" == "cdn" ]] && echo 2 || echo 1)")"
+    [[ "$v" == "2" ]] && cdn=yes || cdn=no
+    echo
+
+    # 2. Скорость.
+    cur="$(cfg speed_mbps 0)"
+    echo -e "  ${B}2/4 · ${T[su_q_speed]}${N}"
+    echo -e "  [1] 10 Mbit/s   ${D}${T[su_speed10]}${N}"
+    echo -e "  [2] 100 Mbit/s  ${D}${T[su_speed100]}${N}"
+    echo -e "  [3] ${T[su_speed_own]}"
+    v="$(ask "${T[su_pick]}" "$([[ "$cdn" == "yes" ]] && echo 1 || echo 2)")"
+    case "$v" in
+        1) speed=10 ;;
+        2) speed=100 ;;
+        *) speed="$(ask "${T[su_speed_ask]}" "$([[ "$cur" == "0" || "$cur" == "0.0" ]] && echo 10 || echo "$cur")")" ;;
+    esac
+    if [[ ! "$speed" =~ ^[0-9]+([.][0-9]+)?$ || "$speed" == "0" ]]; then
+        echo -e "  ${R}${T[su_bad_speed]}${N}"; pause; return
+    fi
+    echo
+
+    # 3. Тяжёлые клиенты.
+    echo -e "  ${B}3/4 · ${T[su_q_heavy]}${N}"
+    echo -e "  ${D}${T[su_heavy_d]}${N}"
+    read -rp "  ${T[su_yn]}: " ans
+    [[ "$ans" =~ ^[NnНн] ]] && heavy=off || heavy=on
+    echo
+
+    # 4. Раздача подписки. Нужны панель и Telegram — спросим, если их нет.
+    echo -e "  ${B}4/4 · ${T[su_q_sharing]}${N}"
+    echo -e "  ${D}${T[su_sharing_d]}${N}"
+    read -rp "  ${T[su_yn]}: " ans
+    [[ "$ans" =~ ^[NnНн] ]] && sharing=off || sharing=on
+    if [[ "$sharing" == "on" ]]; then
+        IFS='|' read -r has_pn has_tg <<< "$(su_have)"
+        if [[ "$has_pn" != "1" ]]; then
+            echo
+            echo -e "  ${T[su_need_panel]}"
+            echo -e "  ${D}${T[pn_hint_url]}${N}"
+            a="$(ask "${T[pn_set_url]}")"
+            echo -e "  ${D}${T[pn_hint_token]}${N}"
+            b="$(ask "${T[pn_set_token]}")"
+            echo -e "  ${D}${T[pn_hint_uuid]}${N}"
+            c="$(ask "${T[pn_set_uuid]}")"
+            if [[ -n "$a" && -n "$b" && -n "$c" ]]; then
+                "$CTL" panel set --url "$a" --token "$b" --node-uuid "$c" \
+                    >/dev/null || { pause; return; }
+            fi
+        fi
+        if [[ "$has_tg" != "1" ]]; then
+            echo
+            echo -e "  ${T[su_need_tg]}"
+            a="$(ask "${T[su_tg_token]}")"
+            b="$(ask "${T[su_tg_chat]}")"
+            if [[ -n "$a" && -n "$b" ]]; then
+                "$CTL" telegram set --token "$a" --chat "$b" --enable --quiet \
+                    >/dev/null || { pause; return; }
+            fi
+        fi
+    fi
+    echo
+    hr
+
+    # Итог словами — и один вопрос.
+    echo -e "  ${T[gp_will]}:"
+    if [[ "$cdn" == "yes" ]]; then echo -e "  ${D}  · ${T[su_cdn]}${N}"
+    else echo -e "  ${D}  · ${T[su_direct]}${N}"; fi
+    echo -e "  ${D}  · ${T[su_sum_speed]} ${B}${speed} Mbit/s${N}"
+    if [[ "$heavy" == "on" ]]; then echo -e "  ${D}  · ${T[su_sum_heavy_on]}${N}"
+    else echo -e "  ${D}  · ${T[su_sum_heavy_off]}${N}"; fi
+    if [[ "$sharing" == "on" ]]; then echo -e "  ${D}  · ${T[su_sum_sharing_on]}${N}"
+    else echo -e "  ${D}  · ${T[su_sum_sharing_off]}${N}"; fi
+    echo
+    read -rp "  ${T[apply_q]}: " ans
+    [[ "$ans" =~ ^[NnНн] ]] && { echo "  ${T[cancelled]}"; pause; return; }
+
+    "$CTL" setup --cdn "$cdn" --speed "$speed" --heavy "$heavy" --sharing "$sharing"
+    pause
+}
+
 # ── Главное меню ──────────────────────────────────────────────────────
 [[ -z "$UI_LANG" ]] && screen_lang     # первый запуск — спросить язык
 
@@ -2279,6 +2390,8 @@ while :; do
     hr
     echo
     nlim="$(limited_count)"
+    # Первой строкой: с неё начинают на новой ноде, а всё ниже — подстройка.
+    echo -e " [12] ⚡ ${G}${T[su_menu]}${N} ${D}${T[su_menu_d]}${N}"
     echo -e "  [1] 🎚  ${T[m1]} ${D}${T[m1d]}${N}"
     echo -e "  [2] 🚦 ${T[m2]} ${D}${T[m2d]}${N}"
     echo -e "  [3] 📡 ${T[m3]} ${D}${T[m3d]}${N}"
@@ -2326,6 +2439,7 @@ while :; do
         9) screen_panel ;;
         10) screen_cdn ;;
         11) screen_censor ;;
+        12) screen_setup ;;
         0|"") clear; exit 0 ;;
     esac
 done

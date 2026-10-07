@@ -1000,5 +1000,152 @@ check("сторож нигде не пишет guard.state целиком",
 check("отметка об уведомлении ставится до сохранения",
       _watch.index("due = notify_due(") < _watch.rindex("guard_state_merge("))
 
+# ── 4.12: настройка ноды четырьмя ответами ──────────────────────────────
+print("\n\033[1mshaperctl setup\033[0m")
+import contextlib as _cl
+open(os.path.join(PIN, "config_map"), "w").close()   # «движок загружен»
+S.edt_ready = lambda iface=None: (True, "")
+S.cdn_suspect = lambda cfg: None
+_blockers = []
+S.sharing_blockers = lambda cfg, probe=True: list(_blockers)
+
+
+def _setup(**kw):
+    d = dict(cdn=None, speed=None, heavy=None, sharing=None, probe=False)
+    d.update(kw)
+    buf, err, code = io.StringIO(), io.StringIO(), 0
+    with _cl.redirect_stdout(buf), _cl.redirect_stderr(err):
+        try:
+            S.cmd_setup(argparse.Namespace(**d))
+        except SystemExit as e:
+            code = e.code or 0
+    return code, buf.getvalue() + err.getvalue()
+
+
+def _bpf_log():
+    try:
+        return open(os.environ["BPFTOOL_LOG"]).read()
+    except OSError:
+        return ""
+
+
+seed()
+S.save_config({"ports": [443], "proxy_ports": [], "speed_mbps": 0})
+_before = json.dumps(S.load_config(), sort_keys=True)
+_code, _out = _setup()
+check("без ключей ничего не меняет",
+      _code == 0 and json.dumps(S.load_config(), sort_keys=True) == _before)
+check("и говорит словами, что скорость не задана",
+      "не ограничена" in _out and "Нода обычная" in _out, _out)
+
+open(os.environ["BPFTOOL_LOG"], "w").close()
+_code, _out = _setup(cdn="yes", speed=10.0, heavy="on", sharing="off")
+_c = S.load_config()
+check("нода за CDN: порт PROXY и скорость записаны вместе",
+      _code == 0 and _c["proxy_ports"] == [443] and _c["speed_mbps"] == 10, _out)
+_log = _bpf_log()
+check("в ядро ушла скорость и порт с флагом PROXY",
+      "config_map" in _log and "port_map" in _log and "value hex 03" in _log,
+      _log[-400:])
+check("узкий канал — телефонные пороги",
+      _c["guard"]["enabled"] is True and _c["guard"]["download_gb_per_hour"] == 3
+      and _c["guard"]["upload_ratio_percent"] == 35)
+check("порог раздачи учитывает тариф", _c["panel"]["per_device"] == 4)
+check("итог словами: за CDN, скорость, тяжёлые",
+      "за CDN" in _out and "10 Мбит/с" in _out and "Торренты" in _out, _out)
+
+_code, _out = _setup(cdn="no", speed=100.0, heavy="on")
+_c = S.load_config()
+check("обычная нода: порт PROXY снят", _c["proxy_ports"] == [])
+check("широкий канал — часовой порог от канала",
+      _c["guard"]["download_gb_per_hour"] == 22.5
+      and _c["guard"]["volume_penalty_mbps"] == 30
+      and _c["guard"]["volume_needs_upload"] is True, str(_c["guard"]))
+
+_code, _out = _setup(heavy="off")
+check("тяжёлых можно не трогать",
+      S.load_config()["guard"]["enabled"] is False
+      and "не ограничиваются" in _out, _out)
+
+S.save_config({"panel": dict(S.PANEL_DEFAULT, url="https://panel.example.com",
+                             token="t-0123456789", action="notify",
+                             node_uuid="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")})
+_blockers[:] = ["панель не отвечает: подстроено"]
+_code, _out = _setup(cdn="yes", speed=10.0, sharing="on")
+_c = S.load_config()
+check("ловля раздачи не включилась — остальное всё равно применено",
+      _code == 0 and _c["proxy_ports"] == [443] and _c["speed_mbps"] == 10
+      and _c["panel"]["action"] == "notify", _out)
+check("и названа причина", "подстроено" in _out and "не включена" in _out, _out)
+_blockers[:] = []
+_code, _out = _setup(sharing="on")
+_c = S.load_config()
+check("ловля раздачи включается тем же ответом",
+      _c["panel"]["action"] == "block" and _c["panel"]["disable_after_min"] == 30
+      and _c["panel"]["enabled"] is True, str(_c["panel"]))
+check("слов block, limit и drop в выводе нет",
+      not re.search(r"\b(block|limit|drop)\b", _out), _out)
+
+S.save_config({"ports": [0]})
+_code, _out = _setup(cdn="yes", speed=10.0)
+check("«все порты» и нода за CDN — отказ с подсказкой",
+      _code != 0 and "443" in _out, _out)
+S.save_config({"ports": [443]})
+_code, _out = _setup(speed=0.01)
+check("скорость ниже порога ядра отвергается", _code != 0)
+
+S.proc_peers = lambda ports: {"198.51.100.20": 990, "203.0.113.5": 10}
+S.save_config({"proxy_ports": []})
+_code, _out = _setup(probe=True)
+check("подсказка: почти всё с одного адреса — похоже на CDN",
+      _out.splitlines()[0] == "cdn" and "198.51.100.20" in _out, _out)
+S.proc_peers = lambda ports: {"203.0.113.%d" % i: 2 for i in range(1, 90)}
+_code, _out = _setup(probe=True)
+check("подсказка: много разных адресов — обычная нода",
+      _out.splitlines()[0] == "direct", _out)
+
+# Числа мастера и пресетов меню обязаны совпадать: два источника разойдутся
+# молча, и «быстрая настройка» начнёт ставить не то, что описано в пресетах.
+_FLAG = {"--score": "score_needed", "--both-dl": "both_dl_percent",
+         "--both-ul": "both_ul_percent", "--both-min": "both_ways_min",
+         "--packet": "packet_bytes", "--require-packet": "require_packet",
+         "--hours": "hours_per_day", "--upload-gb": "upload_gb_per_day",
+         "--download-gb": "download_gb_per_day",
+         "--download-gbh": "download_gb_per_hour",
+         "--upload-ratio": "upload_ratio_percent",
+         "--upload-ratio-mb": "upload_ratio_min_mb",
+         "--upload-ratio-hours": "upload_ratio_min_hours",
+         "--volume-needs-upload": "volume_needs_upload",
+         "--volume-mbps": "volume_penalty_mbps",
+         "--ratio-needs-packet": "ratio_needs_packet",
+         "--upload-gbh": "upload_gb_per_hour", "--upload-day": "upload_day_gb",
+         "--upload-warn": "upload_warn_gb", "--upload-hours": "upload_hours",
+         "--upload-hours-mbps": "upload_hours_mbps",
+         "--penalty-mbps": "penalty_mbps", "--penalty-min": "penalty_min"}
+_menu_src = open(os.path.join(SRC, "menu.sh"), encoding="utf-8").read()
+_blocks = [b for b in re.findall(r'"\$CTL" guard --enable (.*?)>/dev/null',
+                                _menu_src, re.S)
+           if b.lstrip().startswith("--score")]
+
+
+def _preset(block, subst):
+    toks = block.replace("\\\n", " ").split()
+    out = {}
+    for k, v in zip(toks[::2], toks[1::2]):
+        v = subst.get(v.strip('"'), v.strip('"'))
+        out[_FLAG[k]] = (v == "on") if v in ("on", "off") else float(v)
+    return out
+
+
+check("в меню два пресета автоограничения", len(_blocks) == 2, str(len(_blocks)))
+for _name, _speed, _blk in (("мобильный", 10, _blocks[0]),
+                            ("домашний", 100, _blocks[1])):
+    _want = _preset(_blk, {"$gbd": "150", "$gbh": "22.5", "$soft": "30"})
+    _got = S.setup_guard_values(_speed)
+    _diff = {k: (v, _got.get(k)) for k, v in _want.items()
+             if (float(_got.get(k)) if not isinstance(v, bool)
+                 else _got.get(k)) != v}
+    check(f"числа мастера совпадают с пресетом «{_name}»", not _diff, str(_diff))
+
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

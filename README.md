@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.11-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.12-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--3.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v4.11
+# Shape v4.12
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -64,6 +64,28 @@ apt update && apt install -y git && rm -rf /tmp/shape && \
 git clone https://github.com/SkunkBG/shape.git /tmp/shape && \
 bash /tmp/shape/install.sh && shaper
 ```
+
+### Настройка за четыре ответа
+
+После установки откройте `shaper` и выберите первый пункт — **Быстрая настройка**.
+Вопросов четыре:
+
+1. **Где стоит нода** — обычная или за CDN. Ответ подсказан: нода смотрит, с
+   каких адресов идут соединения.
+2. **Скорость каждому клиенту** — 10, 100 или своё число.
+3. **Ограничивать ли тех, кто качает торренты** и перегружает канал.
+4. **Ловить ли тех, кто раздаёт подписку.** Если да и панель Remnawave с
+   Telegram ещё не подключены — спросит их тут же.
+
+Всё остальное выводится из ответов. То же одной командой:
+
+```bash
+shaperctl setup --cdn yes --speed 10 --heavy on --sharing on
+shaperctl setup          # без ключей: словами, что настроено и чего не хватает
+```
+
+Любое отдельное число потом можно поправить на остальных экранах — они никуда
+не делись.
 
 ### Требования
 

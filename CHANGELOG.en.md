@@ -13,6 +13,24 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.12
+
+**A node is set up with four answers — the first menu item or one command.**
+
+Shape has seventy-five settings and twenty-one screens. For a node behind a CDN with sharing detection to work, half a dozen of them had to be hit in the right order, and people tripped: speed without a PROXY port, a port without speed, "drop" picked instead of "cut off". The node owner put it plainly: pick "behind a CDN or regular", set the speed — and it should work.
+
+**Quick setup is the first item of the main menu.** Four questions: where the node sits, what speed each client gets, whether to limit those who torrent, whether to catch those who share a subscription. The first answer is suggested: the node looks at which addresses the connections come from and calls nearly-everything-from-one-address a CDN edge. The words "block", "limit" and "drop" do not appear on the screen. If the panel and Telegram are not connected for sharing detection, the wizard asks for them there.
+
+**The same setup as one command:** `shaperctl setup --cdn yes --speed 10 --heavy on --sharing on`. The PROXY port and the speed go into the kernel in one operation, so the "limit without port" and "port without limit" traps do not arise. The auto-limit numbers are the ones the presets use: up to 20 Mbit/s — phone thresholds, above — an hourly cap derived from the channel. The test suite compares them with the menu presets so the two sources cannot drift apart.
+
+**`shaperctl setup` with no options says in words what is set up.** Where the node sits, what the speed is, what happens to someone who torrents and to someone who shares a subscription, whether messages arrive — and what is missing.
+
+**What changes in behaviour.** Nothing until the wizard is run: no setting and no screen was removed, an upgraded node works as before. If sharing detection could not be enabled — the panel does not answer, Telegram is not set up — the rest is still applied and the reason is named.
+
+**On upgrade** nothing needs doing.
+
+---
+
 ## 4.11
 
 **Sharing detection turns on with one command, and disabling a subscription no longer hits those whose plan allows it.**
