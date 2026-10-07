@@ -13,6 +13,26 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.11
+
+**Sharing detection turns on with one command, and disabling a subscription no longer hits those whose plan allows it.**
+
+To have a sharer cut off and disabled half an hour later, six settings in three sections had to agree: the PROXY port, the panel link, Telegram, the action, the cut-off duration and the delay. A mistake in any of them produced no message — something simply did not happen. That is what occurred on a live node: "drop connections" was picked in the menu because that item was the one marked "recommended". A drop does not reduce speed — clients reconnect in seconds — it wipes the sessions from the panel and does not hold the countdown to disabling.
+
+**New command `shaperctl sharing`.** `sharing on` sets a 60-minute cut-off and disabling the subscription after 30. Before that it checks whether the panel answers, whether Telegram is set up and whether a PROXY port is set on a node that looks like it is behind a CDN; if not, it refuses, names the reason and leaves the settings alone. `sharing status` answers in words: who counts as a sharer, what happens to them, whether there are exemptions and what is missing. `sharing off` returns to "report only". In the menu it is the first item of the panel screen. The "recommended" mark in the action choice moved from drop to cut-off.
+
+**Disabling a subscription ignored the plan.** The plan-based threshold — "devices in the plan × multiplier" — applied to limiting and notifying but not to the delay. A user with a fifteen-device plan and twenty-two addresses was not limited, the log said "below what the plan allows" — and half an hour later the subscription was disabled. Both ready-made auto-limit presets enable the plan-based threshold themselves, so any node with a preset and a delay could be affected. The threshold is now checked before disabling just as before limiting.
+
+**If the user card cannot be fetched, the subscription is not disabled.** The card holds both the exemption tag and the device count. Previously, when the panel failed at that moment, the tag counted as empty and a tag-protected account was disabled. Now, when the decision depends on the card, the node waits for the next pass; the countdown is not reset.
+
+**The pause between notifications no longer cancels the cut-off.** The six-hour pause exists so that one reseller does not show up in Telegram every five minutes. But it sat before the limiting: the cut-off expired after an hour and for the next five the same person ran at full speed, with new addresses never limited at all. During the pause the node now stays silent but keeps cutting off.
+
+**What changes in behaviour.** On nodes with the "cut off" or "limit" action a sharer stays restricted for as long as they share, not one hour out of six. There will be no more messages than before. On nodes with the plan-based threshold, disabling of those within their plan stops.
+
+**On upgrade** nothing needs doing. To see the result: `shaperctl sharing status`.
+
+---
+
 ## 4.10
 
 **The node names itself in requests to the panel — the protection in front of the panel no longer takes it for a bot.**

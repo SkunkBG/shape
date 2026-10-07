@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-4.10-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.11-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v4.10
+# Shape v4.11
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -1753,6 +1753,24 @@ The message shows which threshold was applied:
 Simultaneous addresses: 25 over the last 10 min
 Threshold for his plan: 60 — devices sold: 15
 ```
+
+### Everything at once, one command
+
+```bash
+shaperctl sharing on        # cut off at once, disable the subscription after 30 min
+shaperctl sharing status    # in words: what happens to a sharer and what is missing
+shaperctl sharing off       # back to "report only"
+```
+
+`sharing on` applies a consistent set — a 60-minute cut-off and disabling the
+subscription after 30 — and first checks everything it depends on: whether the
+panel answers, whether Telegram is set up, whether a PROXY port is set on a node
+behind a CDN. If something is off it refuses and names the reason without
+touching the settings. The address threshold, plan-based threshold and
+exemptions stay yours. `--after 0` cuts off but never disables. In the menu it
+is the first item of the panel screen.
+
+The same in parts follows, for those who need fine tuning.
 
 ### The night: disabling the subscription after a grace period
 

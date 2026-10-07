@@ -1555,6 +1555,166 @@ check("под браузер не маскируемся",
       "Mozilla" not in S.user_agent() and S.user_agent().startswith("Shape/"))
 PANEL["strict_agent"] = False
 
+# ── 4.11: отключение подписки смотрит на тариф ──────────────────────────
+print("\n\033[1mОтключение и тариф\033[0m")
+_dis = []
+_real_disable = S.panel_user_disable
+S.panel_user_disable = lambda p, uid: _dis.append(str(uid))
+_real_tg_dis = S.tg_panel_disabled
+S.tg_panel_disabled = lambda *a, **k: None
+_real_notify = S.panel_notify
+S.panel_notify = lambda *a, **k: None
+
+
+def _pending_since(uid, ago):
+    st = S.panel_state()
+    st["pending"] = {str(uid): time.time() - ago}
+    S.panel_state_save(st)
+
+
+drop_state()
+PANEL.update(users=make_users({97: 22}), http_code=0, users_code=0,
+             directory={"97": {"id": 97, "username": "office",
+                               "hwidDeviceLimit": 15}})
+_person = S.panel_user(conf(), "97")
+_field = next((k for k, v in (_person or {}).items() if v == 15), None)
+check("поддельная панель отдаёт число устройств в тарифе",
+      (_person or {}).get("device_limit") == 15, str(_person))
+_cfg_t = {"panel": conf(action="notify", per_device=2, disable_after_min=30,
+                        cooldown_min=0),
+          "telegram": dict(S.TG_DEFAULT)}
+_pending_since(97, 3600)
+_dis.clear()
+S.panel_scan(_cfg_t)
+check("у кого адресов меньше, чем разрешает тариф, подписку не отключаем",
+      _dis == [], str(_dis))
+check("и из ожидания он убран",
+      "97" not in (S.panel_state().get("pending") or {}))
+
+drop_state()
+_cfg_b = {"panel": conf(action="notify", per_device=0, disable_after_min=30,
+                        cooldown_min=0),
+          "telegram": dict(S.TG_DEFAULT)}
+_pending_since(97, 3600)
+_dis.clear()
+S.panel_scan(_cfg_b)
+check("без учёта тарифа тот же человек отключается, как раньше",
+      _dis == ["97"], str(_dis))
+
+drop_state()
+PANEL["users_code"] = 500
+_pending_since(97, 3600)
+_dis.clear()
+S.panel_scan(_cfg_t)
+check("карточка недоступна, а решение зависит от тарифа — ждём, не отключаем",
+      _dis == [], str(_dis))
+check("отсчёт при этом не сброшен",
+      "97" in (S.panel_state().get("pending") or {}))
+PANEL["users_code"] = 0
+
+# ── 4.11: пауза глушит сообщение, но не перекрытие ──────────────────────
+print("\n\033[1mПауза и перекрытие\033[0m")
+drop_state()
+_lim = []
+_real_limit = S.panel_limit
+S.panel_limit = lambda p, ips, mbps=None, uid=None, person=None: (
+    _lim.append((str(uid), mbps)), list(ips)[:1])[1]
+_told = []
+S.panel_notify = lambda cfg, rec: _told.append(str(rec["user_id"]))
+PANEL.update(users=make_users({55: 30}), directory={})
+_cfg_q = {"panel": conf(action="block", cooldown_min=360, per_device=0,
+                        disable_after_min=0),
+          "telegram": dict(S.TG_DEFAULT)}
+S.panel_scan(_cfg_q)
+check("первый раз: перекрыт и о нём рассказано",
+      len(_lim) == 1 and _told == ["55"], f"{_lim} {_told}")
+S.panel_scan(_cfg_q)
+check("в паузу перекрытие выдаётся снова", len(_lim) == 2, str(_lim))
+check("а второго сообщения нет", _told == ["55"], str(_told))
+
+drop_state()
+_lim.clear(); _told.clear()
+_cfg_n = {"panel": conf(action="notify", cooldown_min=360, per_device=0,
+                        disable_after_min=0),
+          "telegram": dict(S.TG_DEFAULT)}
+S.panel_scan(_cfg_n); S.panel_scan(_cfg_n)
+check("при «только сообщать» пауза работает по-прежнему",
+      _told == ["55"] and _lim == [], f"{_lim} {_told}")
+S.panel_limit = _real_limit
+S.panel_notify = _real_notify
+S.panel_user_disable = _real_disable
+S.tg_panel_disabled = _real_tg_dis
+
+# ── 4.11: ловля раздачи одной командой ──────────────────────────────────
+print("\n\033[1mshaperctl sharing\033[0m")
+import argparse as _ap
+import contextlib as _cl
+
+
+def _sharing(action, **kw):
+    d = dict(action=action, after=None, minutes=None)
+    d.update(kw)
+    buf, err = io.StringIO(), io.StringIO()
+    code = 0
+    with _cl.redirect_stdout(buf), _cl.redirect_stderr(err):
+        try:
+            S.cmd_sharing(_ap.Namespace(**d))
+        except SystemExit as e:
+            code = e.code or 0
+    return code, buf.getvalue() + err.getvalue()
+
+
+S.cdn_hint_lines = lambda cfg: []
+PANEL.update(users=make_users({1: 2}), http_code=0)
+S.save_config({"panel": conf(action="drop", disable_after_min=0),
+               "telegram": dict(S.TG_DEFAULT)})
+_code, _out = _sharing("on")
+check("без Telegram не включается и говорит почему",
+      _code != 0 and "Telegram" in _out, _out)
+check("отказ настроек не тронул", S.load_config()["panel"]["action"] == "drop")
+
+S.save_config({"telegram": dict(S.TG_DEFAULT, enabled=True, token="1:x",
+                                chat_id="-100")})
+_code, _out = _sharing("on")
+_p = S.load_config()["panel"]
+check("включается одной командой", _code == 0, _out)
+check("ставит перекрытие, а не обрыв", _p["action"] == "block", _p["action"])
+check("отсрочка 30 минут при перекрытии на 60",
+      _p["disable_after_min"] == 30 and _p["limit_min"] == 60)
+check("порог и исключения владельца не трогает",
+      _p["ip_threshold"] == conf()["ip_threshold"] and _p["exempt"] == [])
+check("словами сказано, что будет с раздающим",
+      "перекрывается сразу" in _out and "через 30 мин" in _out, _out)
+check("и что исключений нет", "Исключений нет" in _out)
+
+_code, _out = _sharing("on", after=60.0, minutes=60)
+check("отсрочка не короче перекрытия отвергается", _code != 0, _out)
+_code, _out = _sharing("on", after=0.0)
+check("--after 0: перекрывать, но подписку не отключать",
+      _code == 0 and S.load_config()["panel"]["disable_after_min"] == 0
+      and "сама не отключается" in _out, _out)
+
+PANEL["http_code"] = 403
+_code, _out = _sharing("on")
+check("панель не отвечает — не включается", _code != 0 and "панель" in _out, _out)
+PANEL["http_code"] = 0
+
+S.cdn_hint_lines = lambda cfg: ["x"]
+_code, _out = _sharing("on")
+check("нода за CDN без порта PROXY — не включается",
+      _code != 0 and "PROXY" in _out, _out)
+S.cdn_hint_lines = lambda cfg: []
+
+S.save_config({"panel": conf(action="drop", disable_after_min=30)})
+_code, _out = _sharing("status")
+check("status предупреждает про обрыв с отсрочкой",
+      "обрываются" in _out and "может не дойти" in _out, _out)
+_code, _out = _sharing("off")
+_p = S.load_config()["panel"]
+check("off возвращает «только сообщать» и снимает отсрочку",
+      _p["action"] == "notify" and _p["disable_after_min"] == 0
+      and _p["enabled"] is True)
+
 srv.shutdown()
 print(f"\n\033[1mИтог: {ok} пройдено, {fail} провалено\033[0m")
 sys.exit(1 if fail else 0)

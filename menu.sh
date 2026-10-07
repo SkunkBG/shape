@@ -1243,6 +1243,10 @@ screen_panel() {
         fi
         echo -e "  ${T[pn_l_exempt]}: ${exempt}"
         hr
+        # Одна кнопка вместо шести согласованных настроек. Стоит первой:
+        # ради неё сюда и приходят, а остальное — тонкая подстройка.
+        echo -e " [21] ${G}${T[pn_sharing]}${N}"
+        echo -e "      ${D}${T[pn_sharing_d]}${N}"
         echo "  [1] ${T[g_toggle]}"
         echo "  [2] ${T[pn_set_url]}"
         echo "  [3] ${T[pn_set_token]}"
@@ -1304,11 +1308,13 @@ screen_panel() {
                echo
                echo -e "  [1] ${T[pn_act_notify]}"
                echo -e "      ${D}${T[pn_act_notify_d]}${N}"
-               echo -e "  [2] ${T[pn_act_drop]}   ${G}${T[pn_act_best]}${N}"
+               echo -e "  [2] ${T[pn_act_drop]}"
                echo -e "      ${D}${T[pn_act_drop_d]}${N}"
                echo -e "  [3] ${T[pn_act_limit]}"
                echo -e "      ${D}${T[pn_act_limit_d]}${N}"
-               echo -e "  [4] ${T[pn_act_block]}"
+               # Пометка стояла у «оборвать», и по ней выбирали именно его —
+               # а обрыв скорости не режет и отсчёта до отключения не держит.
+               echo -e "  [4] ${T[pn_act_block]}   ${G}${T[pn_act_best]}${N}"
                echo -e "      ${D}${T[pn_act_block_d]}${N}"
                echo -e "  [0] ← ${T[m0]}"
                echo
@@ -1346,6 +1352,7 @@ screen_panel() {
                [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" panel set --per-device "$v" >/dev/null ;;
            19) v="$(ask "${T[pn_ask_id]}")"
                [[ -n "$v" ]] && { echo; "$CTL" panel enable "$v"; pause; } ;;
+           21) echo; "$CTL" sharing on; pause ;;
             0|"") return ;;
         esac
     done

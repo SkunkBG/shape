@@ -315,6 +315,30 @@ MSG = {
         "pn_scan_found": "Найдено раздающих: {n}",
         "pn_scan_row": "  {user} — адресов {n}, из них видит нода {here}",
         "pn_dry": "Ничего не предпринято: это пробный запуск.",
+        "h_sharing": "ловля раздачи подписки одной командой: on, off, status",
+        "h_sh_after": "через сколько минут отключать подписку; 0 — не отключать",
+        "h_sh_minutes": "на сколько минут перекрывать доступ",
+        "sh_no_panel": "связь с панелью не настроена — нужны адрес, токен и UUID ноды: shaper → панель",
+        "sh_panel_fail": "панель не отвечает: {e}",
+        "sh_no_tg": "Telegram не настроен — о пойманном некому сообщить: shaper → Telegram",
+        "sh_cdn": "нода похожа на стоящую за CDN, а порт PROXY не задан — адресов клиентов она не видит: shaperctl apply --proxy-ports <порт>",
+        "sh_bad_after": "отсрочка отключения ({a} мин) должна быть меньше срока перекрытия ({m} мин)",
+        "sh_refused": "ловля раздачи не включена — сначала устраните перечисленное",
+        "sh_on_done": "Ловля раздачи включена.",
+        "sh_off_done": "Ловля раздачи выключена: о раздающих только сообщаем.",
+        "sh_st_off": "Ловля раздачи не работает: связь с панелью выключена.",
+        "sh_st_who": "Раздающим считается тот, у кого {n} и больше адресов за {w} мин.",
+        "sh_st_per": "Для больших тарифов порог выше: устройств в тарифе × {k}.",
+        "sh_st_notify": "Что с ним будет: только сообщение в Telegram, скорость не меняется.",
+        "sh_st_block": "Что с ним будет: доступ перекрывается сразу, на {m} мин.",
+        "sh_st_limit": "Что с ним будет: {s} Мбит/с на каждый адрес, на {m} мин.",
+        "sh_st_drop": "Что с ним будет: соединения обрываются, скорость не меняется — клиенты переподключатся.",
+        "sh_st_dis": "Если не прекратит — через {a} мин подписка отключается в панели.",
+        "sh_st_nodis": "Подписка сама не отключается.",
+        "sh_st_warn_hold": "без перекрытия отсчёт до отключения может не дойти до конца: включите shaperctl sharing on",
+        "sh_st_warn_after": "отсрочка не короче перекрытия — штраф истечёт раньше, и отсчёт оборвётся",
+        "sh_st_exempt": "Не трогаем: номеров в исключениях {n}, теги: {tg}.",
+        "sh_st_noexempt": "Исключений нет: офис на одной подписке попадёт под правило.",
         "pn_msg_head": "🔎 <b>Похоже на раздачу подписки</b>",
         "cdn_no_url": "адрес API провайдера CDN не задан",
         "cdn_no_token": "ключ API провайдера CDN не задан",
@@ -868,6 +892,30 @@ MSG = {
         "pn_scan_found": "Sharing found: {n}",
         "pn_scan_row": "  {user} — {n} addresses, {here} of them seen by this node",
         "pn_dry": "Nothing was done: this was a dry run.",
+        "h_sharing": "catch subscription sharing with one command: on, off, status",
+        "h_sh_after": "minutes until the subscription is disabled; 0 — never",
+        "h_sh_minutes": "minutes to cut off access for",
+        "sh_no_panel": "the panel link is not set up — URL, token and node UUID are needed: shaper → panel",
+        "sh_panel_fail": "the panel does not answer: {e}",
+        "sh_no_tg": "Telegram is not set up — nobody would be told about a catch: shaper → Telegram",
+        "sh_cdn": "the node looks like it is behind a CDN but no PROXY port is set — it cannot see client addresses: shaperctl apply --proxy-ports <port>",
+        "sh_bad_after": "the disable delay ({a} min) must be shorter than the cut-off ({m} min)",
+        "sh_refused": "sharing detection was not enabled — fix the above first",
+        "sh_on_done": "Sharing detection is on.",
+        "sh_off_done": "Sharing detection is off: sharers are only reported.",
+        "sh_st_off": "Sharing detection does not work: the panel link is off.",
+        "sh_st_who": "A sharer is anyone with {n} or more addresses within {w} min.",
+        "sh_st_per": "The threshold is higher for big plans: devices in the plan × {k}.",
+        "sh_st_notify": "What happens to them: a Telegram message only, speed is unchanged.",
+        "sh_st_block": "What happens to them: access is cut off at once, for {m} min.",
+        "sh_st_limit": "What happens to them: {s} Mbit/s per address, for {m} min.",
+        "sh_st_drop": "What happens to them: connections are dropped, speed is unchanged — clients will reconnect.",
+        "sh_st_dis": "If they do not stop, the subscription is disabled in the panel after {a} min.",
+        "sh_st_nodis": "The subscription is never disabled automatically.",
+        "sh_st_warn_hold": "without a cut-off the countdown to disabling may never complete: run shaperctl sharing on",
+        "sh_st_warn_after": "the delay is not shorter than the cut-off — the penalty expires first and the countdown breaks",
+        "sh_st_exempt": "Left alone: {n} ids in exemptions, tags: {tg}.",
+        "sh_st_noexempt": "No exemptions: an office on one subscription will fall under the rule.",
         "pn_msg_head": "🔎 <b>Looks like a shared subscription</b>",
         "cdn_no_url": "the CDN provider API address is not set",
         "cdn_no_token": "the CDN provider API key is not set",
@@ -7318,6 +7366,31 @@ def panel_scan(cfg, now=None, act=True):
                     rec["skipped"] = True
                 log_event("panel_exempt", user_id=uid, stage="disable")
                 continue
+            # Карточку получить не удалось, а от неё зависит, можно ли его
+            # трогать: в ней и тег исключения, и число устройств в тарифе.
+            # Отключение — самое дорогое действие, поэтому при незнании ждём
+            # следующего прохода, а не решаем в худшую для человека сторону.
+            # Отсчёт не сбрасываем: карточка придёт — отключим сразу.
+            if person is None and (p.get("exempt_tags")
+                                   or float(p.get("per_device") or 0) > 0):
+                log_event("panel_disable_failed", user_id=uid,
+                          error="карточка пользователя недоступна")
+                continue
+            # Порог от тарифа. В ожидание человек попадает по базовому порогу,
+            # и раньше на этом всё кончалось: тому, у кого адресов меньше, чем
+            # разрешает его тариф, ограничение не выдавалось — а подписку через
+            # отсрочку отключали. Проверяем только тех, кто виден сейчас: кого
+            # держит наше перекрытие, тот прошёл эту проверку при его выдаче.
+            if rec is not None:
+                thr, _by = panel_threshold(p, person)
+                if rec["count"] < thr:
+                    pend.pop(uid, None)
+                    state["pending"] = pend
+                    panel_state_save(state)
+                    rec["skipped"] = True
+                    log_event("panel_under_tariff", user_id=uid,
+                              ips=rec["count"], threshold=thr, stage="disable")
+                    continue
             try:
                 panel_user_disable(p, uid)
             except PanelError as e:
@@ -7341,10 +7414,17 @@ def panel_scan(cfg, now=None, act=True):
         rec.setdefault("blocked", False)
         # Кулдаун: один и тот же перепродавец не должен приходить в Telegram
         # каждые пять минут — иначе уведомления перестают читать.
-        if now - float(seen.get(rec["user_id"]) or 0) < cooldown:
+        #
+        # Пауза — про сообщения. Раньше она отменяла и само ограничение:
+        # перекрытие истекало через час, а следующие пять часов тот же
+        # перепродавец работал на полной скорости, и новые его адреса не
+        # ограничивались вовсе. Теперь в паузу молчим, но перекрываем.
+        quiet = now - float(seen.get(rec["user_id"]) or 0) < cooldown
+        if quiet and not ({"block", "limit"} & actions):
             rec["skipped"] = True
             continue
-        seen[rec["user_id"]] = now
+        if not quiet:
+            seen[rec["user_id"]] = now
         # Имя спрашиваем поимённо и только про нарушителя: тянуть ради этого
         # весь справочник в шесть тысяч записей каждые пять минут незачем.
         rec["person"] = panel_user(p, rec["user_id"])
@@ -7357,8 +7437,9 @@ def panel_scan(cfg, now=None, act=True):
         rec["by_tariff"] = from_tariff
         if rec["count"] < rec["threshold"]:
             rec["skipped"] = True
-            log_event("panel_under_tariff", user_id=rec["user_id"],
-                      ips=rec["count"], threshold=rec["threshold"])
+            if not quiet:
+                log_event("panel_under_tariff", user_id=rec["user_id"],
+                          ips=rec["count"], threshold=rec["threshold"])
             continue
 
         # Тег проверяем здесь, а не в panel_offenders: там карточка ещё не
@@ -7367,9 +7448,10 @@ def panel_scan(cfg, now=None, act=True):
         if guard_exempt(cfg, {"user_id": rec["user_id"],
                               "tag": (rec["person"] or {}).get("tag")}):
             rec["skipped"] = True
-            log_event("panel_exempt", user_id=rec["user_id"],
-                      ips=len(rec.get("ips") or []),
-                      subject=(rec["person"] or {}).get("name"))
+            if not quiet:
+                log_event("panel_exempt", user_id=rec["user_id"],
+                          ips=len(rec.get("ips") or []),
+                          subject=(rec["person"] or {}).get("name"))
             continue
 
         # Блокировка старше обычного ограничения: если задано и то и другое,
@@ -7399,6 +7481,16 @@ def panel_scan(cfg, now=None, act=True):
         # пустоту вместо адресов и нод. А смотреть он идёт именно тогда, когда
         # пришло уведомление. Заодно исчезновение адресов обнуляло отсчёт до
         # отключения подписки.
+        # В паузу — только перекрытие, оно уже выдано выше. Обрыв и сообщение
+        # повторять каждые пять минут незачем; в журнал пишем, только если
+        # под ограничение попали новые адреса.
+        if quiet:
+            rec["skipped"] = True
+            if rec["limited"]:
+                log_event("sharing_found", source="panel",
+                          user_id=rec["user_id"], ips=rec["count"],
+                          limited=len(rec["limited"]), dropped=0, repeat=1)
+            continue
         if "drop" in actions:
             try:
                 panel_drop(p, rec["ips"])
@@ -7762,6 +7854,125 @@ def cmd_panel(a):
         print(t("pn_scan_row", user=rec["user_id"], n=rec["count"], here=here))
     if dry:
         print(f"  {C['gry']}{t('pn_dry')}{C['r']}")
+    print()
+
+
+# ── Ловля раздачи одной командой ───────────────────────────────────────
+#
+# Чтобы раздающего подписку перекрыло и через полчаса отключило, надо руками
+# согласовать шесть настроек в трёх разделах: порт PROXY, связь с панелью,
+# Telegram, действие, срок перекрытия, отсрочку. Ошибка в любой не даёт
+# сообщения — что-то просто тихо не срабатывает. Живой случай: в меню выбрали
+# «оборвать», потому что именно этот пункт был помечен рекомендуемым, а обрыв
+# ни скорости не режет, ни отсчёта до отключения не держит.
+#
+# Здесь одна команда выставляет согласованный набор и перед этим проверяет
+# всё, от чего он зависит, а status отвечает словами, а не списком полей.
+SHARING_MINUTES = 60        # срок перекрытия
+SHARING_AFTER = 30          # через сколько минут отключать подписку
+
+
+def sharing_blockers(cfg, probe=True):
+    """Что мешает ловле раздачи. Пустой список — можно включать."""
+    p, tg = cfg["panel"], cfg["telegram"]
+    out = []
+    if not (p.get("url") and p.get("token") and p.get("node_uuid")):
+        out.append(t("sh_no_panel"))
+    elif probe:
+        try:
+            panel_fetch(p)
+        except PanelError as e:
+            out.append(t("sh_panel_fail", e=e))
+        except Exception as e:
+            out.append(t("sh_panel_fail", e=f"{type(e).__name__}: {e}"))
+    if not (tg.get("enabled") and tg.get("token") and tg.get("chat_id")):
+        out.append(t("sh_no_tg"))
+    try:
+        hint = cdn_hint_lines(cfg)
+    except Exception:
+        hint = []
+    if hint:
+        out.append(t("sh_cdn"))
+    return out
+
+
+def sharing_lines(cfg):
+    """Что будет с раздающим — словами. Список пар (текст, тревожно ли)."""
+    p = cfg["panel"]
+    out = []
+    if not p.get("enabled"):
+        return [(t("sh_st_off"), True)]
+    acts = panel_actions(p)
+    after = float(p.get("disable_after_min") or 0)
+    minutes = int(p.get("limit_min") or 60)
+    out.append((t("sh_st_who", n=p.get("ip_threshold", 20),
+                  w=p.get("window_min", 10)), False))
+    if float(p.get("per_device") or 0) > 0:
+        out.append((t("sh_st_per", k=f"{float(p['per_device']):g}"), False))
+    if "block" in acts:
+        out.append((t("sh_st_block", m=minutes), False))
+    elif "limit" in acts:
+        out.append((t("sh_st_limit", s=f"{float(p.get('limit_mbps') or 1):g}",
+                      m=minutes), False))
+    elif "drop" in acts:
+        out.append((t("sh_st_drop"), True))
+    else:
+        out.append((t("sh_st_notify"), False))
+    if after:
+        out.append((t("sh_st_dis", a=f"{after:g}"), False))
+        if not ({"block", "limit"} & acts):
+            out.append((t("sh_st_warn_hold"), True))
+        elif after >= minutes:
+            out.append((t("sh_st_warn_after"), True))
+    else:
+        out.append((t("sh_st_nodis"), False))
+    ex, tags = p.get("exempt") or [], p.get("exempt_tags") or []
+    if ex or tags:
+        out.append((t("sh_st_exempt", n=len(ex),
+                      tg=", ".join(tags) or "—"), False))
+    else:
+        out.append((t("sh_st_noexempt"), False))
+    for line in sharing_blockers(cfg, probe=False):
+        out.append((line, True))
+    return out
+
+
+def cmd_sharing(a):
+    cfg = load_config()
+    p = cfg["panel"]
+
+    if a.action == "on":
+        minutes = a.minutes if a.minutes is not None else SHARING_MINUTES
+        after = a.after if a.after is not None else SHARING_AFTER
+        if minutes < 1 or not 0 <= after <= 1440:
+            die(t("sh_bad_after", a=f"{after:g}", m=minutes))
+        # Отсрочка обязана быть короче перекрытия: отсчёт держится, пока жив
+        # наш штраф, и истёкший раньше срока штраф обрывает его молча.
+        if after and after >= minutes:
+            die(t("sh_bad_after", a=f"{after:g}", m=minutes))
+        problems = sharing_blockers(cfg)
+        if problems:
+            for line in problems:
+                print(f"  {C['red']}✗ {line}{C['r']}", file=sys.stderr)
+            die(t("sh_refused"))
+        p.update({"enabled": True, "action": "block", "limit_min": int(minutes),
+                  "disable_after_min": float(after)})
+        save_config({"panel": p})
+        log_event("config_changed", source="manual",
+                  message=f"sharing on: block {int(minutes)} min, "
+                          f"disable after {after:g} min")
+        print(f"\n  {C['grn']}✓ {t('sh_on_done')}{C['r']}")
+    elif a.action == "off":
+        p.update({"action": "notify", "disable_after_min": 0})
+        save_config({"panel": p})
+        log_event("config_changed", source="manual", message="sharing off")
+        print(f"\n  {C['grn']}✓ {t('sh_off_done')}{C['r']}")
+    else:
+        print()
+
+    for text, alarm in sharing_lines(load_config()):
+        mark = f"{C['yel']}⚠ " if alarm else "  "
+        print(f"  {mark}{text}{C['r']}")
     print()
 
 
@@ -9537,6 +9748,14 @@ def build_parser():
                     help=t("h_pn_dry"))
     pn.add_argument("--json", action="store_true")
     pn.set_defaults(func=cmd_panel)
+
+    sh = sub.add_parser("sharing", help=t("h_sharing"))
+    sh.add_argument("action", choices=["on", "off", "status"], nargs="?",
+                    default="status")
+    sh.add_argument("--after", type=float, default=None, help=t("h_sh_after"))
+    sh.add_argument("--minutes", type=int, default=None,
+                    help=t("h_sh_minutes"))
+    sh.set_defaults(func=cmd_sharing)
 
     pr = sub.add_parser("personal", help=t("h_personal"))
     pr.add_argument("action", choices=["set", "del", "list"])

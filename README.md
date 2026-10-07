@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.10-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.11-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--3.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v4.10
+# Shape v4.11
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -1798,6 +1798,23 @@ shaperctl panel set --per-device 4
 Адресов одновременно: 25 за последние 10 мин
 Порог для его тарифа: 60 — продано устройств 15
 ```
+
+### Всё сразу одной командой
+
+```bash
+shaperctl sharing on        # перекрыть сразу, через 30 минут отключить подписку
+shaperctl sharing status    # словами: что будет с раздающим и чего не хватает
+shaperctl sharing off       # вернуть «только сообщать»
+```
+
+`sharing on` выставляет согласованный набор — перекрытие на 60 минут и
+отключение подписки через 30 — и перед этим проверяет всё, от чего он зависит:
+отвечает ли панель, настроен ли Telegram, задан ли порт PROXY на ноде за CDN.
+Не сходится — отказывает и называет причину, настроек не трогая. Порог адресов,
+учёт тарифа и исключения остаются вашими. `--after 0` — перекрывать, но
+подписку не отключать. В меню это первый пункт экрана панели.
+
+Ниже то же по частям — для тех, кому нужна тонкая подстройка.
 
 ### Ночь: отключение подписки по отсрочке
 
