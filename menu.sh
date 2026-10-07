@@ -2282,8 +2282,27 @@ print('%d|%d' % (bool(p.get('url') and p.get('token') and p.get('node_uuid')),
         "$ETC_DIR/config.json" 2>/dev/null || echo "0|0"
 }
 
+# Да или нет — цифрой, а не буквой. Буква ломается дважды: на сервере без
+# русской локали кириллица в ответе не распознаётся, и «н» читалось как
+# согласие; а в подсказке «[Д/н]» непонятно, на какой раскладке отвечать.
+# Цифры набираются одинаково на любой раскладке и в любой локали.
+su_yes() {
+    local d="${1:-1}" v
+    echo -e "  [1] ${T[su_yes]}" >&2
+    echo -e "  [2] ${T[su_no]}" >&2
+    # Непонятный ответ — не «да» и не «нет»: спрашиваем ещё раз. Иначе
+    # набранное буквой «н» молча превращалось бы в согласие.
+    while :; do
+        v="$(ask "${T[su_pick]}" "$d")"
+        case "$v" in
+            1) return 0 ;;
+            2) return 1 ;;
+        esac
+    done
+}
+
 screen_setup() {
-    local pr kind why v cdn speed cur heavy sharing has_pn has_tg ans a b c
+    local pr kind why v cdn speed cur heavy sharing has_pn has_tg a b c
     title "${T[su_title]}"
     echo -e "  ${D}${T[su_h1]}${N}"
     echo -e "  ${D}${T[su_h2]}${N}"
@@ -2321,15 +2340,13 @@ screen_setup() {
     # 3. Тяжёлые клиенты.
     echo -e "  ${B}3/4 · ${T[su_q_heavy]}${N}"
     echo -e "  ${D}${T[su_heavy_d]}${N}"
-    read -rp "  ${T[su_yn]}: " ans
-    [[ "$ans" =~ ^[NnНн] ]] && heavy=off || heavy=on
+    su_yes && heavy=on || heavy=off
     echo
 
     # 4. Раздача подписки. Нужны панель и Telegram — спросим, если их нет.
     echo -e "  ${B}4/4 · ${T[su_q_sharing]}${N}"
     echo -e "  ${D}${T[su_sharing_d]}${N}"
-    read -rp "  ${T[su_yn]}: " ans
-    [[ "$ans" =~ ^[NnНн] ]] && sharing=off || sharing=on
+    su_yes && sharing=on || sharing=off
     if [[ "$sharing" == "on" ]]; then
         IFS='|' read -r has_pn has_tg <<< "$(su_have)"
         if [[ "$has_pn" != "1" ]]; then
@@ -2370,8 +2387,8 @@ screen_setup() {
     if [[ "$sharing" == "on" ]]; then echo -e "  ${D}  · ${T[su_sum_sharing_on]}${N}"
     else echo -e "  ${D}  · ${T[su_sum_sharing_off]}${N}"; fi
     echo
-    read -rp "  ${T[apply_q]}: " ans
-    [[ "$ans" =~ ^[NnНн] ]] && { echo "  ${T[cancelled]}"; pause; return; }
+    echo -e "  ${B}${T[su_apply]}${N}"
+    su_yes || { echo "  ${T[cancelled]}"; pause; return; }
 
     "$CTL" setup --cdn "$cdn" --speed "$speed" --heavy "$heavy" --sharing "$sharing"
     pause

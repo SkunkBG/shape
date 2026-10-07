@@ -13,6 +13,18 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.13
+
+**In quick setup, "yes" and "no" are picked with a digit, not a letter.**
+
+The wizard's questions ended with a "Yes or no [Y/n]" prompt that had to be answered with a letter. That confused twice. It was unclear which keyboard layout to answer in. And on a server without a Russian locale a Cyrillic answer is not recognised: a typed "н" (no) was read as consent.
+
+Each such question now has two items below it — `[1] Yes` and `[2] No`, like the other screens. Digits are typed the same on any layout. An unclear answer is not taken as consent; the wizard asks again.
+
+**On upgrade** nothing needs doing.
+
+---
+
 ## 4.12
 
 **A node is set up with four answers — the first menu item or one command.**
