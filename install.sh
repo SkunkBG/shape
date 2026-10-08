@@ -231,7 +231,9 @@ ok "команды shaper и shaperctl созданы"
 step "Запуск"
 # Именно restart: при обновлении сервис уже запущен, и `start` был бы пустышкой —
 # в ядре осталась бы eBPF-программа прошлой версии.
+STARTED=0
 if systemctl restart shaper; then
+    STARTED=1
     ok "движок запущен"
     systemctl restart shaper-watch 2>/dev/null || true
     rm -rf "$APP_DIR.bak"
@@ -239,6 +241,17 @@ if systemctl restart shaper; then
 else
     echo -e "  ${Y}⚠ не стартанул — смотри: journalctl -u shaper -n 40${N}"
     [[ -d "$APP_DIR.bak" ]] && echo -e "  ${D}прошлая версия лежит в $APP_DIR.bak${N}"
+fi
+
+# Движок не поднялся — это не «Готово». Раньше итог был одинаковым в обоих
+# случаях и звал настраивать лимит, которого на ноде нет: на ядре, не
+# принявшем фильтр, установка выглядела успешной.
+if (( ! STARTED )); then
+    echo
+    echo -e "${R}Файлы установлены, но движок НЕ запущен — лимит не действует.${N}"
+    echo -e "  ${D}трафик идёт как до установки; причина: journalctl -u shaper -n 60${N}"
+    echo
+    exit 1
 fi
 
 echo

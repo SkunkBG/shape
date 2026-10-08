@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.15
+
+**On kernel 6.1 the shaper of versions 4.9–4.14 did not load at all.**
+
+Found while installing on a new Debian 12 server. The kernel rejected the filter at load time, the engine did not start, and the node was left without a limit; traffic kept flowing as usual, so from outside it looked like a healthy node.
+
+**The cause is a change from 4.9.** Resetting a binding on SYN reads the TCP flags earlier than before. The header bounds are checked above, where the ports are parsed, but the kernel 6.1 verifier with clang 14 did not connect the two: it reached this read along a path where only eight bytes are checked, and refused — `invalid access to packet`. On kernel 6.12 with a newer compiler the same code passed, so neither the test node nor CI showed it. The bounds check now sits right next to the read and does not depend on how the compiler lays the code out. Confirmed on the same server: with the fix the engine loaded.
+
+**The installer no longer says "Done" when the engine did not start.** The final line was the same in both cases and suggested configuring a limit the node did not have. On a failed start the installer now says plainly that the limit is not in effect, names where to look for the cause, and exits with an error.
+
+**What changes in behaviour.** On nodes where 4.9–4.14 worked — nothing. On Debian 12 with kernel 6.1 the shaper loads again.
+
+**On upgrade.** Upgrade Debian 12 nodes straight to 4.15, skipping 4.9–4.14. If such a node was already upgraded to one of them, check `systemctl is-active shaper`: "failed" means the limit is not in effect there right now, and upgrading to 4.15 brings it back.
+
+---
+
 ## 4.14
 
 **Audit of 4.9–4.13: the wizard no longer damages a configured node, the false "clients are gone" alert after an upgrade is removed, and yes/no looks the same everywhere.**

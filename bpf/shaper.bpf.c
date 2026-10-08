@@ -522,7 +522,15 @@ static __always_inline int process_packet(struct __sk_buff *skb,
         /* Два независимых основания доверять заголовку: адрес в списке или
          * флаг на порту. Второй переживает смену адресов CDN. */
         if ((tr && (*tr & TRUST_RELAY)) || (port_flags & PORT_PROXY)) {
-            struct tcphdr *tcp = l4;    /* границы проверены при разборе портов */
+            struct tcphdr *tcp = l4;
+            /* Границы проверены при разборе портов, но повторяем здесь, рядом
+             * с чтением. Верификатор не обязан связать «proto == TCP» тут с
+             * веткой TCP там: на ядре 6.1 с clang 14 он дошёл сюда по пути
+             * UDP, где проверено восемь байт, и отверг чтение флагов —
+             * программа не загружалась вовсе. Проверка у самого чтения от
+             * раскладки кода компилятором не зависит. */
+            if ((void *)(tcp + 1) > data_end)
+                return TC_ACT_OK;
             struct pp_key ck = {0};
             __builtin_memcpy(ck.addr, key.addr, sizeof(ck.addr));
             ck.port = (direction == 0) ? dport : sport;
