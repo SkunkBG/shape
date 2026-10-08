@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.13-8ECA43?style=flat-square" alt="версия"></a>
+  <a href="#установка"><img src="https://img.shields.io/badge/версия-4.14-8ECA43?style=flat-square" alt="версия"></a>
   <img src="https://img.shields.io/badge/ядро-Linux%205.4+-8ECA43?style=flat-square" alt="ядро">
   <img src="https://img.shields.io/badge/язык-ru%20%7C%20en-8ECA43?style=flat-square" alt="языки">
   <img src="https://img.shields.io/badge/лицензия-GPL--3.0-8ECA43?style=flat-square" alt="лицензия">
@@ -13,7 +13,7 @@
   <b>Русский</b> · <a href="README.en.md">English</a>
 </p>
 
-# Shape v4.13
+# Shape v4.14
 
 Ограничитель скорости по IP-адресу для VPN-нод. eBPF + EDT.
 
@@ -86,6 +86,13 @@ shaperctl setup          # без ключей: словами, что наст�
 
 Любое отдельное число потом можно поправить на остальных экранах — они никуда
 не делись.
+
+**На уже настроенной ноде.** Мастер сначала показывает, что на ней стоит, и
+на каждый вопрос предлагает «оставить как есть» — это ответ по умолчанию.
+Ключи команды работают так же: чего не указали, то не меняется. Но указанное
+заменяется целиком: `--heavy on` ставит стандартные числа автоограничения и
+порог раздачи поверх выставленных руками, `--heavy off` и `--sharing off`
+выключают включённое, `--cdn no` снимает порт PROXY.
 
 ### Требования
 

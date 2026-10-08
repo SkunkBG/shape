@@ -148,7 +148,7 @@ say "${D}Caddy выпускает сертификаты при первом з�
 say "${D}ограничивает число неудачных попыток на домен.${N}"
 echo
 read -rp "  Продолжить? [y/N]: " ans
-[[ "$ans" =~ ^[YyДд] ]] || { say "отменено"; exit 0; }
+[[ "$ans" =~ ^[Yy]$ ]] || { say "отменено"; exit 0; }
 
 head_ "Проверка конфигурации Authelia"
 if docker compose --project-directory "$HERE" run --rm authelia \

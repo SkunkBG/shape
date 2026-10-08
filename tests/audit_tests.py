@@ -2356,6 +2356,40 @@ for i in range(S.ONLINE_KEEP + 2):
     S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
 check("маленькую ноду не судим", _sent2 == [], _sent2)
 
+# Считаем живых, а не записи карты. Карта — LRU: ушедший клиент лежит в ней
+# часами. На живой ноде «норма» выходила 1079 и 3217 при сотне настоящих.
+_ns = S.time.monotonic_ns()
+_users = {"10.1.0.%d" % i: {"seen": _ns} for i in range(30)}
+_users.update({"10.2.0.%d" % i: {"seen": _ns - 3600 * 10 ** 9}
+               for i in range(200)})
+S.read_users = lambda: dict(_users)
+check("давно молчащие записи клиентами не считаются",
+      S.clients_live() == 30, S.clients_live())
+
+# Перезапуск движка пересоздаёт карты. Норма в памяти — от прежних, и первое
+# же обновление ноды уходило в Telegram тревогой «клиенты пропали». Так было
+# дважды на живой ноде: 100 при норме 3217 и 103 при норме 1079.
+_gs2.clear(); _sent2.clear()
+_users = {"10.0.0.%d" % i: {} for i in range(40)}
+S.read_users = lambda: dict(_users)
+now = 90000.0
+for i in range(S.ONLINE_KEEP):
+    S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
+_at = now + S.ONLINE_KEEP * S.ONLINE_EVERY
+_users = {"10.0.0.1": {}}
+_real_started = S.engine_started_at
+S.engine_started_at = lambda: _at - 5
+n = S.clients_watch(_cfg_cdn(), now=_at)
+check("сразу после перезапуска движка не судим", n == -1 and _sent2 == [],
+      (n, _sent2))
+check("и пустой отсчёт в норму не берём",
+      len(_gs2["online"]["hist"]) == S.ONLINE_KEEP
+      and min(_gs2["online"]["hist"]) == 40, _gs2["online"]["hist"])
+n = S.clients_watch(_cfg_cdn(), now=_at + S.ONLINE_EVERY)
+check("настоящий обвал после этого срока по-прежнему ловится",
+      n == 1 and len(_sent2) == 1, (n, len(_sent2)))
+S.engine_started_at = _real_started
+
 # ── Трафик и остаток пакета у провайдера ──────────────────────────────
 # Кончившийся трафик кладёт всех клиентов разом. Предупреждаем заранее.
 u = S.cdn_usage(_cfg_cdn())

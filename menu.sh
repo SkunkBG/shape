@@ -37,6 +37,23 @@ hr()    { echo -e "${D}  ──────────────────�
 title() { clear; echo; echo -e "  ${B}$1${N}"; hr; }
 pause() { echo; read -rsp "  ${T[back]} " _; }
 ask()   { local p="$1" d="${2:-}" v; read -rp "  $p${d:+ [$d]}: " v; echo "${v:-$d}"; }
+# Да или нет — везде одинаково: латинская y или n, Enter берёт умолчание
+# (оно заглавное в подсказке). Ничего другого за ответ не принимаем и
+# спрашиваем ещё раз. Раньше вопросы были трёх видов, и в двух любой
+# непонятный ввод что-то значил: в «[Y/n]» — согласие, а кириллица на сервере
+# без русской локали не распознавалась вовсе, и «н» читалось как «да».
+yn() {
+    local q="$1" d="${2:-y}" v hint="[Y/n]"
+    [[ "$d" == "n" ]] && hint="[y/N]"
+    while :; do
+        read -rp "  ${q} ${hint}: " v || v=""
+        case "${v:-$d}" in
+            y|Y) return 0 ;;
+            n|N) return 1 ;;
+        esac
+        echo -e "  ${D}${T[yn_hint]}${N}" >&2
+    done
+}
 cfg()   { python3 -c "
 import json, sys
 # Значения приходят аргументами, а не подстановкой в текст программы: одинарная
@@ -298,8 +315,7 @@ print(','.join(map(str, p)))" 2>/dev/null || echo 443)"
         echo -e "  ${T[conf_on1]} ${B}${speed} Mbit/s${N} ${T[conf_on2]} ${B}${port}${N}."
     fi
     echo
-    read -rp "  ${T[apply_q]}: " ans
-    [[ "$ans" =~ ^[NnНн] ]] && { echo "  ${T[cancelled]}"; pause; return; }
+    yn "${T[apply_q]}" || { echo "  ${T[cancelled]}"; pause; return; }
 
     "$CTL" apply --ports "$port" --speed "$speed"
     pause
@@ -413,8 +429,7 @@ guard_preset() {
                    echo -e "  ${D}${T[gp_m3]} $(awk "BEGIN{printf \"%.0f\", 3/($speed/8/1000)/60}") ${T[min]}${N}"
                fi
                echo
-               read -rp "  ${T[apply_q]}: " ans
-               [[ "$ans" =~ ^[NnНн] ]] && continue
+               yn "${T[apply_q]}" || continue
                # На телефоне порог в 3 ГБ/час — это «сколько нужно человеку»,
                # а не «сколько влезает в канал», и закачка игр сюда не
                # относится: на десяти мегабитах игра качается сутки в любом
@@ -467,8 +482,7 @@ guard_preset() {
                # Факты с самой ноды: сколько соединений и с каких адресов.
                "$CTL" trusted check
                echo
-               read -rp "  ${T[apply_q]}: " ans
-               [[ "$ans" =~ ^[NnНн] ]] && continue
+               yn "${T[apply_q]}" || continue
                "$CTL" apply --proxy-ports "$pports" --quiet || { pause; continue; }
                echo -e "  ${G}✓ ${T[gp_cdn_done]}${N}"
                echo -e "  ${D}${T[gp_cdn_after]}${N}"
@@ -514,8 +528,7 @@ guard_preset() {
                echo -e "  ${D}  · ${T[gp_p_pen]} 1 Mbit/s × 60 ${T[min]}${N}"
                echo -e "  ${D}  · ${T[gp_h_soft]} ${B}${soft} Mbit/s${N}"
                echo
-               read -rp "  ${T[apply_q]}: " ans
-               [[ "$ans" =~ ^[NnНн] ]] && continue
+               yn "${T[apply_q]}" || continue
                "$CTL" guard --enable --score 3 --both-dl 10 --both-ul 3 --both-min 10 \
                    --packet 600 --require-packet on --hours 4 --upload-gb 2 \
                    --download-gb "$gbd" --download-gbh "$gbh" \
@@ -777,8 +790,7 @@ tunnel_setup() {
         echo -e "  ${B}${T[tn_fp]}${N}"
         ssh-keygen -lf "$TUN_KNOWN.new" 2>/dev/null | sed 's/^/    /'
         echo
-        read -rp "  ${T[tn_fp_q]} [y/N]: " ans
-        if [[ ! "$ans" =~ ^[YyДд] ]]; then
+        if ! yn "${T[tn_fp_q]}" n; then
             rm -f "$TUN_KNOWN.new"; echo "  ${T[cancelled]}"; pause; return
         fi
         mv -f "$TUN_KNOWN.new" "$TUN_KNOWN"; chmod 600 "$TUN_KNOWN"
@@ -1352,7 +1364,12 @@ screen_panel() {
                [[ "$v" =~ ^[0-9]+$ ]] && "$CTL" panel set --per-device "$v" >/dev/null ;;
            19) v="$(ask "${T[pn_ask_id]}")"
                [[ -n "$v" ]] && { echo; "$CTL" panel enable "$v"; pause; } ;;
-           21) echo; "$CTL" sharing on; pause ;;
+           # Одно нажатие включало перекрытие и отключение подписки и молча
+           # заменяло выставленные срок и отсрочку. Отключение — самое дорогое
+           # действие Shape, поэтому сначала вопрос, и по умолчанию «нет».
+           21) echo
+               echo -e "  ${D}${T[pn_sharing_w]}${N}"
+               yn "${T[pn_sharing_q]}" n && { echo; "$CTL" sharing on; pause; } ;;
             0|"") return ;;
         esac
     done
@@ -1387,8 +1404,7 @@ screen_limited() {
             2) echo -e "  ${D}${T[lm_hint_user]}${N}"
                ip="$(ask "${T[lm_ask_user]}")"
                [[ -n "$ip" ]] && { "$CTL" release --user "$ip"; sleep 1; } ;;
-            3) read -rp "  ${T[lm_confirm]} [y/N]: " ans
-               [[ "$ans" =~ ^[YyДд] ]] && { "$CTL" release --all; sleep 1; } ;;
+            3) yn "${T[lm_confirm]}" n && { "$CTL" release --all; sleep 1; } ;;
             0|"") return ;;
         esac
     done
@@ -1582,8 +1598,7 @@ screen_update() {
     echo -e "  ${D}${T[up_k2]}${N}"
     echo -e "  ${D}${T[up_k3]}${N}"
     echo
-    read -rp "  ${T[up_q]}: " ans
-    if [[ ! "$ans" =~ ^[YyДд] ]]; then
+    if ! yn "${T[up_q]}" n; then
         echo "  ${T[cancelled]}"; rm -rf "$tmp"; pause; return
     fi
 
@@ -1663,8 +1678,7 @@ screen_api() {
         case "$(ask "${T[choice]}")" in
             1) echo; "$APP_DIR/api/server.py" --print-tokens | sed 's/^/  /'
                echo -e "\n  ${D}${T[api_tok_hint]}${N}"; pause ;;
-            2) read -rp "  ${T[api_rotate_q]} [y/N]: " v
-               [[ "$v" =~ ^[YyДд] ]] && { api_rotate; pause; } ;;
+            2) yn "${T[api_rotate_q]}" n && { api_rotate; pause; } ;;
             3) echo -e "  ${D}${T[api_bind_hint]}${N}"
                v="$(ask "${T[api_bind]}" "$bind")"
                api_set bind_address "$v"; pause ;;
@@ -1677,8 +1691,7 @@ screen_api() {
             7) title "${T[sv_logs]}"
                journalctl -u shape-api -n 40 --no-pager | sed 's/^/  /'; pause ;;
             8) echo; api_test; pause ;;
-            9) read -rp "  ${T[api_remove_q]} [y/N]: " v
-               if [[ "$v" =~ ^[YyДд] ]]; then
+            9) if yn "${T[api_remove_q]}" n; then
                    systemctl disable --now shape-api >/dev/null 2>&1
                    rm -f "$API_UNIT"; rm -rf "$APP_DIR/api"
                    systemctl daemon-reload
@@ -2057,9 +2070,9 @@ screen_backup() {
                [[ -z "$f" ]] && continue
                echo
                echo -e "  ${D}${T[bk_secret_warn]}${N}"
-               ans="$(ask "${T[bk_secret_ask]}")"
+               yn "${T[bk_secret_ask]}" n && ans=y || ans=n
                echo
-               if [[ "$ans" =~ ^[YyДд]$ ]]; then
+               if [[ "$ans" == "y" ]]; then
                    "$CTL" export --out "$f" --with-secrets
                else
                    "$CTL" export --out "$f"
@@ -2074,8 +2087,7 @@ screen_backup() {
                fi
                "$CTL" import "$f" --dry-run
                echo
-               ans="$(ask "${T[bk_confirm]}")"
-               [[ "$ans" =~ ^[YyДд]$ ]] || continue
+               yn "${T[bk_confirm]}" n || continue
                "$CTL" import "$f"
                pause ;;
             3) f="$(ask "${T[bk_where]}")"
@@ -2095,8 +2107,7 @@ screen_backup() {
                    echo -e "  ${D}${T[bk_tg_w3]}${N}"
                    echo -e "  ${Y}${T[bk_tg_w4]}${N}"
                    echo
-                   ans="$(ask "${T[bk_confirm]}")"
-                   [[ "$ans" =~ ^[YyДд]$ ]] || continue
+                   yn "${T[bk_confirm]}" n || continue
                    "$CTL" telegram set --backup on --quiet
                fi ;;
             5) [[ "$bk_on" == "1" ]] || continue
@@ -2277,36 +2288,63 @@ import json, sys
 try: c = json.load(open(sys.argv[1]))
 except Exception: c = {}
 p, t = c.get('panel') or {}, c.get('telegram') or {}
-print('%d|%d' % (bool(p.get('url') and p.get('token') and p.get('node_uuid')),
-                 bool(t.get('token') and t.get('chat_id'))))" \
-        "$ETC_DIR/config.json" 2>/dev/null || echo "0|0"
+print('%d|%d|%d' % (bool(p.get('url') and p.get('token') and p.get('node_uuid')),
+                    bool(t.get('token') and t.get('chat_id')),
+                    bool(c.get('proxy_ports'))))" \
+        "$ETC_DIR/config.json" 2>/dev/null || echo "0|0|0"
 }
 
-# Да или нет — цифрой, а не буквой. Буква ломается дважды: на сервере без
-# русской локали кириллица в ответе не распознаётся, и «н» читалось как
-# согласие; а в подсказке «[Д/н]» непонятно, на какой раскладке отвечать.
-# Цифры набираются одинаково на любой раскладке и в любой локали.
-su_yes() {
-    local d="${1:-1}" v
-    echo -e "  [1] ${T[su_yes]}" >&2
-    echo -e "  [2] ${T[su_no]}" >&2
-    # Непонятный ответ — не «да» и не «нет»: спрашиваем ещё раз. Иначе
-    # набранное буквой «н» молча превращалось бы в согласие.
+# Ответ номером от 1 до $2. Непонятный ответ не толкуем никак — спрашиваем
+# ещё раз: опечатка в вопросе «где стоит нода» читалась как «обычная» и
+# стирала порт PROXY, то есть складывала всех клиентов за краем в один лимит.
+su_one_of() {
+    local d="$1" n="$2" v
     while :; do
         v="$(ask "${T[su_pick]}" "$d")"
-        case "$v" in
-            1) return 0 ;;
-            2) return 1 ;;
-        esac
+        [[ "$v" =~ ^[1-9]$ ]] && (( v <= n )) && { echo "$v"; return; }
     done
 }
 
+# Включить, выключить — или не трогать. Третий ответ есть только на уже
+# настроенной ноде, и там он по умолчанию: мастер, пройденный одними
+# нажатиями Enter, не должен менять то, что владелец выставил руками.
+su_onoff() {
+    if [[ "$1" == "1" ]]; then
+        echo -e "  [1] ${T[su_yes]}" >&2
+        echo -e "  [2] ${T[su_no]}" >&2
+        echo -e "  [3] ${T[su_keep]}" >&2
+        case "$(su_one_of 3 3)" in
+            1) echo on ;;
+            2) echo off ;;
+            *) echo keep ;;
+        esac
+    else
+        yn "${T[su_pick]}" && echo on || echo off
+    fi
+}
+
 screen_setup() {
-    local pr kind why v cdn speed cur heavy sharing has_pn has_tg a b c
+    local pr kind why v cdn speed cur heavy sharing has_pn has_tg has_pp
+    local conf=0 a b c
+    local -a args
     title "${T[su_title]}"
     echo -e "  ${D}${T[su_h1]}${N}"
     echo -e "  ${D}${T[su_h2]}${N}"
-    echo
+
+    # Нода уже настроена — сначала показываем, что на ней стоит. Мастер
+    # спрашивал вслепую и перезаписывал настроенное стандартными числами.
+    cur="$(cfg speed_mbps 0)"
+    [[ "$cur" =~ ^[0-9]+([.][0-9]+)?$ ]] || cur=0
+    cur="${cur%.0}"
+    [[ "$cur" =~ ^0+([.]0+)?$ ]] || conf=1
+    IFS='|' read -r has_pn has_tg has_pp <<< "$(su_have)"
+    if (( conf )); then
+        echo
+        echo -e "  ${B}${T[su_now]}${N}"
+        "$CTL" setup 2>/dev/null || true
+    else
+        echo
+    fi
 
     # 1. Где стоит нода. Ответ подсказываем по тому, кто сейчас подключён.
     pr="$("$CTL" setup --probe 2>/dev/null || true)"
@@ -2316,23 +2354,30 @@ screen_setup() {
     [[ -n "$why" && "$why" != "$pr" ]] && echo -e "  ${D}${why}${N}"
     echo -e "  [1] ${T[su_direct]}"
     echo -e "  [2] ${T[su_cdn]}"
-    v="$(ask "${T[su_pick]}" "$([[ "$kind" == "cdn" ]] && echo 2 || echo 1)")"
+    v="$(su_one_of "$([[ "$kind" == "cdn" ]] && echo 2 || echo 1)" 2)"
     [[ "$v" == "2" ]] && cdn=yes || cdn=no
     echo
 
-    # 2. Скорость.
-    cur="$(cfg speed_mbps 0)"
+    # 2. Скорость. На настроенной ноде по умолчанию — та, что стоит.
     echo -e "  ${B}2/4 · ${T[su_q_speed]}${N}"
     echo -e "  [1] 10 Mbit/s   ${D}${T[su_speed10]}${N}"
     echo -e "  [2] 100 Mbit/s  ${D}${T[su_speed100]}${N}"
     echo -e "  [3] ${T[su_speed_own]}"
-    v="$(ask "${T[su_pick]}" "$([[ "$cdn" == "yes" ]] && echo 1 || echo 2)")"
+    if (( conf )); then
+        echo -e "  [4] ${T[su_keep]}: ${B}${cur} Mbit/s${N}"
+        v="$(su_one_of 4 4)"
+    else
+        v="$(su_one_of "$([[ "$cdn" == "yes" ]] && echo 1 || echo 2)" 3)"
+    fi
     case "$v" in
         1) speed=10 ;;
         2) speed=100 ;;
-        *) speed="$(ask "${T[su_speed_ask]}" "$([[ "$cur" == "0" || "$cur" == "0.0" ]] && echo 10 || echo "$cur")")" ;;
+        4) speed="$cur" ;;
+        *) speed="$(ask "${T[su_speed_ask]}" "$( (( conf )) && echo "$cur" || echo 10)")" ;;
     esac
-    if [[ ! "$speed" =~ ^[0-9]+([.][0-9]+)?$ || "$speed" == "0" ]]; then
+    # Ноль — в любой записи: «0.0» и «00» проходили проверку на число и
+    # уезжали в ядро безлимитом.
+    if [[ ! "$speed" =~ ^[0-9]+([.][0-9]+)?$ || "$speed" =~ ^0+([.]0+)?$ ]]; then
         echo -e "  ${R}${T[su_bad_speed]}${N}"; pause; return
     fi
     echo
@@ -2340,15 +2385,14 @@ screen_setup() {
     # 3. Тяжёлые клиенты.
     echo -e "  ${B}3/4 · ${T[su_q_heavy]}${N}"
     echo -e "  ${D}${T[su_heavy_d]}${N}"
-    su_yes && heavy=on || heavy=off
+    heavy="$(su_onoff "$conf")"
     echo
 
     # 4. Раздача подписки. Нужны панель и Telegram — спросим, если их нет.
     echo -e "  ${B}4/4 · ${T[su_q_sharing]}${N}"
     echo -e "  ${D}${T[su_sharing_d]}${N}"
-    su_yes && sharing=on || sharing=off
+    sharing="$(su_onoff "$conf")"
     if [[ "$sharing" == "on" ]]; then
-        IFS='|' read -r has_pn has_tg <<< "$(su_have)"
         if [[ "$has_pn" != "1" ]]; then
             echo
             echo -e "  ${T[su_need_panel]}"
@@ -2382,15 +2426,28 @@ screen_setup() {
     if [[ "$cdn" == "yes" ]]; then echo -e "  ${D}  · ${T[su_cdn]}${N}"
     else echo -e "  ${D}  · ${T[su_direct]}${N}"; fi
     echo -e "  ${D}  · ${T[su_sum_speed]} ${B}${speed} Mbit/s${N}"
-    if [[ "$heavy" == "on" ]]; then echo -e "  ${D}  · ${T[su_sum_heavy_on]}${N}"
-    else echo -e "  ${D}  · ${T[su_sum_heavy_off]}${N}"; fi
-    if [[ "$sharing" == "on" ]]; then echo -e "  ${D}  · ${T[su_sum_sharing_on]}${N}"
-    else echo -e "  ${D}  · ${T[su_sum_sharing_off]}${N}"; fi
+    case "$heavy" in
+        on)  echo -e "  ${D}  · ${T[su_sum_heavy_on]}${N}"
+             # «Да» ставит стандартные числа поверх выставленных руками.
+             (( conf )) && echo -e "  ${Y}    ⚠ ${T[su_sum_replace]}${N}" ;;
+        off) echo -e "  ${D}  · ${T[su_sum_heavy_off]}${N}" ;;
+        *)   echo -e "  ${D}  · ${T[su_sum_heavy_keep]}${N}" ;;
+    esac
+    case "$sharing" in
+        on)  echo -e "  ${D}  · ${T[su_sum_sharing_on]}${N}" ;;
+        off) echo -e "  ${D}  · ${T[su_sum_sharing_off]}${N}" ;;
+        *)   echo -e "  ${D}  · ${T[su_sum_sharing_keep]}${N}" ;;
+    esac
     echo
-    echo -e "  ${B}${T[su_apply]}${N}"
-    su_yes || { echo "  ${T[cancelled]}"; pause; return; }
+    yn "${T[su_apply]}" || { echo "  ${T[cancelled]}"; pause; return; }
 
-    "$CTL" setup --cdn "$cdn" --speed "$speed" --heavy "$heavy" --sharing "$sharing"
+    # Передаём только то, на что ответили. Порт PROXY, уже заданный на ноде
+    # за CDN, не трогаем: `--cdn yes` поставил бы флаг на все порты разом.
+    args=(--speed "$speed")
+    [[ "$cdn" == "yes" && "$has_pp" == "1" ]] || args+=(--cdn "$cdn")
+    [[ "$heavy" == "keep" ]] || args+=(--heavy "$heavy")
+    [[ "$sharing" == "keep" ]] || args+=(--sharing "$sharing")
+    "$CTL" setup "${args[@]}"
     pause
 }
 

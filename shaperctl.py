@@ -5811,6 +5811,25 @@ def cdn_quota_watch(cfg, now=None):
     return left
 
 
+def clients_live():
+    """
+    Сколько клиентов ядро видело недавно.
+
+    Карты состояний — LRU: запись живёт до вытеснения, а не до ухода клиента.
+    Счёт всех записей давал «норму» в тысячи при сотне живых, и сравнивать с
+    ней было нечего. Отсечение то же, что у разбивки по сетям.
+    """
+    now_ns = time.monotonic_ns()
+    n = 0
+    for st in (read_users() or {}).values():
+        seen = (st or {}).get("seen") or 0
+        # seen == 0 — запись есть, отметки нет: считаем присутствующим.
+        if seen and now_ns - seen > CENSOR_FRESH_NS:
+            continue
+        n += 1
+    return n
+
+
 def clients_watch(cfg, now=None):
     """
     Не пропали ли клиенты. Возвращает текущее число или -1, если не судим.
@@ -5824,7 +5843,17 @@ def clients_watch(cfg, now=None):
     if now - float(prev.get("at") or 0) < ONLINE_EVERY:
         return -1
 
-    n = len(read_users() or {})
+    # Сразу после перезапуска движка не судим и отсчёт не берём. Карты
+    # пересозданы и пусты, а норма в памяти — от прежних: каждое обновление
+    # ноды иначе читалось как обвал и уходило в Telegram тревогой.
+    try:
+        started = float(engine_started_at() or 0)
+    except Exception:
+        started = 0.0
+    if started and 0 <= now - started < ONLINE_EVERY:
+        return -1
+
+    n = clients_live()
     hist = [int(x) for x in (prev.get("hist") or []) if str(x).isdigit()]
     hist = (hist + [n])[-ONLINE_KEEP:]
     prev.update({"at": now, "hist": hist})
@@ -7144,9 +7173,12 @@ def panel_limit(p, ips, mbps=None, uid=None, person=None):
     for ip in ips:
         if ip in wl or ip in relays or ip in pens or ip not in known:
             continue
+        # Отказ bpftool приходит не исключением, а выходом: run() зовёт die().
+        # Ловить только Exception значило уронить из-за одного адреса весь
+        # проход сторожа — вместе со штрафами, до которых он не дошёл.
         try:
             penalty_apply(ip, mbps, until)
-        except Exception:
+        except (Exception, SystemExit):
             continue
         entry = {"until": until, "mbps": mbps, "since": time.time(),
                  "source": "panel", "kind": "auto", "reason": "sharing"}
@@ -8155,6 +8187,11 @@ def cmd_setup(a):
         elif a.cdn == "no":
             cfg["proxy_ports"] = []
         cfg["speed_mbps"] = float(speed)
+        # Все отказы — до записи в ядро. Иначе команда падала уже после неё:
+        # в ядре новая скорость и порты, на диске прежние, и до перезапуска
+        # нода работает не так, как написано в настройках.
+        if a.heavy == "on" and speed <= 0:
+            die(t("su_heavy_nospeed"))
 
         # Порт PROXY и скорость уходят в ядро одной операцией. По отдельности
         # получается ловушка: при нулевой скорости фильтр ничего не считает и
@@ -8163,8 +8200,6 @@ def cmd_setup(a):
         write_to_kernel(cfg)
 
         if a.heavy == "on":
-            if speed <= 0:
-                die(t("su_heavy_nospeed"))
             cfg["guard"].update(setup_guard_values(speed))
             # Порог раздачи от тарифа ставят и пресеты меню: офис с большим
             # тарифом не должен попадать под правило для перепродавцов.

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/version-4.13-8ECA43?style=flat-square" alt="version"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/version-4.14-8ECA43?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/kernel-Linux%205.4+-8ECA43?style=flat-square" alt="kernel">
   <img src="https://img.shields.io/badge/language-ru%20%7C%20en-8ECA43?style=flat-square" alt="languages">
   <img src="https://img.shields.io/badge/license-GPL--3.0-8ECA43?style=flat-square" alt="license">
@@ -13,7 +13,7 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
-# Shape v4.13
+# Shape v4.14
 
 Per-IP speed limiter for VPN nodes. eBPF + EDT.
 
@@ -94,6 +94,13 @@ shaperctl setup          # no options: in words, what is set up and what is miss
 
 Any single number can still be tuned on the other screens — they are all still
 there.
+
+**On a node that is already set up.** The wizard first shows what is on it and
+offers "leave as is" for every question — that is the default answer. The
+command options work the same way: what you do not pass is not changed. But
+what you do pass is replaced in full: `--heavy on` puts the standard auto-limit
+numbers and the sharing threshold over the ones set by hand, `--heavy off` and
+`--sharing off` turn off what was on, `--cdn no` removes the PROXY port.
 
 ### Requirements
 

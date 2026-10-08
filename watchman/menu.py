@@ -347,7 +347,7 @@ def screen_service():
             # Выключение — не мелочь: пока таймер стоит, об авариях никто не
             # скажет. Поэтому спрашиваем прямо, а не молча выполняем.
             print("\n  %sПока таймер выключен, тревог не будет.%s" % (Y, N))
-            if input("  Точно выключить? [y/N]: ").strip().lower() in ("y", "д"):
+            if input("  Точно выключить? [y/N]: ").strip().lower() == "y":
                 subprocess.call(["systemctl", "disable", "--now", "watchman.timer"])
         elif c == "3":
             print()

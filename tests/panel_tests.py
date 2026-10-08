@@ -444,6 +444,24 @@ check("адрес из белого списка не тронут", "10.97.0.1"
 check("адрес с другой ноды не трогаем", "10.97.0.9" not in done, done)
 check("в ядро ушло ровно одно ограничение", len(applied) == 1, applied)
 
+# Отказ bpftool приходит не исключением, а выходом (run → die). Один такой
+# адрес не должен обрывать проход сторожа и оставлять остальных без штрафа.
+def _apply_flaky(ip, mbps, until):
+    if ip == "10.97.0.0":
+        raise SystemExit(1)
+    applied.append((ip, mbps))
+applied.clear()
+S.read_users = lambda: {"10.97.0.0": {}, "10.97.0.2": {}}
+S.penalty_apply = _apply_flaky
+try:
+    done = S.panel_limit(conf(), ["10.97.0.0", "10.97.0.2"])
+except SystemExit:
+    done = None
+check("сбой bpftool на одном адресе не роняет проход", done is not None)
+check("и остальные адреса ограничены", done == ["10.97.0.2"], done)
+S.read_users = lambda: {"10.97.0.0": {}, "10.97.0.1": {}}
+S.penalty_apply = lambda ip, mbps, until: applied.append((ip, mbps))
+
 print("\n\033[1m18. Токен панели не утекает\033[0m")
 S.save_config({"panel": conf(token="секретный-токен", proxy="http://u:p@h:1")})
 dump = S.build_export()

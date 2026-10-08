@@ -1094,6 +1094,18 @@ S.save_config({"ports": [443]})
 _code, _out = _setup(speed=0.01)
 check("скорость ниже порога ядра отвергается", _code != 0)
 
+# Отказ обязан случиться ДО записи в ядро. Раньше `--speed 0 --heavy on`
+# сначала заливал в ядро безлимит и только потом падал: на диске оставалась
+# прежняя скорость, и до перезапуска нода работала не так, как настроена.
+S.save_config({"speed_mbps": 10.0, "ports": [443]})
+_before = _bpf_log()
+_code, _out = _setup(speed=0.0, heavy="on")
+check("тяжёлые без скорости — отказ", _code != 0, _out)
+check("и в ядро при этом ничего не ушло", _bpf_log() == _before,
+      _bpf_log()[len(_before):])
+check("и на диске скорость прежняя", S.load_config()["speed_mbps"] == 10.0,
+      str(S.load_config()["speed_mbps"]))
+
 S.proc_peers = lambda ports: {"198.51.100.20": 990, "203.0.113.5": 10}
 S.save_config({"proxy_ports": []})
 _code, _out = _setup(probe=True)

@@ -13,6 +13,32 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.14
+
+**Audit of 4.9–4.13: the wizard no longer damages a configured node, the false "clients are gone" alert after an upgrade is removed, and yes/no looks the same everywhere.**
+
+Six versions shipped in four days without a check on a live node, and the audit found things in them that were dangerous on a node already set up. This release fixes them in one go.
+
+**Quick setup preserves what is configured.** The wizard used to ask blindly and apply everything: "no" to the torrent question turned off an enabled auto-limit, "yes" put the standard numbers over the ones set by hand (a 480-minute penalty became 60), and the default speed was 10 or 100 rather than the one in place. On a configured node the wizard now first shows what is on it, and speed, heavy users and sharing each have a "leave as is" answer — which is the default. A wizard walked through with Enter alone changes nothing. If an answer will replace your numbers with the standard ones, the summary before applying says so.
+
+**A typo in "where does the node sit" no longer wipes the PROXY port.** Any answer other than "2" was read as "a regular node" — and behind a CDN that folded every client behind the edge into one limit. An unclear answer is now asked again. A PROXY port that is already set is left alone.
+
+**`shaperctl setup` refuses before writing to the kernel, not after.** `setup --speed 0 --heavy on` first loaded "unlimited" into the kernel and only then exited with an error: the disk kept the old speed, and until a restart the node did not behave as its settings said. The wizard reached this with "0.0" or "00" — that spelling of zero passed the check. The checks now run first, and zero is rejected in any spelling.
+
+**"Clients are gone" after an upgrade was a false alert.** The check counted every entry in the kernel map rather than live clients: entries stay until evicted, so the "normal" on a node with a hundred clients came out above a thousand. An engine restart recreates the map, the count dropped tenfold, and minutes after every upgrade a collapse message went out. Now only clients the kernel saw within the last five minutes are counted, and for the first five minutes after the engine starts the node does not judge at all.
+
+**The "Catch sharing" button on the panel screen asks first.** One keypress enabled the cut-off and disabling the subscription after half an hour, silently replacing the duration and delay that were set. It now asks, and the default answer is "no".
+
+**Yes and no look the same everywhere: `[Y/n]`.** There were three kinds of prompt — "[Y/n]", "[y/N]" and the "[1] Yes / [2] No" of 4.13 — parsed differently: in "Apply? [Y/n]" anything but "n" counted as consent, typos included. One function now asks them all: Latin `y` or `n`, Enter takes the default (capitalised in the hint), and anything else gets the question again. Defaults are unchanged: "no" for everything that deletes, disables or overwrites.
+
+**A failure while applying a sharing penalty no longer kills the watchdog pass.** A `bpftool` failure on one address aborted the whole pass together with the penalties it had not reached. Such an address is now skipped.
+
+**What changes in behaviour.** Yes/no prompts accept only Latin `y` and `n`: Cyrillic "д" and "н" are no longer an answer. The "clients are gone" message stops arriving after upgrades; a real collapse is still caught, but the normal is now the number of live clients, not of entries.
+
+**On upgrade** nothing needs doing.
+
+---
+
 ## 4.13
 
 **In quick setup, "yes" and "no" are picked with a digit, not a letter.**
