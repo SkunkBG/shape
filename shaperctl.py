@@ -5855,8 +5855,15 @@ def clients_watch(cfg, now=None):
 
     n = clients_live()
     hist = [int(x) for x in (prev.get("hist") or []) if str(x).isdigit()]
+    # История, набранная до 4.14, считала все записи карты, а не живых: там
+    # тысячи против сотни. Сравнивать с ней новый счёт нельзя — первое же
+    # обновление дало бы ту самую ложную тревогу, только уже по вине правки.
+    # Такую историю отбрасываем и час копим заново.
+    if not prev.get("live"):
+        hist = []
+        prev.pop("alerted", None)
     hist = (hist + [n])[-ONLINE_KEEP:]
-    prev.update({"at": now, "hist": hist})
+    prev.update({"at": now, "hist": hist, "live": 1})
     state["online"] = prev
     guard_state_save(state)
 

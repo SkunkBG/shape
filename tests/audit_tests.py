@@ -2390,6 +2390,25 @@ check("настоящий обвал после этого срока по-пр�
       n == 1 and len(_sent2) == 1, (n, len(_sent2)))
 S.engine_started_at = _real_started
 
+# История от версий до 4.14 считала записи карты, а не живых. На живой ноде
+# в памяти лежало 2455 при 83 живых: без сброса обновление само давало бы
+# тревогу «клиенты пропали» через пять минут после старта.
+_gs2.clear(); _sent2.clear()
+_gs2["online"] = {"at": 1000.0, "hist": [2440 + i for i in range(S.ONLINE_KEEP)]}
+_users = {"10.0.0.%d" % i: {} for i in range(83)}
+S.read_users = lambda: dict(_users)
+now = 200000.0
+n = S.clients_watch(_cfg_cdn(), now=now)
+check("история старого счёта отброшена, тревоги нет",
+      n == -1 and _sent2 == [] and _gs2["online"]["hist"] == [83],
+      (n, _sent2, _gs2["online"].get("hist")))
+for i in range(1, S.ONLINE_KEEP + 2):
+    S.clients_watch(_cfg_cdn(), now=now + i * S.ONLINE_EVERY)
+check("и дальше нода молчит, пока клиенты на месте", _sent2 == [], _sent2)
+check("новая история помечена и больше не сбрасывается",
+      _gs2["online"].get("live") == 1
+      and len(_gs2["online"]["hist"]) == S.ONLINE_KEEP, _gs2["online"])
+
 # ── Трафик и остаток пакета у провайдера ──────────────────────────────
 # Кончившийся трафик кладёт всех клиентов разом. Предупреждаем заранее.
 u = S.cdn_usage(_cfg_cdn())

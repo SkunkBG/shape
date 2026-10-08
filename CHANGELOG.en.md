@@ -13,6 +13,20 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.16
+
+**Upgrading to 4.14–4.15 itself raised a false "clients are gone" alert.**
+
+4.14 switched the client count from "every map entry" to "live within five minutes". But the check's memory with the old count stayed on disk: it held thousands while the new count gives a hundred. Five minutes after an upgrade the node would have compared the two and sent an alert — the very one the fix was made against. Found before upgrading a live node: 2455 in memory, 83 live clients.
+
+History collected with the old count is now discarded and built up again over an hour; during that hour a collapse is not judged — the same as after a first install.
+
+**What changes in behaviour.** For the first hour after upgrading from a version before 4.16 the "clients are gone" check stays silent.
+
+**On upgrade** nothing needs doing.
+
+---
+
 ## 4.15
 
 **On kernel 6.1 the shaper of versions 4.9–4.14 did not load at all.**
