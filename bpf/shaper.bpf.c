@@ -74,6 +74,10 @@
 #endif
 
 #define MAX_USERS      8192
+/* Заголовок PROXY protocol в нелинейной части skb. */
+#define PP_MIN_LEN      28     /* короче заголовка не бывает (v2, TCP4) */
+#define PP_PULL_LEN     108    /* сколько нагрузки подтянуть: v1 до 107 байт */
+#define PP_PULL_MAX_OFF 512    /* дальше такого смещения нагрузку не ищем */
 /* Если EDT уводит отправку больше чем на 2 с вперёд — очередь безнадёжна. */
 #define EDT_HORIZON_NS 2000000000ULL
 /* Допустимый всплеск на upload: 200 мс «в долг». */
@@ -98,6 +102,11 @@ struct penalty {
 };
 
 /* 32 байта: last_departure_ns, total_bytes, last_seen_ns, packets
+ * total_bytes и packets — только то, что ПРОПУЩЕНО. Сброшенное (горизонт EDT,
+ * ведро отдачи) сюда не входит: оно до клиента не дошло, а монитор, штраф по
+ * объёму и ловля раздачи должны видеть трафик, а не попытки. Сбросы видны
+ * общим числом в stat_map. last_seen_ns обновляет любой пакет: адрес, который
+ * шлёт, — живой, даже если его сейчас режут.
  * packets нужен, чтобы посчитать средний размер пакета. В карте отдачи
  * это отделяет раздачу (полные пакеты 1200-1400 байт) от просмотра видео,
  * где вверх уходят только ACK по 60-80 байт. */
@@ -325,6 +334,14 @@ static __always_inline int parse_pp(__u8 *p, void *data_end, struct ip_key *out)
     return 0;
 }
 
+
+/* Пакет пропущен — только тогда он входит в счётчики клиента. Вызывается у
+ * каждого выхода с TC_ACT_OK после поиска записи и ни у одного TC_ACT_SHOT. */
+static __always_inline void count_pass(struct user_state *st, __u32 len)
+{
+    __sync_fetch_and_add(&st->total_bytes, len);
+    __sync_fetch_and_add(&st->packets, 1);
+}
 
 /*
  * direction: 0 = download (egress, пакет ИДЁТ к пользователю  → ключ по daddr)
@@ -556,9 +573,44 @@ static __always_inline int process_packet(struct __sk_buff *skb,
                  * Ищем только на входе: заголовок шлёт релей, не нода. */
                 __u8 doff = ((__u8 *)tcp)[12] >> 4;
                 struct pp_conn fresh = {0};
+                __u8 *pl = (__u8 *)tcp + ((__u32)doff << 2);
+
+                /* Нагрузка не всегда лежит в линейной части skb: у сегментов,
+                 * склеенных GRO, и у некоторых сетевых карт там только
+                 * заголовки, а данные — в страницах. data_end указывает на
+                 * конец линейной части, и parse_pp не увидел бы ни байта:
+                 * соединение осталось бы без привязки и шло мимо лимита.
+                 * Подтягиваем начало нагрузки — только когда её не видно, а
+                 * пакет при этом достаточно длинный, то есть не на чистых
+                 * ACK и не там, где всё и так на месте.
+                 *
+                 * bpf_skb_pull_data делает недействительными все прежние
+                 * указатели на пакет: смещение запоминаем числом до вызова,
+                 * указатели берём заново после. Ниже по коду указатели на
+                 * пакет не читаются — флаги TCP прочитаны выше. */
+                __u32 pl_off = (__u32)(pl - (__u8 *)data);
+                if ((void *)(pl + PP_MIN_LEN) > data_end &&
+                    pl_off <= PP_PULL_MAX_OFF &&
+                    skb->len >= pl_off + PP_MIN_LEN) {
+                    __u32 want = pl_off + PP_PULL_LEN;
+                    if (want > skb->len)
+                        want = skb->len;
+                    /* Результат не проверяем: не вышло — data_end останется
+                     * коротким, и parse_pp вернёт 0, как раньше. */
+                    bpf_skb_pull_data(skb, want);
+                    data     = (void *)(long)skb->data;
+                    data_end = (void *)(long)skb->data_end;
+                    /* Границу смещения верификатору надо доказать заново;
+                     * барьер не даёт компилятору выбросить проверку как
+                     * «и так известную». */
+                    asm volatile("" : "+r"(pl_off));
+                    if (pl_off > PP_PULL_MAX_OFF)
+                        return TC_ACT_OK;
+                    pl = (__u8 *)data + pl_off;
+                }
+
                 if (doff >= 5 &&
-                    parse_pp((__u8 *)tcp + ((__u32)doff << 2), data_end,
-                             &fresh.client)) {
+                    parse_pp(pl, data_end, &fresh.client)) {
                     bpf_map_update_elem(&pp_conn_map, &ck, &fresh, BPF_ANY);
                     __builtin_memcpy(key.addr, fresh.client.addr,
                                      sizeof(key.addr));
@@ -620,8 +672,6 @@ static __always_inline int process_packet(struct __sk_buff *skb,
         return TC_ACT_OK;   /* первый пакет пропускаем без задержки */
     }
 
-    __sync_fetch_and_add(&st->total_bytes, len);
-    __sync_fetch_and_add(&st->packets, 1);
     st->last_seen_ns = now;
 
     /* ── Белый список ──
@@ -639,6 +689,7 @@ static __always_inline int process_packet(struct __sk_buff *skb,
          * быть заметной — ровно тогда, когда порт раздаёт безлимит. */
         if (relay_unresolved)
             stat_inc(STAT_PP_UNRESOLVED);
+        count_pass(st, len);
         return TC_ACT_OK;
     }
 
@@ -655,6 +706,7 @@ static __always_inline int process_packet(struct __sk_buff *skb,
      * перестали приходить и порт молча раздаёт безлимит. */
     if (relay_unresolved) {
         stat_inc(STAT_PP_UNRESOLVED);
+        count_pass(st, len);
         return TC_ACT_OK;
     }
 
@@ -669,8 +721,10 @@ static __always_inline int process_packet(struct __sk_buff *skb,
      * проверкой и этой строкой лимит могли снять из userspace. Деление на
      * ноль в BPF даёт ноль, а не панику, но пакет тогда уехал бы с нулевой
      * задержкой мимо всякого учёта — лучше честно пропустить. */
-    if (rate == 0)
+    if (rate == 0) {
+        count_pass(st, len);
         return TC_ACT_OK;
+    }
 
     __u64 delay_ns  = ((__u64)len * 1000000000ULL) / rate;
     __u64 departure = st->last_departure_ns;
@@ -717,6 +771,7 @@ static __always_inline int process_packet(struct __sk_buff *skb,
         stat_inc(STAT_UP_PASS);
     }
 
+    count_pass(st, len);
     return TC_ACT_OK;
 }
 

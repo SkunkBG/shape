@@ -27,6 +27,11 @@ long  bpf_map_update_elem(void *map, const void *key, const void *value,
 long  bpf_map_delete_elem(void *map, const void *key);
 static unsigned long long bpf_ktime_get_ns_impl(void) { return fake_now; }
 #define bpf_ktime_get_ns bpf_ktime_get_ns_impl
+/* bpf_skb_pull_data: подтягивает нагрузку из страниц в линейную часть.
+ * Определён ниже, после struct __sk_buff. */
+struct __sk_buff;
+static long pull_data_impl(struct __sk_buff *skb, unsigned len);
+#define bpf_skb_pull_data pull_data_impl
 
 #define SEC(NAME)
 #define __uint(name, val) int (*name)[val]
@@ -108,6 +113,27 @@ static void pkt_alloc(void) {
     if (pkt == MAP_FAILED || (unsigned long)pkt >> 32) {
         perror("mmap"); exit(2);
     }
+}
+
+/* Нелинейный skb: в линейной части только первые linear байт, остальное «в
+ * страницах». pull_ok = 0 изображает отказ хелпера. */
+static int pull_calls = 0, pull_ok = 1;
+static long pull_data_impl(struct __sk_buff *s, unsigned len) {
+    pull_calls++;
+    if (!pull_ok)
+        return -1;
+    if (len > s->len)
+        len = s->len;
+    if (s->data + len > s->data_end)
+        s->data_end = s->data + len;
+    return 0;
+}
+static int run_pkt_nonlinear(int len, int linear, int direction) {
+    skb.data = (unsigned long)pkt;
+    skb.data_end = (unsigned long)pkt + linear;
+    skb.len = len;
+    skb.tstamp = 0;
+    return direction == 0 ? shaper_down(&skb) : shaper_up(&skb);
 }
 
 static int run_pkt(int len, int direction) {
@@ -866,6 +892,97 @@ int main(void)
         check("заголовок нового клиента разобран, трафик идёт ему",
               c2 && c2->client.addr[0] == v4("203.0.113.32")
               && bpf_map_lookup_elem(&user_state_map_up, &kb2) != NULL);
+    }
+
+    /* ── Заголовок PROXY в нелинейной части skb ──────────────────────── */
+    printf("\n\033[1mЗаголовок PROXY в нелинейной части skb\033[0m\n");
+    {
+        unsigned RELAY_NL = v4("198.51.100.90");
+        struct ip_key knl = {0}; knl.addr[0] = v4("203.0.113.160");
+        struct ip_key krl = {0}; krl.addr[0] = RELAY_NL;
+        struct pp_key cnl = {0}; cnl.addr[0] = RELAY_NL; cnl.port = 41001;
+        unsigned char nlpay[1500] = {0};
+        int nplen = ppv2_tcp4(nlpay, "203.0.113.160");
+        int hdrs = 14 + 20 + 20;
+
+        /* В линейной части только заголовки, нагрузка в страницах. */
+        pull_calls = 0;
+        len = build_tcp_raw(SERVER, RELAY_NL, 41001, PPORT, 0x18, nlpay, 1400);
+        (void)nplen;
+        run_pkt_nonlinear(len, hdrs, 1);
+        check("нагрузка подтянута один раз", pull_calls == 1);
+        check("заголовок из страниц разобран, привязка есть",
+              bpf_map_lookup_elem(&pp_conn_map, &cnl) != NULL);
+        check("трафик учтён клиенту, а не релею",
+              bpf_map_lookup_elem(&user_state_map_up, &knl) != NULL &&
+              bpf_map_lookup_elem(&user_state_map_up, &krl) == NULL);
+
+        /* Привязка есть — подтягивать больше нечего. */
+        pull_calls = 0;
+        run_pkt_nonlinear(len, hdrs, 1);
+        check("при готовой привязке нагрузку не трогаем", pull_calls == 0);
+
+        /* Обычный пакет целиком в линейной части и чистый ACK. */
+        pull_calls = 0;
+        nplen = ppv2_tcp4(nlpay, "203.0.113.161");
+        len = build_tcp_raw(SERVER, RELAY_NL, 41002, PPORT, 0x18, nlpay, nplen);
+        run_pkt(len, 1);
+        len = build_tcp_raw(SERVER, RELAY_NL, 41003, PPORT, 0x10, nlpay, 0);
+        run_pkt(len, 1);
+        check("линейный пакет и чистый ACK хелпер не вызывают", pull_calls == 0);
+
+        /* Хелпер отказал: пакет проходит, привязки нет, ничего не падает. */
+        pull_calls = 0; pull_ok = 0;
+        struct pp_key cnf = {0}; cnf.addr[0] = RELAY_NL; cnf.port = 41004;
+        nplen = ppv2_tcp4(nlpay, "203.0.113.162");
+        len = build_tcp_raw(SERVER, RELAY_NL, 41004, PPORT, 0x18, nlpay, 1400);
+        check("отказ хелпера пакет не роняет",
+              run_pkt_nonlinear(len, hdrs, 1) == TC_ACT_OK && pull_calls == 1);
+        check("и привязку не выдумывает",
+              bpf_map_lookup_elem(&pp_conn_map, &cnf) == NULL);
+        pull_ok = 1;
+    }
+
+    /* ── В учёт клиента идёт только пропущенное ──────────────────────── */
+    printf("\n\033[1mУчёт только пропущенного трафика\033[0m\n");
+    {
+        map_put(&config_map, &zero, &cfg);          /* 10 Мбит/с */
+        unsigned DROPD = v4("203.0.113.236");
+        struct ip_key kdd = {0}; kdd.addr[0] = DROPD;
+        unsigned long long passed = 0, sent = 0;
+        int drops = 0;
+        for (int i = 0; i < 4000; i++) {
+            len = build_v4(IPPROTO_TCP, 443, 52100, 0, 1400, DROPD, SERVER);
+            sent += len;
+            if (run_pkt(len, 0) == TC_ACT_SHOT) drops++;
+            else passed += len;
+        }
+        struct user_state *sd = bpf_map_lookup_elem(&user_state_map_down, &kdd);
+        check("вниз: сбросы были", drops > 0);
+        check("вниз: в счётчике ровно пропущенные байты",
+              sd && sd->total_bytes == passed && sd->total_bytes < sent);
+        check("вниз: пакетов столько же, сколько прошло",
+              sd && sd->packets == (unsigned long long)(4000 - drops));
+
+        unsigned DROPU = v4("203.0.113.237");
+        struct ip_key kdu = {0}; kdu.addr[0] = DROPU;
+        passed = 0; drops = 0;
+        for (int i = 0; i < 4000; i++) {
+            len = build_v4(IPPROTO_TCP, 52101, 443, 0, 1400, SERVER, DROPU);
+            if (run_pkt(len, 1) == TC_ACT_SHOT) drops++;
+            else passed += len;
+        }
+        struct user_state *su2 = bpf_map_lookup_elem(&user_state_map_up, &kdu);
+        check("вверх: сбросы были", drops > 0);
+        check("вверх: в счётчике ровно пропущенные байты",
+              su2 && su2->total_bytes == passed);
+        unsigned long long seen0 = su2 ? su2->last_seen_ns : 0;
+        fake_now += 1000;                       /* ведро ещё полно — сброс */
+        len = build_v4(IPPROTO_TCP, 52101, 443, 0, 1400, SERVER, DROPU);
+        int r2 = run_pkt(len, 1);
+        check("сброшенный пакет адрес живым оставляет",
+              r2 == TC_ACT_SHOT && su2 && su2->last_seen_ns > seen0 &&
+              su2->total_bytes == passed);
     }
 
     printf("\n\033[1mИтог: %d пройдено, %d провалено\033[0m\n", ok, fail);

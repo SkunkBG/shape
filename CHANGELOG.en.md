@@ -13,6 +13,26 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.17
+
+**A client's counters now include only the traffic the node let through.**
+
+Until now a packet was added to the client's counters before the decision to pass or drop it. Everything cut by the limit — beyond the queue horizon downstream, over the bucket upstream — was added to its bytes alongside what was delivered. The monitor, statistics, the volume penalty and subscription-sharing detection saw the client's attempts rather than its traffic: the harder an address was throttled, the more it was credited with. Bytes and packets are now counted only for what passes. Dropped packets remain visible as a total in `shaperctl metrics`, `shape_packets_total{action="drop"}`.
+
+An address still counts as "active" while it sends packets, even if they are dropped: the number of active clients does not change. The client record layout in the map is the same, 32 bytes.
+
+**The PROXY header is now read even when the payload is not in the linear part of the packet.** With some network cards, and for segments merged on receive, the linear part holds only headers while the data sits in pages. The filter could not see it: the PROXY header stayed unparsed, the connection had no client binding and therefore bypassed the limit. The start of the payload is now pulled in — once per connection and only when it is not visible; the path for ordinary packets is unchanged. On virtio nodes the header was already in place, so nothing changes there.
+
+Both changes follow work in the [Gy9vin/shape](https://github.com/Gy9vin/shape) fork, used with the author's permission; they were ported into our filter by hand.
+
+**Verified before release.** The filter with both changes was loaded into kernel 6.1 (Debian 12, clang 14) and 6.12 (Debian 13, clang 19) without attaching it to an interface — the verifier accepted it. Reading from pages is covered by the test harness; there is no live node with such a network card in the fleet.
+
+**What changes in behaviour.** For clients the limit actually cuts, the volume in the monitor, statistics and metrics becomes smaller by the amount dropped. On a node with a 100 Mbit/s limit drops over 14 hours were 0.003% of packets; with a narrow limit the difference is larger. Watchdog thresholds are unchanged.
+
+**On upgrade** nothing needs doing. On a node behind a CDN, as with any upgrade, part of the traffic goes without header parsing for the first minutes.
+
+---
+
 ## 4.16
 
 **Upgrading to 4.14–4.15 itself raised a false "clients are gone" alert.**
