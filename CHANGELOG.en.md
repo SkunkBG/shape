@@ -13,6 +13,22 @@ The Russian version in [CHANGELOG.md](CHANGELOG.md) is the primary one.
 
 ---
 
+## 4.18
+
+**An upgrade stopped at the very first step when a third-party repository on the node did not respond.**
+
+Found while upgrading a live node to 4.17. The installer starts with `apt-get update`, and besides the system ones a node carries repositories of other software. One of them returned an error — and the installer stopped before reaching Shape, although everything Shape needs had long been installed. The node was not harmed: the stop happened before any change, and the previous version kept working. But it could not be upgraded until someone else's repository was fixed.
+
+A failed package-list update is now a warning with the error text rather than a stop. The installer continues with what `apt` already knows. If a required tool is really missing and could not be installed, the installation stops as before and names what is missing.
+
+**Verified before release** on the same node: the fixed installer showed the warning and completed the upgrade.
+
+**What changes in behaviour.** With a healthy `apt` — nothing. When a third-party repository fails, the installer prints a warning and carries on.
+
+**On upgrade** nothing needs doing. The fix lives in the installer itself, so it already applies when moving to 4.18.
+
+---
+
 ## 4.17
 
 **A client's counters now include only the traffic the node let through.**

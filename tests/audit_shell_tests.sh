@@ -503,5 +503,42 @@ check "у сторожа потолок задан в [Unit]" \
       'awk "/^\[Unit\]/{u=1} /^\[Service\]/{u=0} u && /^StartLimitIntervalSec=300/{f=1} END{exit !f}" \
            "$SRC/systemd/shaper-watch.service"'
 
+# Установщик и чужие репозитории. На живой ноде apt-get update вернул ошибку
+# из-за стороннего репозитория, и под set -e установка обрывалась на первом
+# шаге — при том, что все нужные пакеты уже стояли. Гоняем сам блок
+# зависимостей из install.sh с подставным apt-get.
+echo -e "\n${B}Установщик: сбой apt-get update${N}"
+DEPS_TMP="$(mktemp -d)"
+sed -n '/^step "Установка зависимостей"/,/^ok "clang, bpftool/p' "$SRC/install.sh" > "$DEPS_TMP/deps.sh"
+deps_run() {   # $1 — код apt-get update, $2 — код apt-get install, $3 — есть ли инструменты
+    ( set -euo pipefail
+      G=''; R=''; Y=''; B=''; N=''
+      ok()   { echo "OK $*"; }
+      step() { :; }
+      die()  { echo "DIE $*"; exit 1; }
+      apt-get() { case "$1" in update) echo "E: чужой репозиторий 402" >&2; return "$UPD" ;;
+                               *) return "$INS" ;; esac; }
+      command() { if [[ "$1" == -v ]]; then
+                      [[ "$2" == apt-get ]] && return 0
+                      [[ "$HAVE" == 1 ]]; return
+                  fi; builtin command "$@"; }
+      UPD="$1" INS="$2" HAVE="$3"
+      # shellcheck disable=SC1090
+      source "$DEPS_TMP/deps.sh" ) 2>&1
+}
+check "блок зависимостей найден в install.sh" '[[ -s "$DEPS_TMP/deps.sh" ]]'
+OUT="$(deps_run 100 0 1)"; RC=$?
+check "сбой apt-get update установку не обрывает" '[[ $RC -eq 0 ]] && echo "$OUT" | grep -q "^OK clang"'
+check "о сбое сказано, и причина показана" \
+      'echo "$OUT" | grep -q "apt-get update не прошёл" && echo "$OUT" | grep -q "402"'
+OUT="$(deps_run 0 0 1)"; RC=$?
+check "при исправном apt предупреждения нет" '[[ $RC -eq 0 ]] && ! echo "$OUT" | grep -q "не прошёл"'
+OUT="$(deps_run 100 0 0)"; RC=$?
+check "нет инструментов — установка всё равно останавливается" \
+      '[[ $RC -ne 0 ]] && echo "$OUT" | grep -q "^DIE .*так и не установился"'
+OUT="$(deps_run 0 100 1)"; RC=$?
+check "сбой установки пакетов по-прежнему останавливает" '[[ $RC -ne 0 ]]'
+rm -rf "$DEPS_TMP"
+
 echo -e "\n${B}Итог: $ok пройдено, $fail провалено${N}"
 [[ $fail -eq 0 ]]

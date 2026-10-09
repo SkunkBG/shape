@@ -60,7 +60,15 @@ ok "ядро $KV подходит"
 step "Установка зависимостей"
 if command -v apt-get >/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq
+    # Сбой обновления списков — не повод бросать установку. На ноде стоят
+    # чужие репозитории, и отказ любого из них (истёк ключ, хостинг ответил
+    # ошибкой) ронял здесь весь скрипт, хотя всё нужное Shape давно стояло.
+    # Идём дальше с тем, что apt уже знает: чего не хватит — скажет проверка
+    # инструментов ниже.
+    if ! apt_err="$(apt-get update -qq 2>&1)"; then
+        echo -e "  ${Y}⚠ apt-get update не прошёл — продолжаю с имеющимися списками пакетов${N}"
+        echo "$apt_err" | sed 's/^/      /'
+    fi
     apt-get install -y -qq clang llvm libbpf-dev linux-libc-dev \
         iproute2 python3 >/dev/null
     command -v bpftool >/dev/null || apt-get install -y -qq bpftool >/dev/null 2>&1 \
